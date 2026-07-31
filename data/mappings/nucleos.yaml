@@ -1,0 +1,67 @@
+generated_at: '2026-07-31T14:36:39.402711+00:00'
+regla_filtrado: prefijo de 4 digitos + letra separadora, o SPECIAL_<2 digitos>_ (Anexo
+  A.2)
+codigos_configurados_esta_ejecucion:
+- '1080'
+- '1010'
+nucleos:
+- nombre: Madrid
+  codigo_anexo_a: '1080'
+  codigo_observado_vivo: '1010'
+  confianza: alta (coordenadas + Anexo A)
+- nombre: Sevilla
+  codigo_anexo_a: '3080'
+  codigo_observado_vivo: '3010'
+  confianza: alta (coordenadas verificadas en Fase 0)
+- nombre: Cadiz
+  codigo_anexo_a: '3180'
+  codigo_observado_vivo: '3110'
+  confianza: media (patron aritmetico, no verificado individualmente por coordenadas)
+- nombre: Malaga
+  codigo_anexo_a: '3280'
+  codigo_observado_vivo: '3210'
+  confianza: media (patron aritmetico)
+- nombre: Valencia
+  codigo_anexo_a: '4080'
+  codigo_observado_vivo: '4010'
+  confianza: media (patron aritmetico)
+- nombre: Alicante/Murcia
+  codigo_anexo_a: '4180'
+  codigo_observado_vivo: '4110'
+  confianza: media (patron aritmetico)
+- nombre: Murcia-Cartagena
+  codigo_anexo_a: '4580'
+  codigo_observado_vivo: '4510'
+  confianza: media (patron aritmetico)
+- nombre: Noroeste (ancho metrico)
+  codigo_anexo_a: '4680'
+  codigo_observado_vivo: '4610'
+  confianza: media (patron aritmetico)
+- nombre: Leon
+  codigo_anexo_a: '4780'
+  codigo_observado_vivo: '4710'
+  confianza: media (patron aritmetico)
+- nombre: Barcelona/Cataluna
+  codigo_anexo_a: '5180'
+  codigo_observado_vivo: '5110'
+  confianza: alta (coordenadas verificadas en Fase 0, etiquetas R2S/R2N/R4)
+- nombre: Bilbao
+  codigo_anexo_a: '6080'
+  codigo_observado_vivo: '6010'
+  confianza: alta (coordenadas verificadas en Fase 0)
+- nombre: San Sebastian
+  codigo_anexo_a: '6180'
+  codigo_observado_vivo: '6110'
+  confianza: media (patron aritmetico)
+- nombre: Santander
+  codigo_anexo_a: '6280'
+  codigo_observado_vivo: '6210'
+  confianza: alta (coordenadas verificadas en Fase 0)
+- nombre: Zaragoza
+  codigo_anexo_a: '7080'
+  codigo_observado_vivo: '7010'
+  confianza: alta (coordenadas verificadas en Fase 0)
+nota: Tabla de referencia, no verdad oficial (el propio Anexo A la califica de lista
+  de exclusion inferida por coordenadas). Los codigos 'codigo_observado_vivo' fueron
+  verificados el 31/07/2026 cruzando las posiciones GPS de cada prefijo con la geografia
+  esperada (ver docs/informes/cobertura-estaciones.md).

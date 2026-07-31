@@ -1,0 +1,54 @@
+{
+  "generated_at": "2026-07-31T14:36:41.521404+00:00",
+  "generic_inspire": {
+    "wms": {
+      "service": "WMS",
+      "url": "https://ideadif.adif.es/geoserver/wms?service=WMS&request=GetCapabilities",
+      "ok": false,
+      "status_code": 404,
+      "reason": "HTTP 404",
+      "version": null,
+      "layer_or_typenames": []
+    },
+    "wfs": {
+      "service": "WFS",
+      "url": "https://ideadif.adif.es/geoserver/wfs?service=WFS&request=GetCapabilities",
+      "ok": false,
+      "status_code": 404,
+      "reason": "HTTP 404",
+      "version": null,
+      "layer_or_typenames": []
+    }
+  },
+  "tramificacion": {
+    "wms": {
+      "service": "WMS",
+      "url": "https://ideadif.adif.es/gservices/Tramificacion/wms?request=GetCapabilities",
+      "ok": true,
+      "status_code": 200,
+      "reason": "OK",
+      "version": "1.3.0",
+      "layer_or_typenames": [
+        "TramificacionComun",
+        "Dependencias",
+        "PKTeoricos",
+        "TramosFueraServicio",
+        "TramosServicio"
+      ]
+    },
+    "wfs": {
+      "service": "WFS",
+      "url": "https://ideadif.adif.es/gservices/Tramificacion/wfs?request=GetCapabilities",
+      "ok": true,
+      "status_code": 200,
+      "reason": "OK",
+      "version": "2.0.0",
+      "layer_or_typenames": [
+        "Tramificacion:Dependencias",
+        "Tramificacion:PKTeoricos",
+        "Tramificacion:TramosFueraServicio",
+        "Tramificacion:TramosServicio"
+      ]
+    }
+  }
+}
