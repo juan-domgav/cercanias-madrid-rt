@@ -142,6 +142,126 @@ class GtfsStaticUnavailableError(RuntimeError):
         )
 
 
+#: Limites sobre el archivo remoto. El ZIP viene de un tercero: aunque hoy sea
+#: Renfe, el codigo no puede asumir que el contenido sea benigno ni que su
+#: tamano este acotado. Sin estos topes, un ZIP pequeno puede agotar memoria o
+#: llenar el disco al descomprimirse (zip bomb).
+MAX_COMPRESSED_BYTES = 200 * 1024 * 1024  # 200 MiB descargados
+MAX_UNCOMPRESSED_BYTES = 2 * 1024 * 1024 * 1024  # 2 GiB expandidos en total
+MAX_MEMBER_UNCOMPRESSED_BYTES = 1024 * 1024 * 1024  # 1 GiB por miembro
+MAX_COMPRESSION_RATIO = 200.0  # ratio expandido/comprimido por miembro
+MAX_ZIP_MEMBERS = 5_000
+
+
+class ZipSafetyError(Exception):
+    """El ZIP remoto incumple los limites de seguridad de extraccion."""
+
+
+def inspect_zip_members(zf: zipfile.ZipFile) -> None:
+    """Rechaza un ZIP hostil ANTES de descomprimir nada.
+
+    Se comprueba sobre las cabeceras (``ZipInfo``), no sobre el contenido, de
+    modo que un zip bomb se descarta sin expandirlo. Comprobar el ratio por
+    miembro es lo que detecta el caso clasico: pocos KB comprimidos que se
+    expanden a gigabytes.
+    """
+    infos = zf.infolist()
+    if len(infos) > MAX_ZIP_MEMBERS:
+        raise ZipSafetyError(f"el ZIP declara {len(infos)} miembros (maximo {MAX_ZIP_MEMBERS})")
+
+    total_uncompressed = 0
+    seen: set[str] = set()
+    for info in infos:
+        name = info.filename
+
+        if info.flag_bits & 0x1:
+            raise ZipSafetyError(f"miembro cifrado no admitido: {name!r}")
+
+        # Rutas absolutas, escapes y separadores de Windows. Python 3.13 ya
+        # sanea `..` en extract(), pero no se delega en ese detalle: la politica
+        # se comprueba aqui y la extraccion es ademas por lista blanca.
+        if name.startswith("/") or name.startswith("\\") or ".." in Path(name).parts:
+            raise ZipSafetyError(f"ruta no admitida en el ZIP: {name!r}")
+        if Path(name).is_absolute() or (len(name) > 1 and name[1] == ":"):
+            raise ZipSafetyError(f"ruta absoluta en el ZIP: {name!r}")
+
+        # Entradas no regulares (symlinks, dispositivos): el modo Unix va en los
+        # 16 bits altos de external_attr.
+        mode = info.external_attr >> 16
+        if mode and (mode & 0o170000) not in (0o100000, 0o040000, 0):
+            raise ZipSafetyError(f"entrada no regular en el ZIP: {name!r}")
+
+        if name in seen:
+            raise ZipSafetyError(f"nombre duplicado en el ZIP: {name!r}")
+        seen.add(name)
+
+        if info.file_size > MAX_MEMBER_UNCOMPRESSED_BYTES:
+            raise ZipSafetyError(
+                f"miembro {name!r} declara {info.file_size} bytes expandidos "
+                f"(maximo {MAX_MEMBER_UNCOMPRESSED_BYTES})"
+            )
+        if info.compress_size > 0:
+            ratio = info.file_size / info.compress_size
+            if ratio > MAX_COMPRESSION_RATIO:
+                raise ZipSafetyError(
+                    f"miembro {name!r} tiene un ratio de compresion de {ratio:.0f}:1 "
+                    f"(maximo {MAX_COMPRESSION_RATIO:.0f}:1); posible zip bomb"
+                )
+        total_uncompressed += info.file_size
+        if total_uncompressed > MAX_UNCOMPRESSED_BYTES:
+            raise ZipSafetyError(
+                f"el ZIP se expandiria a mas de {MAX_UNCOMPRESSED_BYTES} bytes"
+            )
+
+
+def extract_allowlisted(zf: zipfile.ZipFile, dest_dir: Path) -> tuple[str, ...]:
+    """Extrae SOLO los CSV que el proyecto necesita, con destino explicito.
+
+    ``extractall()`` escribia todos los miembros del archivo remoto. Aqui se
+    extrae por lista blanca (``REQUIRED_FILES``), cada uno a una ruta construida
+    localmente, de modo que el nombre que venga dentro del ZIP no puede influir
+    en donde se escribe.
+    """
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    extracted: list[str] = []
+    for filename in REQUIRED_FILES:
+        if filename not in zf.namelist():
+            continue
+        target = dest_dir / Path(filename).name
+        with zf.open(filename) as src, target.open("wb") as dst:
+            written = 0
+            while chunk := src.read(64 * 1024):
+                written += len(chunk)
+                if written > MAX_MEMBER_UNCOMPRESSED_BYTES:
+                    raise ZipSafetyError(
+                        f"miembro {filename!r} excede el limite al descomprimir"
+                    )
+                dst.write(chunk)
+        extracted.append(filename)
+    return tuple(extracted)
+
+
+def _payload_rejection_reason(content: bytes, response: httpx.Response) -> str | None:
+    """Motivo por el que se descarta la respuesta, o ``None`` si es aceptable.
+
+    Agrupa las dos comprobaciones que se hacen antes de tratar los bytes como un
+    ZIP: tamano por encima del tope y firma de archivo. Las dos terminan en el
+    mismo `SourceAttempt` fallido, asi que comparten funcion.
+    """
+    if len(content) > MAX_COMPRESSED_BYTES:
+        return (
+            f"respuesta de {len(content)} bytes, por encima del limite de "
+            f"{MAX_COMPRESSED_BYTES}; se descarta sin procesar"
+        )
+    if not content.startswith(ZIP_MAGIC_BYTES):
+        content_type = response.headers.get("content-type", "desconocido")
+        return (
+            f"respuesta HTTP 200 pero no es un ZIP (content-type={content_type}); "
+            "probablemente una pagina HTML (login, portal SPA, etc.)"
+        )
+    return None
+
+
 def validate_zip_bytes(data: bytes) -> ZipValidationResult:
     """Valida el ZIP (CRC) y cada CSV requerido (columnas minimas)."""
     if not data.startswith(ZIP_MAGIC_BYTES):
@@ -150,6 +270,12 @@ def validate_zip_bytes(data: bytes) -> ZipValidationResult:
     try:
         zf = zipfile.ZipFile(io.BytesIO(data))
     except zipfile.BadZipFile:
+        return ZipValidationResult(valid=False, bad_file_in_zip=None, files=(), namelist=())
+
+    # Antes de tocar el contenido (testzip descomprime todo para el CRC).
+    try:
+        inspect_zip_members(zf)
+    except ZipSafetyError:
         return ZipValidationResult(valid=False, bad_file_in_zip=None, files=(), namelist=())
 
     bad_file = zf.testzip()
@@ -279,19 +405,15 @@ def download_gtfs_static(
                 continue
 
             content = response.content
-            if not content.startswith(ZIP_MAGIC_BYTES):
-                content_type = response.headers.get("content-type", "desconocido")
+            rejection = _payload_rejection_reason(content, response)
+            if rejection is not None:
                 attempts.append(
                     SourceAttempt(
                         source_name=source.name,
                         url=source.url,
                         ok=False,
                         status_code=response.status_code,
-                        reason=(
-                            f"respuesta HTTP 200 pero no es un ZIP "
-                            f"(content-type={content_type}); probablemente una "
-                            "pagina HTML (login, portal SPA, etc.)"
-                        ),
+                        reason=rejection,
                         etag=etag,
                         last_modified=last_modified,
                     )
@@ -349,7 +471,8 @@ def download_gtfs_static(
             version_dir = base_dir / version_name
             version_dir.mkdir(parents=True, exist_ok=True)
             with zipfile.ZipFile(io.BytesIO(content)) as zf:
-                zf.extractall(version_dir)
+                inspect_zip_members(zf)
+                extract_allowlisted(zf, version_dir)
             (version_dir / "_source.json").write_text(
                 json.dumps(
                     {

@@ -78,7 +78,14 @@ discover-data: unhide
 ideadif-explore: unhide
 	uv run ideadif-explore
 
-ci: lint typecheck test
+# Cada etapa en su propia invocacion de make: `unhide` es prerequisito de todas,
+# pero make solo lo ejecuta UNA vez por invocacion. Como cualquier `uv run`
+# intermedio puede volver a marcar los .pth como ocultos (ver ADR-003), encadenar
+# lint/typecheck/test dentro de una sola invocacion hacia fallar el ultimo target.
+ci:
+	@$(MAKE) --no-print-directory lint
+	@$(MAKE) --no-print-directory typecheck
+	@$(MAKE) --no-print-directory test
 
 clean:
 	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
