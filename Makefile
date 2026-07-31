@@ -1,8 +1,25 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
 
-.PHONY: help install lint format typecheck test test-cov \
+# ANOMALIA DE ENTORNO (macOS + uv + CPython 3.13) — ver ADR-003.
+# uv marca los .pth de instalacion editable con el flag UF_HIDDEN de macOS, y
+# site.py de CPython 3.13 SALTA EN SILENCIO cualquier .pth oculto: los paquetes
+# del workspace quedan instalados pero no importables, sin ningun error.
+#
+# No basta con limpiar el flag tras `uv sync`: cada `uv run` re-sincroniza el
+# entorno y vuelve a marcarlos ANTES de ejecutar el comando. Por eso se
+# desactiva la sincronizacion automatica de `uv run` (UV_NO_SYNC) y se limpia
+# el flag como prerequisito de cada target. `make install` es el unico punto
+# que sincroniza.
+#
+# En Linux (CI) UF_HIDDEN no existe y `chflags` tampoco: el paso es un no-op.
+export UV_NO_SYNC := 1
+
+.PHONY: help install unhide lint format typecheck test test-cov \
         check-feed-freshness discover-data ideadif-explore ci clean
+
+unhide:
+	@find .venv -name "_editable_impl_*.pth" -exec chflags nohidden {} \; 2>/dev/null || true
 
 help:
 	@echo "Targets disponibles:"
@@ -17,7 +34,7 @@ help:
 	@echo "  make ci                    - lint + typecheck + test (lo que corre en GitHub Actions)"
 
 install:
-	uv sync --all-packages
+	UV_NO_SYNC=0 uv sync --all-packages
 	@# ANOMALIA de entorno (macOS + uv + Python 3.13, documentada en ADR-003):
 	@# uv marca los .pth de instalacion editable con el flag UF_HIDDEN de macOS.
 	@# CPython 3.13 anadio en site.py un chequeo que SALTA silenciosamente
@@ -26,13 +43,13 @@ install:
 	@# tras cada sync para que `uv run` / `pytest` funcionen.
 	@find .venv -name "_editable_impl_*.pth" -exec chflags nohidden {} \; 2>/dev/null || true
 
-lint:
+lint: unhide
 	uv run ruff check .
 
-format:
+format: unhide
 	uv run ruff format .
 
-typecheck:
+typecheck: unhide
 	uv run mypy \
 		packages/domain/src \
 		packages/connectors-renfe/src \
@@ -40,25 +57,25 @@ typecheck:
 		packages/persistence/src \
 		apps/worker/src
 
-test:
+test: unhide
 	uv run pytest \
 		--cov=cercanias_domain \
 		--cov-report=term-missing \
 		--cov-fail-under=90
 
-test-cov:
+test-cov: unhide
 	uv run pytest \
 		--cov=cercanias_domain \
 		--cov-report=html \
 		--cov-report=term-missing
 
-check-feed-freshness:
+check-feed-freshness: unhide
 	uv run check-feed-freshness
 
-discover-data:
+discover-data: unhide
 	uv run discover-data
 
-ideadif-explore:
+ideadif-explore: unhide
 	uv run ideadif-explore
 
 ci: lint typecheck test

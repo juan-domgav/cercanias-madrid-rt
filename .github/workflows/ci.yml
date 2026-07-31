@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: lint · typecheck · tests de contrato
+    runs-on: ubuntu-latest
+
+    # Los tests de contrato no salen a la red: su entrada son los fixtures de
+    # fixtures/, no descargas en vivo. No hay ninguna variable de entorno que
+    # lo imponga todavia; si se anade un guard offline, engancharlo aqui.
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Instalar Python 3.13
+        run: uv python install 3.13
+
+      - name: Sincronizar dependencias
+        run: uv sync --all-packages
+
+      - name: Lint (ruff)
+        run: make lint
+
+      - name: Tipado estricto (mypy)
+        run: make typecheck
+
+      - name: Tests y cobertura de dominio (minimo 90%)
+        run: make test
