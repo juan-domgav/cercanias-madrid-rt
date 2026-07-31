@@ -62,34 +62,85 @@ _ALTA_COORDENADAS = "alta (coordenadas verificadas en Fase 0)"
 _MEDIA_PATRON = "media (patron aritmetico)"
 
 NUCLEO_REFERENCE_TABLE: list[dict[str, object]] = [
-    {"nombre": "Madrid", "codigo_anexo_a": "1080", "codigo_observado_vivo": "1010",
-     "confianza": "alta (coordenadas + Anexo A)"},
-    {"nombre": "Sevilla", "codigo_anexo_a": "3080", "codigo_observado_vivo": "3010",
-     "confianza": _ALTA_COORDENADAS},
-    {"nombre": "Cadiz", "codigo_anexo_a": "3180", "codigo_observado_vivo": "3110",
-     "confianza": "media (patron aritmetico, no verificado individualmente por coordenadas)"},
-    {"nombre": "Malaga", "codigo_anexo_a": "3280", "codigo_observado_vivo": "3210",
-     "confianza": _MEDIA_PATRON},
-    {"nombre": "Valencia", "codigo_anexo_a": "4080", "codigo_observado_vivo": "4010",
-     "confianza": _MEDIA_PATRON},
-    {"nombre": "Alicante/Murcia", "codigo_anexo_a": "4180", "codigo_observado_vivo": "4110",
-     "confianza": _MEDIA_PATRON},
-    {"nombre": "Murcia-Cartagena", "codigo_anexo_a": "4580", "codigo_observado_vivo": "4510",
-     "confianza": _MEDIA_PATRON},
-    {"nombre": "Noroeste (ancho metrico)", "codigo_anexo_a": "4680", "codigo_observado_vivo": "4610",
-     "confianza": _MEDIA_PATRON},
-    {"nombre": "Leon", "codigo_anexo_a": "4780", "codigo_observado_vivo": "4710",
-     "confianza": _MEDIA_PATRON},
-    {"nombre": "Barcelona/Cataluna", "codigo_anexo_a": "5180", "codigo_observado_vivo": "5110",
-     "confianza": "alta (coordenadas verificadas en Fase 0, etiquetas R2S/R2N/R4)"},
-    {"nombre": "Bilbao", "codigo_anexo_a": "6080", "codigo_observado_vivo": "6010",
-     "confianza": _ALTA_COORDENADAS},
-    {"nombre": "San Sebastian", "codigo_anexo_a": "6180", "codigo_observado_vivo": "6110",
-     "confianza": _MEDIA_PATRON},
-    {"nombre": "Santander", "codigo_anexo_a": "6280", "codigo_observado_vivo": "6210",
-     "confianza": _ALTA_COORDENADAS},
-    {"nombre": "Zaragoza", "codigo_anexo_a": "7080", "codigo_observado_vivo": "7010",
-     "confianza": _ALTA_COORDENADAS},
+    {
+        "nombre": "Madrid",
+        "codigo_anexo_a": "1080",
+        "codigo_observado_vivo": "1010",
+        "confianza": "alta (coordenadas + Anexo A)",
+    },
+    {
+        "nombre": "Sevilla",
+        "codigo_anexo_a": "3080",
+        "codigo_observado_vivo": "3010",
+        "confianza": _ALTA_COORDENADAS,
+    },
+    {
+        "nombre": "Cadiz",
+        "codigo_anexo_a": "3180",
+        "codigo_observado_vivo": "3110",
+        "confianza": "media (patron aritmetico, no verificado individualmente por coordenadas)",
+    },
+    {
+        "nombre": "Malaga",
+        "codigo_anexo_a": "3280",
+        "codigo_observado_vivo": "3210",
+        "confianza": _MEDIA_PATRON,
+    },
+    {
+        "nombre": "Valencia",
+        "codigo_anexo_a": "4080",
+        "codigo_observado_vivo": "4010",
+        "confianza": _MEDIA_PATRON,
+    },
+    {
+        "nombre": "Alicante/Murcia",
+        "codigo_anexo_a": "4180",
+        "codigo_observado_vivo": "4110",
+        "confianza": _MEDIA_PATRON,
+    },
+    {
+        "nombre": "Murcia-Cartagena",
+        "codigo_anexo_a": "4580",
+        "codigo_observado_vivo": "4510",
+        "confianza": _MEDIA_PATRON,
+    },
+    {
+        "nombre": "Noroeste (ancho metrico)",
+        "codigo_anexo_a": "4680",
+        "codigo_observado_vivo": "4610",
+        "confianza": _MEDIA_PATRON,
+    },
+    {"nombre": "Leon", "codigo_anexo_a": "4780", "codigo_observado_vivo": "4710", "confianza": _MEDIA_PATRON},
+    {
+        "nombre": "Barcelona/Cataluna",
+        "codigo_anexo_a": "5180",
+        "codigo_observado_vivo": "5110",
+        "confianza": "alta (coordenadas verificadas en Fase 0, etiquetas R2S/R2N/R4)",
+    },
+    {
+        "nombre": "Bilbao",
+        "codigo_anexo_a": "6080",
+        "codigo_observado_vivo": "6010",
+        "confianza": _ALTA_COORDENADAS,
+    },
+    {
+        "nombre": "San Sebastian",
+        "codigo_anexo_a": "6180",
+        "codigo_observado_vivo": "6110",
+        "confianza": _MEDIA_PATRON,
+    },
+    {
+        "nombre": "Santander",
+        "codigo_anexo_a": "6280",
+        "codigo_observado_vivo": "6210",
+        "confianza": _ALTA_COORDENADAS,
+    },
+    {
+        "nombre": "Zaragoza",
+        "codigo_anexo_a": "7080",
+        "codigo_observado_vivo": "7010",
+        "confianza": _ALTA_COORDENADAS,
+    },
 ]
 
 
@@ -158,8 +209,7 @@ def main() -> int:  # noqa: PLR0915 - orquestacion secuencial de un CLI, se mant
         static_index = build_static_schedule_index(outcome.version_dir)
         gtfs_source_used = outcome.source_used.source_name
         print(
-            f"GTFS estatico: fuente usada = {gtfs_source_used}, "
-            f"{static_index.trip_count()} trips indexados"
+            f"GTFS estatico: fuente usada = {gtfs_source_used}, {static_index.trip_count()} trips indexados"
         )
         for attempt in outcome.attempts:
             if not attempt.ok:
@@ -196,7 +246,12 @@ def main() -> int:  # noqa: PLR0915 - orquestacion secuencial de un CLI, se mant
         with (Path(config.fixtures_dir) / "vehicle_positions_madrid.json").open(encoding="utf-8") as f:
             payload = json.load(f)
 
-    result = normalize_feed_payload(payload, nucleo_filter=nucleo_filter, static_index=static_index)
+    result = normalize_feed_payload(
+        payload,
+        nucleo_filter=nucleo_filter,
+        static_index=static_index,
+        min_displacement_meters=config.bearing_min_displacement_meters,
+    )
     print(
         f"Feed ({feed_source}): {result.total_entities_in_payload} entidades totales, "
         f"{result.madrid_entities_after_filter} tras filtro de nucleo Madrid, "
@@ -228,9 +283,7 @@ def main() -> int:  # noqa: PLR0915 - orquestacion secuencial de un CLI, se mant
     c9_with_position = [o for o in c9_observations if o.has_position]
 
     # --- 5. Correlacion de estaciones ---
-    stop_ids_seen = {
-        o.stop_id_resolvable for o in result.observations if o.stop_id_resolvable is not None
-    }
+    stop_ids_seen = {o.stop_id_resolvable for o in result.observations if o.stop_id_resolvable is not None}
     station_mappings = _resolve_station_mappings(stop_ids_seen, static_index, adif_dependencias)
     by_method = Counter(m.mapping_method for m in station_mappings)
 
@@ -242,7 +295,7 @@ def main() -> int:  # noqa: PLR0915 - orquestacion secuencial de un CLI, se mant
         "generated_at": datetime.now(tz=UTC).isoformat(),
         "gtfs_source_used": gtfs_source_used,
         "total_stations": len(station_mappings),
-        "stations": [asdict_station_mapping(m) for m in station_mappings],
+        "stations": [m.model_dump(mode="json") for m in station_mappings],
     }
     estaciones_path.write_text(
         json.dumps(estaciones_payload, indent=2, ensure_ascii=False, default=str), encoding="utf-8"
@@ -291,11 +344,6 @@ def main() -> int:  # noqa: PLR0915 - orquestacion secuencial de un CLI, se mant
     _write_coverage_report(informe_path, report_data)
     print(f"\nInformes escritos:\n  {estaciones_path}\n  {nucleos_path}\n  {informe_path}")
     return 0
-
-
-def asdict_station_mapping(mapping: StationMapping) -> dict[str, object]:
-    data = mapping.model_dump(mode="json")
-    return data
 
 
 @dataclass(frozen=True)
@@ -379,7 +427,7 @@ def _lines_and_c9_section(d: CoverageReportData) -> list[str]:
             f"en esta ejecucion, de las cuales {len(d.c9_with_position)} incluyen bloque "
             '`position` (GPS). Esto contradice la nota del Anexo A.3 ("C9 no aparecio en la '
             'captura"): en una descarga en vivo del 31/07/2026, C9 SI emitio posicion. Se '
-            'recomienda actualizar el Anexo A / eliminar cualquier logica de UI que oculte C9 '
+            "recomienda actualizar el Anexo A / eliminar cualquier logica de UI que oculte C9 "
             'por "sin tiempo real".'
         )
     else:

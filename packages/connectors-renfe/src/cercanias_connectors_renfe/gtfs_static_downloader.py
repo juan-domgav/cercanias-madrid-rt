@@ -68,8 +68,6 @@ modo de ejemplo, no como obligatorios."""
 class GtfsStaticSource:
     name: str
     url: str
-    verify_tls: bool = True
-    requires_auth_note: str | None = None
 
 
 DEFAULT_SOURCES: tuple[GtfsStaticSource, ...] = (
@@ -78,7 +76,6 @@ DEFAULT_SOURCES: tuple[GtfsStaticSource, ...] = (
     GtfsStaticSource(
         name="ssl.renfe.com",
         url="https://ssl.renfe.com/ftransit/Fichero_CER_FOMENTO/fomento_transit.zip",
-        verify_tls=True,
     ),
 )
 
@@ -137,8 +134,7 @@ class GtfsStaticUnavailableError(RuntimeError):
         self.attempts = attempts
         summary = "; ".join(f"{a.source_name}: {a.reason}" for a in attempts)
         super().__init__(
-            "Ninguna de las fuentes de GTFS estatico respondio con un ZIP valido. "
-            f"Intentos: {summary}"
+            f"Ninguna de las fuentes de GTFS estatico respondio con un ZIP valido. Intentos: {summary}"
         )
 
 
@@ -209,9 +205,7 @@ def inspect_zip_members(zf: zipfile.ZipFile) -> None:
                 )
         total_uncompressed += info.file_size
         if total_uncompressed > MAX_UNCOMPRESSED_BYTES:
-            raise ZipSafetyError(
-                f"el ZIP se expandiria a mas de {MAX_UNCOMPRESSED_BYTES} bytes"
-            )
+            raise ZipSafetyError(f"el ZIP se expandiria a mas de {MAX_UNCOMPRESSED_BYTES} bytes")
 
 
 def extract_allowlisted(zf: zipfile.ZipFile, dest_dir: Path) -> tuple[str, ...]:
@@ -233,9 +227,7 @@ def extract_allowlisted(zf: zipfile.ZipFile, dest_dir: Path) -> tuple[str, ...]:
             while chunk := src.read(64 * 1024):
                 written += len(chunk)
                 if written > MAX_MEMBER_UNCOMPRESSED_BYTES:
-                    raise ZipSafetyError(
-                        f"miembro {filename!r} excede el limite al descomprimir"
-                    )
+                    raise ZipSafetyError(f"miembro {filename!r} excede el limite al descomprimir")
                 dst.write(chunk)
         extracted.append(filename)
     return tuple(extracted)
@@ -297,26 +289,13 @@ def validate_zip_bytes(data: bytes) -> ZipValidationResult:
             missing = tuple(c for c in required_columns if c not in header)
             row_count = sum(1 for _ in reader)
         results.append(
-            CsvValidationResult(
-                filename=filename, present=True, missing_columns=missing, row_count=row_count
-            )
+            CsvValidationResult(filename=filename, present=True, missing_columns=missing, row_count=row_count)
         )
 
     all_valid = bad_file is None and all(r.valid for r in results)
     return ZipValidationResult(
         valid=all_valid, bad_file_in_zip=bad_file, files=tuple(results), namelist=namelist
     )
-
-
-@dataclass(frozen=True)
-class VersionManifestEntry:
-    version: str
-    source_name: str
-    source_url: str
-    etag: str | None
-    last_modified: str | None
-    downloaded_at: str
-    directory: str
 
 
 @dataclass(frozen=True)

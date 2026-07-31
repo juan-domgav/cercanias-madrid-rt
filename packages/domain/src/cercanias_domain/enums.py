@@ -53,6 +53,4 @@ class MappingMethod(StrEnum):
 
     EXACT_CODE = "exact_code"
     EXACT_NAME = "exact_name"
-    SPATIAL = "spatial"
-    MANUAL = "manual"
     UNRESOLVED = "unresolved"

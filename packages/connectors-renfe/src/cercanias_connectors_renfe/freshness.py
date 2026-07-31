@@ -49,9 +49,7 @@ class FreshnessReport:
     publicador entre despliegues."""
 
 
-def _sample(
-    url: str, client: httpx.Client, timeout_seconds: float
-) -> FreshnessSample:
+def _sample(url: str, client: httpx.Client, timeout_seconds: float) -> FreshnessSample:
     before = time.time()
     payload = fetch_vehicle_positions_payload(url, client=client, timeout_seconds=timeout_seconds)
     after = time.time()

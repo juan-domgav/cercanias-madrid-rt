@@ -18,6 +18,7 @@ from cercanias_connectors_renfe.raw_feed import (
     SkippedEntity,
     parse_vehicle_positions_payload,
 )
+from cercanias_domain.bearing import DEFAULT_MIN_DISPLACEMENT_METERS
 from cercanias_domain.models import VehicleObservation
 from cercanias_domain.normalize import normalize_entity
 from cercanias_domain.nucleo_filter import NucleoFilter
@@ -68,6 +69,7 @@ def normalize_feed_payload(
     nucleo_filter: NucleoFilter,
     static_index: StaticScheduleIndex | None = None,
     state_repository: CurrentStateRepository | None = None,
+    min_displacement_meters: float = DEFAULT_MIN_DISPLACEMENT_METERS,
 ) -> NormalizedFeedResult:
     """Pipeline completo: parseo crudo -> filtro de núcleo -> normalización.
 
@@ -85,6 +87,7 @@ def normalize_feed_payload(
             entity,
             static_index=static_index,
             state_repository=state_repository,
+            min_displacement_meters=min_displacement_meters,
         )
         if observation is None:
             unparseable.append(entity.trip_id)

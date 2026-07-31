@@ -69,9 +69,7 @@ class InMemoryCurrentStateRepository:
         with self._lock:
             existing = self._states.get(observation.vehicle_id)
             previous = existing.current if existing is not None else None
-            self._states[observation.vehicle_id] = _VehicleState(
-                current=observation, previous=previous
-            )
+            self._states[observation.vehicle_id] = _VehicleState(current=observation, previous=previous)
 
     def snapshot_size(self) -> int:
         with self._lock:

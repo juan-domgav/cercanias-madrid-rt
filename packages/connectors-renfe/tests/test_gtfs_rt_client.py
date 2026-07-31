@@ -93,9 +93,7 @@ def test_bearing_is_numeric_on_second_pass_with_displaced_fixture() -> None:
     normalize_feed_payload(first_payload, nucleo_filter=nucleo_filter, state_repository=repo)
 
     second_payload = _load("vehicle_positions_madrid_desplazado.json")
-    second_result = normalize_feed_payload(
-        second_payload, nucleo_filter=nucleo_filter, state_repository=repo
-    )
+    second_result = normalize_feed_payload(second_payload, nucleo_filter=nucleo_filter, state_repository=repo)
 
     assert len(second_result.observations) == 13
     assert all(o.bearing_degrees is not None for o in second_result.observations)

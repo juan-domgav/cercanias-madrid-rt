@@ -24,8 +24,9 @@ trips): no es una fuente fiable de la etiqueta de sentido.
 from __future__ import annotations
 
 import csv
-import io
 from collections import defaultdict
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -40,9 +41,10 @@ class StaticStopInfo:
     longitude: float | None
 
 
-def _open_csv(path: Path) -> csv.DictReader[str]:
-    text = path.read_text(encoding="utf-8-sig")
-    return csv.DictReader(io.StringIO(text))
+@contextmanager
+def _open_csv(path: Path) -> Iterator[csv.DictReader[str]]:
+    with path.open(encoding="utf-8-sig", newline="") as file:
+        yield csv.DictReader(file)
 
 
 def _clean(value: str | None) -> str:
@@ -57,13 +59,14 @@ def _derive_route_directions(routes_path: Path) -> tuple[dict[str, int], dict[st
     route_ids_by_short_name: dict[str, list[str]] = defaultdict(list)
     short_name_by_route_id: dict[str, str] = {}
 
-    for row in _open_csv(routes_path):
-        route_id = _clean(row.get("route_id"))
-        short_name = _clean(row.get("route_short_name"))
-        if not route_id:
-            continue
-        short_name_by_route_id[route_id] = short_name
-        route_ids_by_short_name[short_name].append(route_id)
+    with _open_csv(routes_path) as reader:
+        for row in reader:
+            route_id = _clean(row.get("route_id"))
+            short_name = _clean(row.get("route_short_name"))
+            if not route_id:
+                continue
+            short_name_by_route_id[route_id] = short_name
+            route_ids_by_short_name[short_name].append(route_id)
 
     direction_by_route_id: dict[str, int] = {}
     for route_ids in route_ids_by_short_name.values():
@@ -79,61 +82,58 @@ def _read_trips(
     short_name_by_route_id: dict[str, str],
 ) -> dict[str, TripStaticInfo]:
     trips: dict[str, TripStaticInfo] = {}
-    for row in _open_csv(trips_path):
-        trip_id = _clean(row.get("trip_id"))
-        route_id = _clean(row.get("route_id"))
-        if not trip_id or not route_id:
-            continue
-        headsign = _clean(row.get("trip_headsign")) or None
-        trips[trip_id] = TripStaticInfo(
-            route_id=route_id,
-            route_short_name=short_name_by_route_id.get(route_id, ""),
-            direction_id=direction_by_route_id.get(route_id),
-            trip_headsign=headsign,
-            direction_derived=True,
-        )
+    with _open_csv(trips_path) as reader:
+        for row in reader:
+            trip_id = _clean(row.get("trip_id"))
+            route_id = _clean(row.get("route_id"))
+            if not trip_id or not route_id:
+                continue
+            headsign = _clean(row.get("trip_headsign")) or None
+            trips[trip_id] = TripStaticInfo(
+                route_id=route_id,
+                route_short_name=short_name_by_route_id.get(route_id, ""),
+                direction_id=direction_by_route_id.get(route_id),
+                trip_headsign=headsign,
+                direction_derived=True,
+            )
     return trips
 
 
 def _read_stops(stops_path: Path) -> dict[str, StaticStopInfo]:
     stops: dict[str, StaticStopInfo] = {}
-    for row in _open_csv(stops_path):
-        stop_id = _clean(row.get("stop_id"))
-        if not stop_id:
-            continue
-        lat_raw = row.get("stop_lat")
-        lon_raw = row.get("stop_lon")
-        try:
-            lat = float(lat_raw) if lat_raw else None
-        except ValueError:
-            lat = None
-        try:
-            lon = float(lon_raw) if lon_raw else None
-        except ValueError:
-            lon = None
-        stops[stop_id] = StaticStopInfo(
-            stop_id=stop_id,
-            stop_name=_clean(row.get("stop_name")),
-            latitude=lat,
-            longitude=lon,
-        )
+    with _open_csv(stops_path) as reader:
+        for row in reader:
+            stop_id = _clean(row.get("stop_id"))
+            if not stop_id:
+                continue
+            lat_raw = row.get("stop_lat")
+            lon_raw = row.get("stop_lon")
+            try:
+                lat = float(lat_raw) if lat_raw else None
+            except ValueError:
+                lat = None
+            try:
+                lon = float(lon_raw) if lon_raw else None
+            except ValueError:
+                lon = None
+            stops[stop_id] = StaticStopInfo(
+                stop_id=stop_id,
+                stop_name=_clean(row.get("stop_name")),
+                latitude=lat,
+                longitude=lon,
+            )
     return stops
 
 
 class CsvStaticScheduleIndex:
     """Implementa ``cercanias_domain.ports.StaticScheduleIndex`` a partir de CSVs."""
 
-    def __init__(
-        self, trips: dict[str, TripStaticInfo], stops: dict[str, StaticStopInfo]
-    ) -> None:
+    def __init__(self, trips: dict[str, TripStaticInfo], stops: dict[str, StaticStopInfo]) -> None:
         self._trips = trips
         self._stops = stops
 
     def lookup_trip(self, trip_id: str) -> TripStaticInfo | None:
         return self._trips.get(trip_id)
-
-    def has_stop(self, stop_id: str) -> bool:
-        return stop_id in self._stops
 
     def get_stop(self, stop_id: str) -> StaticStopInfo | None:
         return self._stops.get(stop_id)
@@ -147,9 +147,7 @@ class CsvStaticScheduleIndex:
 
 def build_static_schedule_index(gtfs_dir: Path) -> CsvStaticScheduleIndex:
     """Construye el indice a partir de un directorio con el GTFS estatico ya extraido."""
-    direction_by_route_id, short_name_by_route_id = _derive_route_directions(
-        gtfs_dir / "routes.txt"
-    )
+    direction_by_route_id, short_name_by_route_id = _derive_route_directions(gtfs_dir / "routes.txt")
     trips = _read_trips(gtfs_dir / "trips.txt", direction_by_route_id, short_name_by_route_id)
     stops = _read_stops(gtfs_dir / "stops.txt")
     return CsvStaticScheduleIndex(trips, stops)

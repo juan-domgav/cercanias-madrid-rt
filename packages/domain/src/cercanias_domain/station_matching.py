@@ -32,8 +32,3 @@ def normalize_station_name(name: str) -> str:
             break
     collapsed = _PUNCTUATION_RE.sub("-", without_accents).strip("-")
     return collapsed
-
-
-def is_five_digit_code(stop_id: str) -> bool:
-    """¿Tiene ``stop_id`` la forma de código numérico de 5 dígitos de Renfe (C-10)?"""
-    return bool(re.fullmatch(r"\d{5}", stop_id))

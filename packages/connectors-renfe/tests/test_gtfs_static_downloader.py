@@ -20,8 +20,7 @@ MINIMAL_GTFS_FILES = {
     "trips.txt": "route_id,service_id,trip_id,trip_headsign\n10T0001C1,1080J,1080J20316C4a,\n",
     "stops.txt": "stop_id,stop_name,stop_lat,stop_lon\n18000,Madrid-Atocha,40.4066191,-3.6894391\n",
     "stop_times.txt": (
-        "trip_id,arrival_time,departure_time,stop_id,stop_sequence\n"
-        "1080J20316C4a,10:00:00,10:00:00,18000,1\n"
+        "trip_id,arrival_time,departure_time,stop_id,stop_sequence\n1080J20316C4a,10:00:00,10:00:00,18000,1\n"
     ),
     "calendar.txt": (
         "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\n"
@@ -111,9 +110,7 @@ def test_download_detects_no_change_via_etag(tmp_path: Path) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if "ssl.renfe.com" in str(request.url):
             call_count["n"] += 1
-            return httpx.Response(
-                200, content=_build_zip_bytes(), headers={"etag": '"same-etag"'}
-            )
+            return httpx.Response(200, content=_build_zip_bytes(), headers={"etag": '"same-etag"'})
         return httpx.Response(200, html="<html>no</html>")
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
@@ -130,9 +127,7 @@ def test_download_detects_change_via_new_etag(tmp_path: Path) -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         if "ssl.renfe.com" in str(request.url):
-            return httpx.Response(
-                200, content=_build_zip_bytes(), headers={"etag": etag_holder["value"]}
-            )
+            return httpx.Response(200, content=_build_zip_bytes(), headers={"etag": etag_holder["value"]})
         return httpx.Response(200, html="<html>no</html>")
 
     client = httpx.Client(transport=httpx.MockTransport(handler))

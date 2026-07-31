@@ -15,7 +15,6 @@ from datetime import UTC, datetime
 from cercanias_domain.bearing import DEFAULT_MIN_DISPLACEMENT_METERS, GeoPoint, compute_bearing
 from cercanias_domain.enums import BearingSource, ResolutionMethod, VehicleStatus
 from cercanias_domain.models import VehicleObservation
-from cercanias_domain.nucleo_filter import NucleoFilter
 from cercanias_domain.platform import parse_platform
 from cercanias_domain.ports import CurrentStateRepository, StaticScheduleIndex
 from cercanias_domain.trip_id import parse_trip_id
@@ -148,10 +147,3 @@ def normalize_entity(
         state_repository.update(observation)
 
     return observation
-
-
-def filter_madrid_entities(
-    entities: list[RawVehicleEntity], nucleo_filter: NucleoFilter
-) -> list[RawVehicleEntity]:
-    """Aplica el filtro de núcleo (A.2/C-3). Nunca filtra por etiqueta de línea."""
-    return [e for e in entities if nucleo_filter.matches(e.trip_id)]

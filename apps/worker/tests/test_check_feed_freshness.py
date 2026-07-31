@@ -32,9 +32,7 @@ def _fake_report() -> FreshnessReport:
     )
 
 
-def test_main_writes_markdown_report_on_success(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_main_writes_markdown_report_on_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("REPORTS_DIR", str(tmp_path))
     monkeypatch.setattr(module, "measure_feed_freshness", lambda *a, **k: _fake_report())
 
@@ -48,9 +46,7 @@ def test_main_writes_markdown_report_on_success(
     assert "feed_clock_skew_seconds" in content
 
 
-def test_main_handles_fetch_error_gracefully(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_main_handles_fetch_error_gracefully(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("REPORTS_DIR", str(tmp_path))
 
     def _raise(*args: object, **kwargs: object) -> FreshnessReport:

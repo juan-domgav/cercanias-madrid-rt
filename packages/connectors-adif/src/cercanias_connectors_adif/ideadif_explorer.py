@@ -10,11 +10,12 @@ disponible).
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from xml.etree import ElementTree as ET
 
 import httpx
+
+from cercanias_connectors_adif._xml import iter_children_named, iter_descendants_named
 
 DEFAULT_TIMEOUT_SECONDS = 20.0
 HTTP_OK = 200
@@ -24,12 +25,6 @@ HTTP_OK = 200
 # responde: ese es precisamente el objetivo del explorador.
 WMS_CAPABILITIES_URL = "https://ideadif.adif.es/geoserver/wms?service=WMS&request=GetCapabilities"
 WFS_CAPABILITIES_URL = "https://ideadif.adif.es/geoserver/wfs?service=WFS&request=GetCapabilities"
-
-_NAMESPACE_STRIP_RE = re.compile(r"\{[^}]*\}")
-
-
-def _localname(tag: str) -> str:
-    return _NAMESPACE_STRIP_RE.sub("", tag)
 
 
 @dataclass(frozen=True)
@@ -43,9 +38,7 @@ class CapabilitiesResult:
     layer_or_typenames: tuple[str, ...]
 
 
-def _fetch_xml(
-    url: str, service_label: str, client: httpx.Client
-) -> CapabilitiesResult:
+def _fetch_xml(url: str, service_label: str, client: httpx.Client) -> CapabilitiesResult:
     try:
         response = client.get(url)
     except httpx.HTTPError as exc:
@@ -87,17 +80,13 @@ def _fetch_xml(
 
     names: list[str] = []
     if service_label == "WMS":
-        for layer in root.iter():
-            if _localname(layer.tag) != "Layer":
-                continue
-            name_el = next((c for c in layer if _localname(c.tag) == "Name"), None)
+        for layer in iter_descendants_named(root, "Layer"):
+            name_el = next(iter_children_named(layer, "Name"), None)
             if name_el is not None and name_el.text:
                 names.append(name_el.text.strip())
     else:  # WFS
-        for feature_type in root.iter():
-            if _localname(feature_type.tag) != "FeatureType":
-                continue
-            name_el = next((c for c in feature_type if _localname(c.tag) == "Name"), None)
+        for feature_type in iter_descendants_named(root, "FeatureType"):
+            name_el = next(iter_children_named(feature_type, "Name"), None)
             if name_el is not None and name_el.text:
                 names.append(name_el.text.strip())
 

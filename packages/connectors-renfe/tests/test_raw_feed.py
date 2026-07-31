@@ -90,9 +90,7 @@ def test_entity_without_trip_id_is_skipped() -> None:
 def test_entity_without_vehicle_vehicle_id_is_skipped() -> None:
     payload = {
         "header": {"timestamp": "123"},
-        "entity": [
-            {"id": "broken", "vehicle": {"trip": {"tripId": "1080J1C1"}, "vehicle": {}}}
-        ],
+        "entity": [{"id": "broken", "vehicle": {"trip": {"tripId": "1080J1C1"}, "vehicle": {}}}],
     }
     result = parse_vehicle_positions_payload(payload)
     assert result.entities == []

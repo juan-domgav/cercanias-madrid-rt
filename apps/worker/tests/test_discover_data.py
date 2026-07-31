@@ -100,9 +100,7 @@ def test_main_degrades_gracefully_when_only_feed_and_adif_fail(
             attempts=[attempt],
             version_dir=tmp_path / "gtfs_static" / "v1",
             changed=True,
-            validation=ZipValidationResult(
-                valid=True, bad_file_in_zip=None, files=(), namelist=()
-            ),
+            validation=ZipValidationResult(valid=True, bad_file_in_zip=None, files=(), namelist=()),
         )
 
     def _raise_feed(*args: object, **kwargs: object) -> None:
@@ -168,9 +166,7 @@ def test_main_reports_full_resolution_with_working_static_index(
 
     monkeypatch.setattr(module, "download_gtfs_static", _fake_download)
     monkeypatch.setattr(module, "build_static_schedule_index", lambda _dir: fake_index)
-    monkeypatch.setattr(
-        module, "fetch_vehicle_positions_payload", lambda *a, **k: fixture_payload
-    )
+    monkeypatch.setattr(module, "fetch_vehicle_positions_payload", lambda *a, **k: fixture_payload)
     monkeypatch.setattr(
         module,
         "fetch_adif_dependencias",

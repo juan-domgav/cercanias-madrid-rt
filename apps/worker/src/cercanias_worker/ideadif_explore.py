@@ -20,6 +20,7 @@ from cercanias_connectors_adif.ideadif_explorer import (
     WMS_CAPABILITIES_URL,
     explore_ideadif_capabilities,
 )
+from cercanias_worker.config import WorkerConfig
 
 # Los dos "servicios INSPIRE genericos" documentados publicamente, MAS los
 # dos "servicios de tramificacion" descubiertos en Fase 0 inspeccionando el
@@ -30,7 +31,7 @@ TRAMIFICACION_WFS_URL = "https://ideadif.adif.es/gservices/Tramificacion/wfs?req
 
 
 def main() -> int:
-    out_dir = Path("docs/informes")
+    out_dir = Path(WorkerConfig().reports_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "ideadif-capacidades.json"
 
@@ -38,9 +39,7 @@ def main() -> int:
     generic = explore_ideadif_capabilities(wms_url=WMS_CAPABILITIES_URL, wfs_url=WFS_CAPABILITIES_URL)
 
     print("Consultando GetCapabilities de Tramificacion (WMS + WFS)...")
-    tramificacion = explore_ideadif_capabilities(
-        wms_url=TRAMIFICACION_WMS_URL, wfs_url=TRAMIFICACION_WFS_URL
-    )
+    tramificacion = explore_ideadif_capabilities(wms_url=TRAMIFICACION_WMS_URL, wfs_url=TRAMIFICACION_WFS_URL)
 
     payload = {
         "generated_at": datetime.now(tz=UTC).isoformat(),

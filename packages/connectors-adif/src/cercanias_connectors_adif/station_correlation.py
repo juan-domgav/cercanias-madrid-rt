@@ -37,17 +37,14 @@ from xml.etree import ElementTree as ET
 
 import httpx
 
+from cercanias_connectors_adif._xml import iter_member_features, localname
+
 DEFAULT_TIMEOUT_SECONDS = 30.0
 
 DEPENDENCIAS_WFS_URL = "https://ideadif.adif.es/gservices/Tramificacion/wfs"
 DEPENDENCIAS_TYPE_NAME = "Tramificacion:Dependencias"
 
-_NAMESPACE_STRIP_RE = re.compile(r"\{[^}]*\}")
 _FIVE_DIGIT_RE = re.compile(r"^\d{5}$")
-
-
-def _localname(tag: str) -> str:
-    return _NAMESPACE_STRIP_RE.sub("", tag)
 
 
 @dataclass(frozen=True)
@@ -99,9 +96,7 @@ def fetch_adif_dependencias(
         try:
             root = ET.fromstring(response.content)
         except ET.ParseError as exc:
-            raise AdifDependenciasUnavailableError(
-                f"Respuesta de {url} no es XML valido: {exc}"
-            ) from exc
+            raise AdifDependenciasUnavailableError(f"Respuesta de {url} no es XML valido: {exc}") from exc
     except httpx.HTTPError as exc:
         raise AdifDependenciasUnavailableError(f"Fallo al consultar {url}: {exc}") from exc
     finally:
@@ -109,18 +104,15 @@ def fetch_adif_dependencias(
             http_client.close()
 
     results: list[AdifDependencia] = []
-    for member in root:
-        for feature in member:
-            if _localname(feature.tag) != "Dependencias":
-                continue
-            fields = {_localname(c.tag): (c.text or "").strip() for c in feature}
-            if "cod_depend" not in fields:
-                continue
-            results.append(
-                AdifDependencia(
-                    nombre=fields.get("nombre", ""),
-                    cod_depend=fields["cod_depend"],
-                    cod_tipo_d=fields.get("cod_tipo_d", ""),
-                )
+    for feature in iter_member_features(root, "Dependencias"):
+        fields = {localname(c.tag): (c.text or "").strip() for c in feature}
+        if "cod_depend" not in fields:
+            continue
+        results.append(
+            AdifDependencia(
+                nombre=fields.get("nombre", ""),
+                cod_depend=fields["cod_depend"],
+                cod_tipo_d=fields.get("cod_tipo_d", ""),
             )
+        )
     return results

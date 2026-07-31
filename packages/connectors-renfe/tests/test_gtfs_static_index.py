@@ -70,11 +70,9 @@ def test_unknown_trip_id_returns_none(tmp_path: Path) -> None:
     assert index.lookup_trip("no-existe") is None
 
 
-def test_has_stop_and_get_stop(tmp_path: Path) -> None:
+def test_get_stop(tmp_path: Path) -> None:
     gtfs_dir = _write_gtfs(tmp_path)
     index = build_static_schedule_index(gtfs_dir)
-    assert index.has_stop("18000") is True
-    assert index.has_stop("00000") is False
     stop = index.get_stop("17000")
     assert stop is not None
     assert stop.stop_name == "Madrid-Chamartin"

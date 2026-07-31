@@ -7,9 +7,7 @@ from cercanias_domain.models import VehicleObservation
 from cercanias_persistence.in_memory_state_repository import InMemoryCurrentStateRepository
 
 
-def _obs(
-    vehicle_id: str, lat: float, lon: float, bearing: float | None = None
-) -> VehicleObservation:
+def _obs(vehicle_id: str, lat: float, lon: float, bearing: float | None = None) -> VehicleObservation:
     return VehicleObservation(
         entity_id=f"VP_{vehicle_id}",
         vehicle_id=vehicle_id,
