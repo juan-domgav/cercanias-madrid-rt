@@ -194,21 +194,25 @@ def evaluate_feed_health(data: FeedHealthInput) -> HealthReport:
             )
         )
 
-    invariants.append(_rate_invariant(
-        name="trip_id_resolution",
-        observed=(data.trips_resolved, count),
-        minimum=MIN_RESOLUTION_RATE,
-        what="trip_id resueltos contra el GTFS estatico",
-        hint="sintoma de GTFS estatico desactualizado o de cambio de formato de tripId",
-    ))
+    invariants.append(
+        _rate_invariant(
+            name="trip_id_resolution",
+            observed=(data.trips_resolved, count),
+            minimum=MIN_RESOLUTION_RATE,
+            what="trip_id resueltos contra el GTFS estatico",
+            hint="sintoma de GTFS estatico desactualizado o de cambio de formato de tripId",
+        )
+    )
 
-    invariants.append(_rate_invariant(
-        name="delay_coverage",
-        observed=(data.trip_updates_with_delay, data.trip_updates_total),
-        minimum=MIN_DELAY_COVERAGE_RATE,
-        what="tripUpdate con retraso publicado",
-        hint="sin esto el producto no puede responder a su pregunta central",
-    ))
+    invariants.append(
+        _rate_invariant(
+            name="delay_coverage",
+            observed=(data.trip_updates_with_delay, data.trip_updates_total),
+            minimum=MIN_DELAY_COVERAGE_RATE,
+            what="tripUpdate con retraso publicado",
+            hint="sin esto el producto no puede responder a su pregunta central",
+        )
+    )
 
     skew = abs(data.feed_skew_seconds)
     invariants.append(
@@ -242,8 +246,5 @@ def _rate_invariant(
     return Invariant(
         name=name,
         severity=Severity.CRITICAL,
-        detail=(
-            f"solo {numerator}/{denominator} ({rate:.1%}) {what}; "
-            f"minimo exigido {minimum:.0%}. {hint}."
-        ),
+        detail=(f"solo {numerator}/{denominator} ({rate:.1%}) {what}; minimo exigido {minimum:.0%}. {hint}."),
     )

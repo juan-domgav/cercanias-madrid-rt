@@ -20,9 +20,7 @@ def _notifier(handler, *, sleep=None, monotonic=None):  # type: ignore[no-untype
         sleep=sleep or (lambda _s: None),
         monotonic=monotonic or (lambda: 0.0),
     )
-    return TelegramNotifier(
-        token=TOKEN, chat_id="@canal_pruebas", client=client, options=options
-    )
+    return TelegramNotifier(token=TOKEN, chat_id="@canal_pruebas", client=client, options=options)
 
 
 def test_dry_run_no_necesita_token_ni_envia() -> None:
@@ -59,9 +57,7 @@ def test_429_respeta_retry_after_del_cuerpo() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         intentos["n"] += 1
         if intentos["n"] == 1:
-            return httpx.Response(
-                429, json={"ok": False, "parameters": {"retry_after": 7}}
-            )
+            return httpx.Response(429, json={"ok": False, "parameters": {"retry_after": 7}})
         return httpx.Response(200, json={"ok": True})
 
     notifier = _notifier(handler, sleep=esperas.append)

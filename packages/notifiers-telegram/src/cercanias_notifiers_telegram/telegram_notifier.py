@@ -144,9 +144,7 @@ class TelegramNotifier:
         self._chat_id = chat_id if chat_id is not None else os.environ.get("TELEGRAM_CHAT_ID")
         self._client = client
         self._owns_client = client is None
-        self._limiter = _RateLimiter(
-            monotonic=self._options.monotonic, sleep=self._options.sleep
-        )
+        self._limiter = _RateLimiter(monotonic=self._options.monotonic, sleep=self._options.sleep)
 
         if not self._options.dry_run:
             if not self._token:
@@ -156,9 +154,7 @@ class TelegramNotifier:
                     "Alternativamente usa dry_run para probar sin enviar."
                 )
             if not self._chat_id:
-                raise TelegramConfigError(
-                    "falta TELEGRAM_CHAT_ID (id numerico de chat, o @nombre_del_canal)"
-                )
+                raise TelegramConfigError("falta TELEGRAM_CHAT_ID (id numerico de chat, o @nombre_del_canal)")
 
     @property
     def configured(self) -> bool:
@@ -224,9 +220,7 @@ class TelegramNotifier:
             return _AttemptResult(True, False, 0.0, "ok")
 
         detail = _redact(f"HTTP {response.status_code}: {response.text[:200]}", self._token)
-        client_error = (
-            HTTP_CLIENT_ERROR_START <= response.status_code < HTTP_SERVER_ERROR_START
-        )
+        client_error = HTTP_CLIENT_ERROR_START <= response.status_code < HTTP_SERVER_ERROR_START
         # Un 4xx (chat inexistente, bot bloqueado) no mejora reintentando.
         return _AttemptResult(False, client_error, backoff, detail)
 

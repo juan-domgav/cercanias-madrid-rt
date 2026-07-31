@@ -89,8 +89,7 @@ def fetch_trip_updates_payload(
         response.raise_for_status()
         if len(response.content) > MAX_RESPONSE_BYTES:
             raise TripUpdatesFetchError(
-                f"{url} devolvio {len(response.content)} bytes, por encima del tope de "
-                f"{MAX_RESPONSE_BYTES}"
+                f"{url} devolvio {len(response.content)} bytes, por encima del tope de {MAX_RESPONSE_BYTES}"
             )
         payload = response.json()
     except httpx.HTTPError as exc:
@@ -135,9 +134,7 @@ def _entity_trip_id(entity: Any) -> str | None:
     return trip_id
 
 
-def _delay_for_trip(
-    trip_update: dict[str, Any], trip_id: str
-) -> tuple[TripDelay | None, int]:
+def _delay_for_trip(trip_update: dict[str, Any], trip_id: str) -> tuple[TripDelay | None, int]:
     """Retraso de un viaje y cuantos ``stopTimeUpdate`` malformados se descartaron.
 
     Se prueba primero ``stopTimeUpdate`` y, si no hay, el ``tripUpdate.delay`` a
@@ -183,9 +180,7 @@ def _delay_for_trip(
     return None, malformed
 
 
-def parse_trip_updates(
-    payload: dict[str, Any], *, nucleo_prefixes: tuple[str, ...]
-) -> TripUpdatesResult:
+def parse_trip_updates(payload: dict[str, Any], *, nucleo_prefixes: tuple[str, ...]) -> TripUpdatesResult:
     """Extrae los retrasos del núcleo indicado, sin estimar nada.
 
     Parseo defensivo POR ENTIDAD (R-8): una entidad malformada se descarta y se
@@ -193,9 +188,7 @@ def parse_trip_updates(
     """
     entities = payload.get("entity")
     if not isinstance(entities, list):
-        raise TripUpdatesFetchError(
-            f"'entity' es {type(entities).__name__}, se esperaba una lista"
-        )
+        raise TripUpdatesFetchError(f"'entity' es {type(entities).__name__}, se esperaba una lista")
 
     matched = 0
     skipped = 0

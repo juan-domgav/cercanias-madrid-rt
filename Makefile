@@ -31,6 +31,7 @@ help:
 	@echo "  make check-feed-freshness  - E2: mide el desfase real del feed (Anexo A.8)"
 	@echo "  make discover-data         - E7: informe de cobertura de estaciones y nucleos"
 	@echo "  make ideadif-explore       - E6: GetCapabilities WMS/WFS de IDEADIF"
+	@echo "  make mvp                   - bucle MVP end-to-end (snapshot + salud + Telegram)"
 	@echo "  make ci                    - lint + typecheck + test (lo que corre en GitHub Actions)"
 
 install:
@@ -77,6 +78,11 @@ discover-data: unhide
 
 ideadif-explore: unhide
 	uv run ideadif-explore
+
+# MVP ejecutable: sondea, evalua invariantes, publica snapshot y notifica.
+# Sin TELEGRAM_BOT_TOKEN funciona en dry-run.
+mvp: unhide
+	uv run mvp
 
 # Cada etapa en su propia invocacion de make: `unhide` es prerequisito de todas,
 # pero make solo lo ejecuta UNA vez por invocacion. Como cualquier `uv run`
