@@ -13,6 +13,7 @@ members = [
   "packages/connectors-adif",
   "packages/persistence",
   "apps/worker",
+  "packages/notifiers-telegram",
 ]
 
 [tool.uv.sources]
@@ -21,6 +22,7 @@ cercanias-connectors-renfe = { workspace = true }
 cercanias-connectors-adif = { workspace = true }
 cercanias-persistence = { workspace = true }
 cercanias-worker = { workspace = true }
+cercanias-notifiers-telegram = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -34,6 +36,7 @@ dev = [
   "cercanias-connectors-adif",
   "cercanias-persistence",
   "cercanias-worker",
+  "cercanias-notifiers-telegram",
 ]
 
 [tool.ruff]
@@ -45,6 +48,7 @@ src = [
   "packages/connectors-adif/src",
   "packages/persistence/src",
   "apps/worker/src",
+  "packages/notifiers-telegram/src",
 ]
 
 [tool.ruff.lint]
@@ -68,6 +72,7 @@ mypy_path = [
   "packages/connectors-adif/src",
   "packages/persistence/src",
   "apps/worker/src",
+  "packages/notifiers-telegram/src",
 ]
 
 [[tool.mypy.overrides]]
@@ -80,6 +85,7 @@ testpaths = [
   "packages/connectors-renfe/tests",
   "packages/connectors-adif/tests",
   "packages/persistence/tests",
+  "packages/notifiers-telegram/tests",
   "apps/worker/tests",
   "tests/contract",
 ]

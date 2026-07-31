@@ -57,7 +57,10 @@ DEFAULT_BANDS: tuple[tuple[time, time, ExpectedRange], ...] = (
 )
 
 
-def band_for(local_time: time, bands: tuple[tuple[time, time, ExpectedRange], ...] = DEFAULT_BANDS) -> ExpectedRange:
+def band_for(
+    local_time: time,
+    bands: tuple[tuple[time, time, ExpectedRange], ...] = DEFAULT_BANDS,
+) -> ExpectedRange:
     """Banda aplicable a una hora local, tratando el cruce de medianoche."""
     for start, end, expected in bands:
         if start <= end:
@@ -193,8 +196,7 @@ def evaluate_feed_health(data: FeedHealthInput) -> HealthReport:
 
     invariants.append(_rate_invariant(
         name="trip_id_resolution",
-        numerator=data.trips_resolved,
-        denominator=count,
+        observed=(data.trips_resolved, count),
         minimum=MIN_RESOLUTION_RATE,
         what="trip_id resueltos contra el GTFS estatico",
         hint="sintoma de GTFS estatico desactualizado o de cambio de formato de tripId",
@@ -202,8 +204,7 @@ def evaluate_feed_health(data: FeedHealthInput) -> HealthReport:
 
     invariants.append(_rate_invariant(
         name="delay_coverage",
-        numerator=data.trip_updates_with_delay,
-        denominator=data.trip_updates_total,
+        observed=(data.trip_updates_with_delay, data.trip_updates_total),
         minimum=MIN_DELAY_COVERAGE_RATE,
         what="tripUpdate con retraso publicado",
         hint="sin esto el producto no puede responder a su pregunta central",
@@ -222,8 +223,9 @@ def evaluate_feed_health(data: FeedHealthInput) -> HealthReport:
 
 
 def _rate_invariant(
-    *, name: str, numerator: int, denominator: int, minimum: float, what: str, hint: str
+    *, name: str, observed: tuple[int, int], minimum: float, what: str, hint: str
 ) -> Invariant:
+    numerator, denominator = observed
     if denominator == 0:
         return Invariant(
             name=name,

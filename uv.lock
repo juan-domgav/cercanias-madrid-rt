@@ -8,6 +8,7 @@ members = [
     "cercanias-connectors-renfe",
     "cercanias-domain",
     "cercanias-madrid-rt",
+    "cercanias-notifiers-telegram",
     "cercanias-persistence",
     "cercanias-worker",
 ]
@@ -109,6 +110,7 @@ dev = [
     { name = "cercanias-connectors-adif" },
     { name = "cercanias-connectors-renfe" },
     { name = "cercanias-domain" },
+    { name = "cercanias-notifiers-telegram" },
     { name = "cercanias-persistence" },
     { name = "cercanias-worker" },
     { name = "mypy" },
@@ -125,6 +127,7 @@ dev = [
     { name = "cercanias-connectors-adif", editable = "packages/connectors-adif" },
     { name = "cercanias-connectors-renfe", editable = "packages/connectors-renfe" },
     { name = "cercanias-domain", editable = "packages/domain" },
+    { name = "cercanias-notifiers-telegram", editable = "packages/notifiers-telegram" },
     { name = "cercanias-persistence", editable = "packages/persistence" },
     { name = "cercanias-worker", editable = "apps/worker" },
     { name = "mypy", specifier = ">=1.13" },
@@ -133,6 +136,17 @@ dev = [
     { name = "ruff", specifier = ">=0.8" },
     { name = "types-pyyaml", specifier = ">=6.0" },
 ]
+
+[[package]]
+name = "cercanias-notifiers-telegram"
+version = "0.1.0"
+source = { editable = "packages/notifiers-telegram" }
+dependencies = [
+    { name = "httpx" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "httpx", specifier = ">=0.27" }]
 
 [[package]]
 name = "cercanias-persistence"

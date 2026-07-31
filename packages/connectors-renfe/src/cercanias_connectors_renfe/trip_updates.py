@@ -15,7 +15,7 @@ paradas más allá. Ese cálculo hay que derivarlo de ``stop_times.txt`` y marca
 como estimación (ver R-5 en la arquitectura v2). Este módulo se limita a extraer
 fielmente lo que el feed publica; no estima nada.
 
-El rango observado de retrasos fue de −120 s a +12 180 s (3 h 23 min).
+El rango observado de retrasos fue de -120 s a +12 180 s (3 h 23 min).
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ class TripDelay:
     """Retraso publicado para un viaje, en su próxima parada.
 
     ``delay_seconds`` es positivo si va con retraso y negativo si se adelanta
-    (se observaron valores de hasta −120 s).
+    (se observaron valores de hasta -120 s).
     """
 
     trip_id: str
@@ -119,6 +119,70 @@ def _extract_delay(stop_time_update: dict[str, Any]) -> tuple[int, bool] | None:
     return None
 
 
+def _entity_trip_id(entity: Any) -> str | None:
+    """``tripId`` de una entidad, o ``None`` si la entidad no tiene forma valida."""
+    if not isinstance(entity, dict):
+        return None
+    trip_update = entity.get("tripUpdate")
+    if not isinstance(trip_update, dict):
+        return None
+    trip = trip_update.get("trip")
+    if not isinstance(trip, dict):
+        return None
+    trip_id = trip.get("tripId")
+    if not isinstance(trip_id, str) or not trip_id:
+        return None
+    return trip_id
+
+
+def _delay_for_trip(
+    trip_update: dict[str, Any], trip_id: str
+) -> tuple[TripDelay | None, int]:
+    """Retraso de un viaje y cuantos ``stopTimeUpdate`` malformados se descartaron.
+
+    Se prueba primero ``stopTimeUpdate`` y, si no hay, el ``tripUpdate.delay`` a
+    nivel de viaje (segunda fuente observada el 31/07/2026), que cubre las
+    entidades sin ``stopTimeUpdate`` pero con retraso agregado.
+    """
+    malformed = 0
+    updates = trip_update.get("stopTimeUpdate")
+    if isinstance(updates, list):
+        for update in updates:
+            if not isinstance(update, dict):
+                malformed += 1
+                continue
+            extracted = _extract_delay(update)
+            if extracted is None:
+                continue
+            delay_seconds, from_arrival = extracted
+            stop_id = update.get("stopId")
+            stop_sequence = update.get("stopSequence")
+            return (
+                TripDelay(
+                    trip_id=trip_id,
+                    stop_id=stop_id if isinstance(stop_id, str) else None,
+                    stop_sequence=stop_sequence if isinstance(stop_sequence, int) else None,
+                    delay_seconds=delay_seconds,
+                    from_arrival=from_arrival,
+                ),
+                malformed,
+            )
+
+    trip_level = trip_update.get("delay")
+    if isinstance(trip_level, int):
+        return (
+            TripDelay(
+                trip_id=trip_id,
+                stop_id=None,
+                stop_sequence=None,
+                delay_seconds=trip_level,
+                from_arrival=False,
+            ),
+            malformed,
+        )
+    return None, malformed
+
+
 def parse_trip_updates(
     payload: dict[str, Any], *, nucleo_prefixes: tuple[str, ...]
 ) -> TripUpdatesResult:
@@ -138,65 +202,19 @@ def parse_trip_updates(
     delays: list[TripDelay] = []
 
     for entity in entities:
-        if not isinstance(entity, dict):
-            skipped += 1
-            continue
-        trip_update = entity.get("tripUpdate")
-        if not isinstance(trip_update, dict):
-            skipped += 1
-            continue
-        trip = trip_update.get("trip")
-        if not isinstance(trip, dict):
-            skipped += 1
-            continue
-        trip_id = trip.get("tripId")
-        if not isinstance(trip_id, str) or not trip_id:
+        trip_id = _entity_trip_id(entity)
+        if trip_id is None:
             skipped += 1
             continue
         if not trip_id.startswith(nucleo_prefixes):
             continue
 
         matched += 1
-        found = False
-        updates = trip_update.get("stopTimeUpdate")
-        if isinstance(updates, list):
-            for update in updates:
-                if not isinstance(update, dict):
-                    skipped += 1
-                    continue
-                extracted = _extract_delay(update)
-                if extracted is None:
-                    continue
-                delay_seconds, from_arrival = extracted
-                stop_id = update.get("stopId")
-                stop_sequence = update.get("stopSequence")
-                delays.append(
-                    TripDelay(
-                        trip_id=trip_id,
-                        stop_id=stop_id if isinstance(stop_id, str) else None,
-                        stop_sequence=stop_sequence if isinstance(stop_sequence, int) else None,
-                        delay_seconds=delay_seconds,
-                        from_arrival=from_arrival,
-                    )
-                )
-                found = True
-                break  # el feed publica una sola parada por viaje; no asumir mas
-
-        # Segunda fuente, observada el 31/07/2026: `tripUpdate.delay` a nivel de
-        # viaje, en paralelo al de `stopTimeUpdate.arrival.delay`. Cubre las
-        # entidades que no traen stopTimeUpdate pero si retraso agregado.
-        if not found:
-            trip_level = trip_update.get("delay")
-            if isinstance(trip_level, int):
-                delays.append(
-                    TripDelay(
-                        trip_id=trip_id,
-                        stop_id=None,
-                        stop_sequence=None,
-                        delay_seconds=trip_level,
-                        from_arrival=False,
-                    )
-                )
+        trip_update = entity["tripUpdate"]
+        delay, malformed = _delay_for_trip(trip_update, trip_id)
+        skipped += malformed
+        if delay is not None:
+            delays.append(delay)
 
     return TripUpdatesResult(
         total_entities=len(entities),
