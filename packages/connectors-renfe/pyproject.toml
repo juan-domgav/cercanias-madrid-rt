@@ -1,0 +1,19 @@
+[project]
+name = "cercanias-connectors-renfe"
+version = "0.1.0"
+description = "Conectores Renfe: GTFS estatico (cascada de 3 fuentes) y GTFS-RT (vehicle_positions)."
+requires-python = ">=3.13,<3.14"
+dependencies = [
+  "cercanias-domain",
+  "httpx>=0.27",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cercanias_connectors_renfe"]
+
+[tool.uv.sources]
+cercanias-domain = { workspace = true }

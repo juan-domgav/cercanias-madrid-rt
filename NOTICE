@@ -1,0 +1,40 @@
+Cercanías Madrid — Plataforma de información en tiempo real
+Copyright 2026 juan-domgav
+
+This product includes software developed by juan-domgav.
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+
+-------------------------------------------------------------------------------
+ATRIBUCIÓN DE DATOS DE TERCEROS
+-------------------------------------------------------------------------------
+
+La licencia Apache 2.0 de este repositorio cubre ÚNICAMENTE el código fuente.
+Los datos consumidos por este proyecto mantienen sus propios términos, que se
+detallan a continuación.
+
+Renfe — horarios (GTFS) y tiempo real (GTFS-RT)
+    Licencia: Creative Commons Attribution 4.0 International (CC BY 4.0)
+    https://creativecommons.org/licenses/by/4.0/
+    Atribución requerida en cualquier redistribución o presentación de los datos.
+
+Adif — infraestructura, estaciones y estado de la red
+    Los contenidos de adif.es NO están bajo licencia abierta.
+    Este proyecto almacena únicamente el hecho estructurado (línea, tramo, causa,
+    instante) y enlaza al original. No se republica el texto íntegro.
+
+CRTM (Consorcio Regional de Transportes de Madrid)
+    Geometría y códigos canónicos de la red de Cercanías Madrid.
+    https://datos.crtm.es — revisar la licencia de uso antes de republicar.
+
+IDEADIF — servicios WMS/WFS de Adif
+    Metadatos INSPIRE declarados sin limitaciones de acceso público.
+
+
+-------------------------------------------------------------------------------
+AVISO
+-------------------------------------------------------------------------------
+
+Datos de horarios y tiempo real: Renfe (CC BY 4.0). Información de
+infraestructura y estado de la red: Adif. Proyecto independiente, sin relación
+con Renfe ni Adif; no vende billetes ni tramita reclamaciones.

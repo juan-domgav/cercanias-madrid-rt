@@ -1,0 +1,263 @@
+{
+  "_fixture_meta": {
+    "source": "https://gtfsrt.renfe.com/vehicle_positions.json",
+    "captured_at": "2026-07-29",
+    "header_timestamp_raw": "1783019105",
+    "header_timestamp_as_epoch_utc": "2026-07-02T19:05:05Z",
+    "note": "Fixture derivado de vehicle_positions_madrid.json: cada posicion desplazada ~200m al norte para probar el calculo de rumbo (Anexo A.5). Mismo vehicle.id y trip_id que el fixture original. NO es un fixture real de Renfe.",
+    "license": "Datos originales de Renfe, CC BY 4.0"
+  },
+  "header": {
+    "gtfsRealtimeVersion": "2.0",
+    "timestamp": "1783019165"
+  },
+  "entity": [
+    {
+      "id": "VP_C4a-20316",
+      "vehicle": {
+        "trip": {
+          "tripId": "1080J20316C4a"
+        },
+        "position": {
+          "latitude": 40.354476,
+          "longitude": -3.684073
+        },
+        "currentStatus": "INCOMING_AT",
+        "timestamp": "1783019165",
+        "stopId": "18000",
+        "vehicle": {
+          "id": "20316",
+          "label": "C4a-20316-PLATF.(7)"
+        }
+      }
+    },
+    {
+      "id": "VP_C3-20094",
+      "vehicle": {
+        "trip": {
+          "tripId": "1080J20094C3"
+        },
+        "position": {
+          "latitude": 40.036827,
+          "longitude": -3.6189713
+        },
+        "currentStatus": "STOPPED_AT",
+        "timestamp": "1783019165",
+        "stopId": "60200",
+        "vehicle": {
+          "id": "20094",
+          "label": "C3-20094-PLATF.(3)"
+        }
+      }
+    },
+    {
+      "id": "VP_C7-21871",
+      "vehicle": {
+        "trip": {
+          "tripId": "1080J21871C7"
+        },
+        "position": {
+          "latitude": 40.4907,
+          "longitude": -3.3666708
+        },
+        "currentStatus": "STOPPED_AT",
+        "timestamp": "1783019165",
+        "stopId": "70103",
+        "vehicle": {
+          "id": "21871",
+          "label": "C7-21871-PLATF.(6)"
+        }
+      }
+    },
+    {
+      "id": "VP_C4a-20309",
+      "vehicle": {
+        "trip": {
+          "tripId": "1080J20309C4a"
+        },
+        "position": {
+          "latitude": 40.55582,
+          "longitude": -3.6837044
+        },
+        "currentStatus": "INCOMING_AT",
+        "timestamp": "1783019165",
+        "stopId": "17009",
+        "vehicle": {
+          "id": "20309",
+          "label": "C4a-20309-PLATF.(1)"
+        }
+      }
+    },
+    {
+      "id": "VP_C2-21638",
+      "vehicle": {
+        "trip": {
+          "tripId": "1080J21638C2"
+        },
+        "position": {
+          "latitude": 40.47277,
+          "longitude": -3.68245
+        },
+        "currentStatus": "STOPPED_AT",
+        "timestamp": "1783019165",
+        "stopId": "17000",
+        "vehicle": {
+          "id": "21638",
+          "label": "C2-21638-PLATF.(9)"
+        }
+      }
+    },
+    {
+      "id": "VP_C10-21361",
+      "vehicle": {
+        "trip": {
+          "tripId": "1080J21361C10"
+        },
+        "position": {
+          "latitude": 40.52428,
+          "longitude": -3.8818293
+        },
+        "currentStatus": "STOPPED_AT",
+        "timestamp": "1783019165",
+        "stopId": "10100",
+        "vehicle": {
+          "id": "21361",
+          "label": "C10-21361-PLATF.(5)"
+        }
+      }
+    },
+    {
+      "id": "VP_C5-19764",
+      "vehicle": {
+        "trip": {
+          "tripId": "1080J19764C5"
+        },
+        "position": {
+          "latitude": 40.3809,
+          "longitude": -3.6987777
+        },
+        "currentStatus": "STOPPED_AT",
+        "timestamp": "1783019165",
+        "stopId": "35702",
+        "vehicle": {
+          "id": "19764",
+          "label": "C5-19764-PLATF.(2)"
+        }
+      }
+    },
+    {
+      "id": "VP_C4b-20510",
+      "vehicle": {
+        "trip": {
+          "tripId": "1080J20510C4b"
+        },
+        "position": {
+          "latitude": 40.24323,
+          "longitude": -3.769159
+        },
+        "currentStatus": "STOPPED_AT",
+        "timestamp": "1783019165",
+        "stopId": "17005",
+        "vehicle": {
+          "id": "20510",
+          "label": "C4b-20510-PLATF.(0)"
+        }
+      }
+    },
+    {
+      "id": "VP_C4b-20508",
+      "vehicle": {
+        "trip": {
+          "tripId": "1080J20508C4b"
+        },
+        "position": {
+          "latitude": 40.646644,
+          "longitude": -3.7762609
+        },
+        "currentStatus": "STOPPED_AT",
+        "timestamp": "1783019165",
+        "stopId": "17005",
+        "vehicle": {
+          "id": "20508",
+          "label": "C4b-20508-PLATF.(0)"
+        }
+      }
+    },
+    {
+      "id": "VP_C1-19920",
+      "vehicle": {
+        "trip": {
+          "tripId": "1080J19920C1"
+        },
+        "position": {
+          "latitude": 40.47282,
+          "longitude": -3.6825693
+        },
+        "currentStatus": "STOPPED_AT",
+        "timestamp": "1783019165",
+        "stopId": "17000",
+        "vehicle": {
+          "id": "19920",
+          "label": "C1-19920-PLATF.(12)"
+        }
+      }
+    },
+    {
+      "id": "VP_C8a-21047",
+      "vehicle": {
+        "trip": {
+          "tripId": "1080J21047C8a"
+        },
+        "position": {
+          "latitude": 40.49521,
+          "longitude": -3.742226
+        },
+        "currentStatus": "IN_TRANSIT_TO",
+        "timestamp": "1783019165",
+        "stopId": "97100",
+        "vehicle": {
+          "id": "21047",
+          "label": "C8a-21047-PLATF.(1)"
+        }
+      }
+    },
+    {
+      "id": "VP_C8b-20639",
+      "vehicle": {
+        "trip": {
+          "tripId": "1080J20639C8b"
+        },
+        "position": {
+          "latitude": 40.65978,
+          "longitude": -4.035108
+        },
+        "currentStatus": "STOPPED_AT",
+        "timestamp": "1783019165",
+        "stopId": "12002",
+        "vehicle": {
+          "id": "20639",
+          "label": "C8b-20639-PLATF.(1)"
+        }
+      }
+    },
+    {
+      "id": "VP_C7-91244",
+      "vehicle": {
+        "trip": {
+          "tripId": "SPECIAL_10_91244C7"
+        },
+        "position": {
+          "latitude": 40.45643,
+          "longitude": -3.4796958
+        },
+        "currentStatus": "INCOMING_AT",
+        "timestamp": "1783019165",
+        "stopId": "70112",
+        "vehicle": {
+          "id": "91244",
+          "label": "C7-91244-PLATF.(2)"
+        }
+      }
+    }
+  ]
+}

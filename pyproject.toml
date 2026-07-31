@@ -1,0 +1,85 @@
+[project]
+name = "cercanias-madrid-rt"
+version = "0.1.0"
+description = "Plataforma de informacion en tiempo real de Cercanias Madrid - Fase 0"
+requires-python = ">=3.13,<3.14"
+readme = "README.md"
+dependencies = []
+
+[tool.uv.workspace]
+members = [
+  "packages/domain",
+  "packages/connectors-renfe",
+  "packages/connectors-adif",
+  "packages/persistence",
+  "apps/worker",
+]
+
+[tool.uv.sources]
+cercanias-domain = { workspace = true }
+cercanias-connectors-renfe = { workspace = true }
+cercanias-connectors-adif = { workspace = true }
+cercanias-persistence = { workspace = true }
+cercanias-worker = { workspace = true }
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3",
+  "pytest-cov>=6.0",
+  "ruff>=0.8",
+  "mypy>=1.13",
+  "types-PyYAML>=6.0",
+  "cercanias-domain",
+  "cercanias-connectors-renfe",
+  "cercanias-connectors-adif",
+  "cercanias-persistence",
+  "cercanias-worker",
+]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 110
+src = [
+  "packages/domain/src",
+  "packages/connectors-renfe/src",
+  "packages/connectors-adif/src",
+  "packages/persistence/src",
+  "apps/worker/src",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "C4", "PL", "RUF"]
+ignore = []
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["PLR2004", "S101"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+disallow_untyped_defs = true
+namespace_packages = true
+explicit_package_bases = true
+mypy_path = [
+  "packages/domain/src",
+  "packages/connectors-renfe/src",
+  "packages/connectors-adif/src",
+  "packages/persistence/src",
+  "apps/worker/src",
+]
+
+[[tool.mypy.overrides]]
+module = "yaml.*"
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = [
+  "packages/domain/tests",
+  "packages/connectors-renfe/tests",
+  "packages/connectors-adif/tests",
+  "packages/persistence/tests",
+  "apps/worker/tests",
+  "tests/contract",
+]

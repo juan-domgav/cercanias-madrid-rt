@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.venv/
+venv/
+.python-version
+
+# Test / lint / type caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage*
+htmlcov/
+
+# uv
+.uv/
+
+# Datos descargados (GTFS estatico crudo, no versionar binarios de terceros)
+data/gtfs_static/
+
+# Artefactos de SO
+.DS_Store
+
+# Entornos locales
+.env
+.env.*
+!.env.example

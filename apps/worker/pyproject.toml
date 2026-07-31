@@ -1,0 +1,31 @@
+[project]
+name = "cercanias-worker"
+version = "0.1.0"
+description = "CLI de ingesta de Fase 0: check-feed-freshness, discover-data, ideadif-explore. Invocado desde el Makefile."
+requires-python = ">=3.13,<3.14"
+dependencies = [
+  "cercanias-domain",
+  "cercanias-connectors-renfe",
+  "cercanias-connectors-adif",
+  "cercanias-persistence",
+  "httpx>=0.27",
+  "pyyaml>=6.0",
+]
+
+[project.scripts]
+check-feed-freshness = "cercanias_worker.check_feed_freshness:main"
+discover-data = "cercanias_worker.discover_data:main"
+ideadif-explore = "cercanias_worker.ideadif_explore:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cercanias_worker"]
+
+[tool.uv.sources]
+cercanias-domain = { workspace = true }
+cercanias-connectors-renfe = { workspace = true }
+cercanias-connectors-adif = { workspace = true }
+cercanias-persistence = { workspace = true }

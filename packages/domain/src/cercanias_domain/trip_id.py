@@ -1,0 +1,91 @@
+"""Parsing del ``tripId`` del feed en tiempo real — Anexo A.2, A.3, A.4.
+
+Formato estándar observado en el Anexo A (captura 2026-07-29):
+
+    1080J20316C4a
+    └┬─┘│└─┬──┘└┬┘
+     │  │  │    └── etiqueta de línea (route_raw)
+     │  │  └─────── número de tren
+     │  └────────── separador (un carácter, "J" en el Anexo A)
+     └───────────── código de núcleo (4 dígitos)
+
+Formato especial:
+
+    SPECIAL_10_91244C7
+
+ANOMALÍA (ver ``nucleo_filter.py`` y docs/informes/feed-freshness.md): una
+descarga en vivo del 31/07/2026 usa el separador ``V`` y el código de núcleo
+``1010`` para Madrid en vez de ``J``/``1080``. Este módulo NO fija el
+separador a un carácter concreto; solo exige que sea una letra mayúscula.
+
+Regla de canonicalización obligatoria (A.3):
+
+    route_raw   = "C4a"   # se conserva SIEMPRE, es la clave de correlación
+    route_group = "C4"    # solo para agrupar en UI y suscripciones
+
+Una suscripción a "C4" debe expandirse a {C4a, C4b}. El sufijo de línea puede
+contener dígitos (p. ej. "R2S", "ER04", "T1", observados en otros núcleos o
+en el propio GTFS estático de Madrid), así que no se puede asumir que la
+etiqueta de línea es puramente alfabética.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+
+_RE_STANDARD = re.compile(r"^(?P<nucleo>\d{4})(?P<sep>[A-Z])(?P<train>\d+)(?P<line>[A-Za-z0-9]+)$")
+_RE_SPECIAL = re.compile(r"^SPECIAL_(?P<nucleo_prefix>\d{2})_(?P<train>\d+)(?P<line>[A-Za-z0-9]+)$")
+_RE_GROUPABLE = re.compile(r"^(?P<base>C\d{1,2})[ab]$")
+
+
+@dataclass(frozen=True)
+class ParsedTripId:
+    trip_id: str
+    nucleo_code: str | None  # 4 dígitos; None en trips especiales (solo se conocen los 2 primeros)
+    nucleo_prefix: str  # primeros 2 dígitos, siempre disponible
+    separator: str | None  # letra separadora observada; None en trips especiales
+    train_number: str
+    route_raw: str
+    route_group: str
+    is_special: bool
+
+
+def _route_group(route_raw: str) -> str:
+    match = _RE_GROUPABLE.match(route_raw)
+    if match:
+        return match.group("base")
+    return route_raw
+
+
+def parse_trip_id(trip_id: str) -> ParsedTripId | None:
+    """Descompone un ``tripId`` del feed. ``None`` si no coincide con ningún formato conocido."""
+    match = _RE_STANDARD.match(trip_id)
+    if match:
+        line = match.group("line")
+        return ParsedTripId(
+            trip_id=trip_id,
+            nucleo_code=match.group("nucleo"),
+            nucleo_prefix=match.group("nucleo")[:2],
+            separator=match.group("sep"),
+            train_number=match.group("train"),
+            route_raw=line,
+            route_group=_route_group(line),
+            is_special=False,
+        )
+
+    match = _RE_SPECIAL.match(trip_id)
+    if match:
+        line = match.group("line")
+        return ParsedTripId(
+            trip_id=trip_id,
+            nucleo_code=None,
+            nucleo_prefix=match.group("nucleo_prefix"),
+            separator=None,
+            train_number=match.group("train"),
+            route_raw=line,
+            route_group=_route_group(line),
+            is_special=True,
+        )
+
+    return None
