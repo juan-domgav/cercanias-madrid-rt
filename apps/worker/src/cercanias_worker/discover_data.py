@@ -273,6 +273,7 @@ def main() -> int:  # noqa: PLR0915 - orquestacion secuencial de un CLI, se mant
     report_data = CoverageReportData(
         feed_source=feed_source,
         gtfs_source_used=gtfs_source_used,
+        nucleo_codes_used=tuple(config.renfe_nucleo_codes),
         total_seen=total_seen,
         resolved=resolved,
         fallback=fallback,
@@ -301,6 +302,10 @@ def asdict_station_mapping(mapping: StationMapping) -> dict[str, object]:
 class CoverageReportData:
     feed_source: str
     gtfs_source_used: str | None
+    #: Codigos de nucleo realmente activos en esta ejecucion. Se publica en el
+    #: informe porque el codigo `1080` del Anexo A.2 ya no aparece en el feed
+    #: (ADR-010) y atribuir el recuento al Anexo sin mas seria inexacto.
+    nucleo_codes_used: tuple[str, ...]
     total_seen: int
     resolved: list[VehicleObservation]
     fallback: list[VehicleObservation]
@@ -321,7 +326,10 @@ def _puerta_0a_section(d: CoverageReportData) -> list[str]:
     lines: list[str] = [
         "## Puerta 0-A: resolucion de trip_id contra el GTFS estatico",
         "",
-        f"- Total de entidades del nucleo de Madrid tras el filtro (Anexo A.2): **{d.total_seen}**",
+        f"- Total de entidades del nucleo de Madrid tras el filtro: **{d.total_seen}**"
+        f" (codigos configurados: {', '.join(d.nucleo_codes_used)};"
+        " la regla estructural es la del Anexo A.2, pero el codigo `1080` que el Anexo"
+        " documenta ya no aparece en el feed — ver ADR-010)",
         f"- Resueltas contra `trips.txt` (`resolution=trip_static`): **{len(d.resolved)}**",
         f"- Sin resolver, fallback a etiqueta del `tripId` (`resolution=fallback_label`): "
         f"**{len(d.fallback)}**",
@@ -436,7 +444,9 @@ def _anomalies_and_assumptions_section(d: CoverageReportData) -> list[str]:
         lines.append(
             "- `direction_id` no existe en `trips.txt`: se deriva ordenando los `route_id` que "
             "comparten `route_short_name` (ver `cercanias_connectors_renfe.gtfs_static_index`). "
-            "Marcado explicitamente como `direction_derived=True`, nunca como dato oficial."
+            "La marca `direction_derived=True` viaja tanto en `TripStaticInfo` como en "
+            "`VehicleObservation`, de modo que ningun consumidor puede tomarlo por dato "
+            "oficial sin ignorar el flag explicitamente."
         )
     return lines
 

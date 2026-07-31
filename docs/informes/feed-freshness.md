@@ -1,6 +1,6 @@
 # Informe de frescura del feed GTFS-RT (E2)
 
-Generado: 2026-07-31T14:41:10.781413+00:00
+Generado: 2026-07-31T14:55:40.102265+00:00
 
 Responde la incognita abierta en Anexo A.8: el `header.timestamp` de la captura original (29/07/2026) correspondia a una fecha unas cuatro semanas anterior a la descarga. Este informe mide el desfase en una ejecucion real contra `https://gtfsrt.renfe.com/vehicle_positions.json`.
 
@@ -8,19 +8,23 @@ Responde la incognita abierta en Anexo A.8: el `header.timestamp` de la captura 
 
 | Medicion | Valor |
 |---|---|
-| now_utc (descarga 1) | 2026-07-31T14:40:45.608213+00:00 |
-| header.timestamp crudo (1) | `1785508833` |
-| header.timestamp como epoch UTC (1) | 2026-07-31T14:40:33+00:00 |
-| delta (1) = now - header | 12.61 s |
-| now_utc (descarga 2, +25s) | 2026-07-31T14:41:10.722646+00:00 |
-| header.timestamp crudo (2) | `1785508853` |
-| header.timestamp como epoch UTC (2) | 2026-07-31T14:40:53+00:00 |
-| delta (2) = now - header | 17.72 s |
-| tiempo real transcurrido entre descargas | 25.11 s |
-| delta entre header.timestamp (2-1) | 20 s |
-| `feed_clock_skew_seconds` (metrica a exportar) | 15.17 s |
+| now_utc (descarga 1) | 2026-07-31T14:55:14.907786+00:00 |
+| header.timestamp crudo (1) | `1785509712` |
+| header.timestamp como epoch UTC (1) | 2026-07-31T14:55:12+00:00 |
+| delta (1) = now - header | 2.91 s |
+| now_utc (descarga 2, +25s) | 2026-07-31T14:55:40.042379+00:00 |
+| header.timestamp crudo (2) | `1785509733` |
+| header.timestamp como epoch UTC (2) | 2026-07-31T14:55:33+00:00 |
+| delta (2) = now - header | 7.04 s |
+| tiempo real transcurrido entre descargas | 25.13 s |
+| delta entre header.timestamp (2-1) | 21 s |
+| `feed_clock_skew_seconds` (metrica a exportar) | 4.98 s |
 
-**Decision:** el desfase medido es de segundos (no de semanas como en la captura del Anexo A). Se implementa el umbral de 120 s de la especificacion base tal cual, comparando `now_utc` contra `header.timestamp`/`vehicle.timestamp` interpretados como epoch. Se sigue exportando `feed_clock_skew_seconds` como metrica para detectar si el comportamiento cambia en produccion.
+**Decision:** el desfase medido es de segundos (no de semanas como en la captura del Anexo A). Queda por tanto **habilitado** el umbral de 120 s de la especificacion base tal cual, comparando `now_utc` contra `header.timestamp`/`vehicle.timestamp` interpretados como epoch: la medicion que A.8 exigia antes de adoptarlo lo respalda.
+
+**Alcance real en Fase 0 (no confundir):** la decision esta tomada pero la politica **no esta implementada**. `STALE_VEHICLE_SECONDS` existe como valor de configuracion (120 s por defecto) y ningun punto del codigo marca, degrada ni descarta todavia una observacion por antiguedad. Implementarlo es trabajo de Fase 1; Fase 0 solo tenia que medir para poder decidir.
+
+Se sigue exportando `feed_clock_skew_seconds` como metrica para detectar si el comportamiento cambia en produccion.
 
 ## ANOMALIA respecto al Anexo A.8
 

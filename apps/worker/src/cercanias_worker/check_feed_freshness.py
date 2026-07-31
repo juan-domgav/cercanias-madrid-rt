@@ -48,10 +48,17 @@ def _decision_note(report: FreshnessReport) -> str:
     if skew <= SKEW_DECISION_THRESHOLD_SECONDS:
         return (
             "**Decision:** el desfase medido es de segundos (no de semanas como en la "
-            "captura del Anexo A). Se implementa el umbral de 120 s de la especificacion "
-            "base tal cual, comparando `now_utc` contra `header.timestamp`/`vehicle.timestamp` "
-            "interpretados como epoch. Se sigue exportando `feed_clock_skew_seconds` como "
-            "metrica para detectar si el comportamiento cambia en produccion."
+            "captura del Anexo A). Queda por tanto **habilitado** el umbral de 120 s de la "
+            "especificacion base tal cual, comparando `now_utc` contra "
+            "`header.timestamp`/`vehicle.timestamp` interpretados como epoch: la medicion "
+            "que A.8 exigia antes de adoptarlo lo respalda.\n\n"
+            "**Alcance real en Fase 0 (no confundir):** la decision esta tomada pero la "
+            "politica **no esta implementada**. `STALE_VEHICLE_SECONDS` existe como valor "
+            "de configuracion (120 s por defecto) y ningun punto del codigo marca, degrada "
+            "ni descarta todavia una observacion por antiguedad. Implementarlo es trabajo "
+            "de Fase 1; Fase 0 solo tenia que medir para poder decidir.\n\n"
+            "Se sigue exportando `feed_clock_skew_seconds` como metrica para detectar si el "
+            "comportamiento cambia en produccion."
         )
     return (
         "**Decision:** el desfase medido es grande. Siguiendo el Anexo A.8, la frescura NO "

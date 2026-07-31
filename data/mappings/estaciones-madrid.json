@@ -1,19 +1,31 @@
 {
-  "generated_at": "2026-07-31T14:36:39.402062+00:00",
+  "generated_at": "2026-07-31T14:55:47.848577+00:00",
   "gtfs_source_used": "ssl.renfe.com",
   "total_stations": 51,
   "stations": [
     {
-      "canonical_station_id": "renfe:10002",
-      "renfe_stop_id": "10002",
-      "adif_dependency_code": "10002",
-      "name": "Pozuelo",
-      "normalized_name": "pozuelo",
-      "latitude": 40.4474569,
-      "longitude": -3.8002779,
+      "canonical_station_id": "renfe:10000",
+      "renfe_stop_id": "10000",
+      "adif_dependency_code": "10000",
+      "name": "Madrid-Príncipe Pío",
+      "normalized_name": "principe-pio",
+      "latitude": 40.4214895,
+      "longitude": -3.7189689,
       "mapping_method": "exact_code",
       "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
+      "verified_at": "2026-07-31T14:55:47.848078Z"
+    },
+    {
+      "canonical_station_id": "renfe:10001",
+      "renfe_stop_id": "10001",
+      "adif_dependency_code": "10001",
+      "name": "Aravaca",
+      "normalized_name": "aravaca",
+      "latitude": 40.4484551,
+      "longitude": -3.7855547,
+      "mapping_method": "exact_code",
+      "confidence": 1.0,
+      "verified_at": "2026-07-31T14:55:47.848078Z"
     },
     {
       "canonical_station_id": "renfe:10005",
@@ -25,7 +37,19 @@
       "longitude": -3.8681747,
       "mapping_method": "exact_code",
       "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
+      "verified_at": "2026-07-31T14:55:47.848078Z"
+    },
+    {
+      "canonical_station_id": "renfe:10010",
+      "renfe_stop_id": "10010",
+      "adif_dependency_code": "10010",
+      "name": "El Barrial-Centro Comercial Pozuelo",
+      "normalized_name": "el-barrial-centro-comercial-pozuelo",
+      "latitude": 40.4653918,
+      "longitude": -3.8076854,
+      "mapping_method": "exact_code",
+      "confidence": 1.0,
+      "verified_at": "2026-07-31T14:55:47.848078Z"
     },
     {
       "canonical_station_id": "renfe:10100",
@@ -37,7 +61,7 @@
       "longitude": -3.8822477,
       "mapping_method": "exact_code",
       "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
+      "verified_at": "2026-07-31T14:55:47.848078Z"
     },
     {
       "canonical_station_id": "renfe:10103",
@@ -49,7 +73,7 @@
       "longitude": -3.9566013,
       "mapping_method": "exact_code",
       "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
+      "verified_at": "2026-07-31T14:55:47.848078Z"
     },
     {
       "canonical_station_id": "renfe:10200",
@@ -61,31 +85,19 @@
       "longitude": -4.0080301,
       "mapping_method": "exact_code",
       "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
+      "verified_at": "2026-07-31T14:55:47.848078Z"
     },
     {
-      "canonical_station_id": "renfe:10201",
-      "renfe_stop_id": "10201",
-      "adif_dependency_code": "10201",
-      "name": "San Yago",
-      "normalized_name": "san-yago",
-      "latitude": 40.6178953,
-      "longitude": -4.0310749,
+      "canonical_station_id": "renfe:10203",
+      "renfe_stop_id": "10203",
+      "adif_dependency_code": "10203",
+      "name": "El Escorial",
+      "normalized_name": "el-escorial",
+      "latitude": 40.5853675,
+      "longitude": -4.1324053,
       "mapping_method": "exact_code",
       "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
-    },
-    {
-      "canonical_station_id": "renfe:12006",
-      "renfe_stop_id": "12006",
-      "adif_dependency_code": "12006",
-      "name": "Cercedilla",
-      "normalized_name": "cercedilla",
-      "latitude": 40.7376129,
-      "longitude": -4.0662985,
-      "mapping_method": "exact_code",
-      "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
+      "verified_at": "2026-07-31T14:55:47.848078Z"
     },
     {
       "canonical_station_id": "renfe:12023",
@@ -97,7 +109,7 @@
       "longitude": -3.9644961,
       "mapping_method": "exact_code",
       "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
+      "verified_at": "2026-07-31T14:55:47.848078Z"
     },
     {
       "canonical_station_id": "renfe:17000",
@@ -109,7 +121,7 @@
       "longitude": -3.6829524,
       "mapping_method": "exact_code",
       "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
+      "verified_at": "2026-07-31T14:55:47.848078Z"
     },
     {
       "canonical_station_id": "renfe:17001",
@@ -121,7 +133,19 @@
       "longitude": -3.6825042,
       "mapping_method": "exact_code",
       "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
+      "verified_at": "2026-07-31T14:55:47.848078Z"
+    },
+    {
+      "canonical_station_id": "renfe:17003",
+      "renfe_stop_id": "17003",
+      "adif_dependency_code": "17003",
+      "name": "El Goloso",
+      "normalized_name": "el-goloso",
+      "latitude": 40.5588966,
+      "longitude": -3.7139714,
+      "mapping_method": "exact_code",
+      "confidence": 1.0,
+      "verified_at": "2026-07-31T14:55:47.848078Z"
     },
     {
       "canonical_station_id": "renfe:17004",
@@ -133,7 +157,7 @@
       "longitude": -3.7155585,
       "mapping_method": "exact_code",
       "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
+      "verified_at": "2026-07-31T14:55:47.848078Z"
     },
     {
       "canonical_station_id": "renfe:17005",
@@ -145,19 +169,7 @@
       "longitude": -3.7766142,
       "mapping_method": "exact_code",
       "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
-    },
-    {
-      "canonical_station_id": "renfe:17009",
-      "renfe_stop_id": "17009",
-      "adif_dependency_code": "17009",
-      "name": "Universidad-Cantoblanco",
-      "normalized_name": "universidad-cantoblanco",
-      "latitude": 40.5438416,
-      "longitude": -3.7001551,
-      "mapping_method": "exact_code",
-      "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
+      "verified_at": "2026-07-31T14:55:47.848078Z"
     },
     {
       "canonical_station_id": "renfe:18000",
@@ -169,7 +181,19 @@
       "longitude": -3.6894391,
       "mapping_method": "exact_code",
       "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
+      "verified_at": "2026-07-31T14:55:47.848078Z"
+    },
+    {
+      "canonical_station_id": "renfe:18001",
+      "renfe_stop_id": "18001",
+      "adif_dependency_code": "18001",
+      "name": "Madrid-Recoletos",
+      "normalized_name": "recoletos",
+      "latitude": 40.4233731,
+      "longitude": -3.690931,
+      "mapping_method": "exact_code",
+      "confidence": 1.0,
+      "verified_at": "2026-07-31T14:55:47.848078Z"
     },
     {
       "canonical_station_id": "renfe:18002",
@@ -181,31 +205,67 @@
       "longitude": -3.6923468,
       "mapping_method": "exact_code",
       "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
+      "verified_at": "2026-07-31T14:55:47.848078Z"
     },
     {
-      "canonical_station_id": "renfe:18005",
-      "renfe_stop_id": "18005",
-      "adif_dependency_code": "18005",
-      "name": "Pirámides",
-      "normalized_name": "piramides",
-      "latitude": 40.4025341,
-      "longitude": -3.7113623,
+      "canonical_station_id": "renfe:18003",
+      "renfe_stop_id": "18003",
+      "adif_dependency_code": "18003",
+      "name": "Méndez Álvaro P.V.",
+      "normalized_name": "mendez-alvaro-p-v",
+      "latitude": 40.3957768,
+      "longitude": -3.677844,
       "mapping_method": "exact_code",
       "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
+      "verified_at": "2026-07-31T14:55:47.848078Z"
     },
     {
-      "canonical_station_id": "renfe:19001",
-      "renfe_stop_id": "19001",
-      "adif_dependency_code": "19001",
-      "name": "Universidad Pontificia de Comillas",
-      "normalized_name": "universidad-pontificia-de-comillas",
-      "latitude": 40.5539697,
-      "longitude": -3.6836997,
+      "canonical_station_id": "renfe:18004",
+      "renfe_stop_id": "18004",
+      "adif_dependency_code": "18004",
+      "name": "Delicias",
+      "normalized_name": "delicias",
+      "latitude": 40.4004375,
+      "longitude": -3.6927766,
       "mapping_method": "exact_code",
       "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
+      "verified_at": "2026-07-31T14:55:47.848078Z"
+    },
+    {
+      "canonical_station_id": "renfe:18101",
+      "renfe_stop_id": "18101",
+      "adif_dependency_code": "18101",
+      "name": "Sol",
+      "normalized_name": "sol",
+      "latitude": 40.4168665,
+      "longitude": -3.7028765,
+      "mapping_method": "exact_code",
+      "confidence": 1.0,
+      "verified_at": "2026-07-31T14:55:47.848078Z"
+    },
+    {
+      "canonical_station_id": "renfe:19003",
+      "renfe_stop_id": "19003",
+      "adif_dependency_code": "19003",
+      "name": "Alcobendas-San Sebastián de los Reyes",
+      "normalized_name": "alcobendas-san-sebastian-de-los-reyes",
+      "latitude": 40.5465765,
+      "longitude": -3.6351731,
+      "mapping_method": "exact_code",
+      "confidence": 1.0,
+      "verified_at": "2026-07-31T14:55:47.848078Z"
+    },
+    {
+      "canonical_station_id": "renfe:35001",
+      "renfe_stop_id": "35001",
+      "adif_dependency_code": "35001",
+      "name": "Leganés",
+      "normalized_name": "leganes",
+      "latitude": 40.328643,
+      "longitude": -3.7713161,
+      "mapping_method": "exact_code",
+      "confidence": 1.0,
+      "verified_at": "2026-07-31T14:55:47.848078Z"
     },
     {
       "canonical_station_id": "renfe:35002",
@@ -217,7 +277,7 @@
       "longitude": -3.7994429,
       "mapping_method": "exact_code",
       "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
+      "verified_at": "2026-07-31T14:55:47.848078Z"
     },
     {
       "canonical_station_id": "renfe:35009",
@@ -229,19 +289,7 @@
       "longitude": -3.7482632,
       "mapping_method": "exact_code",
       "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
-    },
-    {
-      "canonical_station_id": "renfe:35010",
-      "renfe_stop_id": "35010",
-      "adif_dependency_code": "35010",
-      "name": "La Serna-Fuenlabrada",
-      "normalized_name": "la-serna-fuenlabrada",
-      "latitude": 40.2968173,
-      "longitude": -3.7926235,
-      "mapping_method": "exact_code",
-      "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
+      "verified_at": "2026-07-31T14:55:47.848078Z"
     },
     {
       "canonical_station_id": "renfe:35012",
@@ -253,19 +301,19 @@
       "longitude": -3.8287055,
       "mapping_method": "exact_code",
       "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
+      "verified_at": "2026-07-31T14:55:47.848078Z"
     },
     {
-      "canonical_station_id": "renfe:35601",
-      "renfe_stop_id": "35601",
-      "adif_dependency_code": "35601",
-      "name": "Maestra Justa Freire-Polidep. Aluche",
-      "normalized_name": "maestra-justa-freire-polidep-aluche",
-      "latitude": 40.3836379,
-      "longitude": -3.7686869,
+      "canonical_station_id": "renfe:35600",
+      "renfe_stop_id": "35600",
+      "adif_dependency_code": "35600",
+      "name": "Aluche",
+      "normalized_name": "aluche",
+      "latitude": 40.3856677,
+      "longitude": -3.7607343,
       "mapping_method": "exact_code",
       "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
+      "verified_at": "2026-07-31T14:55:47.848078Z"
     },
     {
       "canonical_station_id": "renfe:35603",
@@ -277,7 +325,19 @@
       "longitude": -3.79151,
       "mapping_method": "exact_code",
       "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
+      "verified_at": "2026-07-31T14:55:47.848078Z"
+    },
+    {
+      "canonical_station_id": "renfe:35605",
+      "renfe_stop_id": "35605",
+      "adif_dependency_code": "35605",
+      "name": "Alcorcón",
+      "normalized_name": "alcorcon",
+      "latitude": 40.3502269,
+      "longitude": -3.8317018,
+      "mapping_method": "exact_code",
+      "confidence": 1.0,
+      "verified_at": "2026-07-31T14:55:47.848078Z"
     },
     {
       "canonical_station_id": "renfe:35606",
@@ -289,7 +349,7 @@
       "longitude": -3.8636221,
       "mapping_method": "exact_code",
       "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
+      "verified_at": "2026-07-31T14:55:47.848078Z"
     },
     {
       "canonical_station_id": "renfe:35607",
@@ -301,7 +361,7 @@
       "longitude": -3.882456,
       "mapping_method": "exact_code",
       "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
+      "verified_at": "2026-07-31T14:55:47.848078Z"
     },
     {
       "canonical_station_id": "renfe:35608",
@@ -313,7 +373,7 @@
       "longitude": -3.7442305,
       "mapping_method": "exact_code",
       "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
+      "verified_at": "2026-07-31T14:55:47.848078Z"
     },
     {
       "canonical_station_id": "renfe:35609",
@@ -325,31 +385,19 @@
       "longitude": -3.702579,
       "mapping_method": "exact_code",
       "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
+      "verified_at": "2026-07-31T14:55:47.848078Z"
     },
     {
-      "canonical_station_id": "renfe:35610",
-      "renfe_stop_id": "35610",
-      "adif_dependency_code": "35610",
-      "name": "Las Retamas",
-      "normalized_name": "las-retamas",
-      "latitude": 40.3421153,
-      "longitude": -3.8424636,
+      "canonical_station_id": "renfe:35703",
+      "renfe_stop_id": "35703",
+      "adif_dependency_code": "35703",
+      "name": "Orcasitas",
+      "normalized_name": "orcasitas",
+      "latitude": 40.3671021,
+      "longitude": -3.7042307,
       "mapping_method": "exact_code",
       "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
-    },
-    {
-      "canonical_station_id": "renfe:35702",
-      "renfe_stop_id": "35702",
-      "adif_dependency_code": "35702",
-      "name": "Doce de Octubre",
-      "normalized_name": "doce-de-octubre",
-      "latitude": 40.378921,
-      "longitude": -3.6986988,
-      "mapping_method": "exact_code",
-      "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
+      "verified_at": "2026-07-31T14:55:47.848078Z"
     },
     {
       "canonical_station_id": "renfe:37001",
@@ -361,7 +409,7 @@
       "longitude": -3.7123508,
       "mapping_method": "exact_code",
       "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
+      "verified_at": "2026-07-31T14:55:47.848078Z"
     },
     {
       "canonical_station_id": "renfe:37002",
@@ -373,19 +421,7 @@
       "longitude": -3.7339878,
       "mapping_method": "exact_code",
       "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
-    },
-    {
-      "canonical_station_id": "renfe:37011",
-      "renfe_stop_id": "37011",
-      "adif_dependency_code": "37011",
-      "name": "Getafe-Sector 3",
-      "normalized_name": "getafe-sector-3",
-      "latitude": 40.2883893,
-      "longitude": -3.7374991,
-      "mapping_method": "exact_code",
-      "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
+      "verified_at": "2026-07-31T14:55:47.848078Z"
     },
     {
       "canonical_station_id": "renfe:37012",
@@ -397,7 +433,7 @@
       "longitude": -3.7692699,
       "mapping_method": "exact_code",
       "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
+      "verified_at": "2026-07-31T14:55:47.848078Z"
     },
     {
       "canonical_station_id": "renfe:60100",
@@ -409,19 +445,19 @@
       "longitude": -3.6838977,
       "mapping_method": "exact_code",
       "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
+      "verified_at": "2026-07-31T14:55:47.848078Z"
     },
     {
-      "canonical_station_id": "renfe:60101",
-      "renfe_stop_id": "60101",
-      "adif_dependency_code": "60101",
-      "name": "San Cristóbal Industrial",
-      "normalized_name": "san-cristobal-industrial",
-      "latitude": 40.3318587,
-      "longitude": -3.69896,
+      "canonical_station_id": "renfe:60102",
+      "renfe_stop_id": "60102",
+      "adif_dependency_code": "60102",
+      "name": "Getafe-Industrial",
+      "normalized_name": "getafe-industrial",
+      "latitude": 40.3057176,
+      "longitude": -3.7078359,
       "mapping_method": "exact_code",
       "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
+      "verified_at": "2026-07-31T14:55:47.848078Z"
     },
     {
       "canonical_station_id": "renfe:60103",
@@ -433,7 +469,7 @@
       "longitude": -3.7035303,
       "mapping_method": "exact_code",
       "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
+      "verified_at": "2026-07-31T14:55:47.848078Z"
     },
     {
       "canonical_station_id": "renfe:60104",
@@ -445,7 +481,7 @@
       "longitude": -3.6649372,
       "mapping_method": "exact_code",
       "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
+      "verified_at": "2026-07-31T14:55:47.848078Z"
     },
     {
       "canonical_station_id": "renfe:60200",
@@ -457,7 +493,7 @@
       "longitude": -3.6182534,
       "mapping_method": "exact_code",
       "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
+      "verified_at": "2026-07-31T14:55:47.848078Z"
     },
     {
       "canonical_station_id": "renfe:70002",
@@ -469,19 +505,7 @@
       "longitude": -3.6680454,
       "mapping_method": "exact_code",
       "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
-    },
-    {
-      "canonical_station_id": "renfe:70100",
-      "renfe_stop_id": "70100",
-      "adif_dependency_code": "70100",
-      "name": "Vicálvaro",
-      "normalized_name": "vicalvaro",
-      "latitude": 40.4012524,
-      "longitude": -3.595897,
-      "mapping_method": "exact_code",
-      "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
+      "verified_at": "2026-07-31T14:55:47.848078Z"
     },
     {
       "canonical_station_id": "renfe:70101",
@@ -493,19 +517,7 @@
       "longitude": -3.5339866,
       "mapping_method": "exact_code",
       "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
-    },
-    {
-      "canonical_station_id": "renfe:70102",
-      "renfe_stop_id": "70102",
-      "adif_dependency_code": "70102",
-      "name": "Torrejón de Ardoz",
-      "normalized_name": "torrejon-de-ardoz",
-      "latitude": 40.4547895,
-      "longitude": -3.47973,
-      "mapping_method": "exact_code",
-      "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
+      "verified_at": "2026-07-31T14:55:47.848078Z"
     },
     {
       "canonical_station_id": "renfe:70103",
@@ -517,19 +529,7 @@
       "longitude": -3.3662457,
       "mapping_method": "exact_code",
       "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
-    },
-    {
-      "canonical_station_id": "renfe:70105",
-      "renfe_stop_id": "70105",
-      "adif_dependency_code": "70105",
-      "name": "Azuqueca",
-      "normalized_name": "azuqueca",
-      "latitude": 40.561077,
-      "longitude": -3.265397,
-      "mapping_method": "exact_code",
-      "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
+      "verified_at": "2026-07-31T14:55:47.848078Z"
     },
     {
       "canonical_station_id": "renfe:70108",
@@ -541,7 +541,19 @@
       "longitude": -3.5611109,
       "mapping_method": "exact_code",
       "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
+      "verified_at": "2026-07-31T14:55:47.848078Z"
+    },
+    {
+      "canonical_station_id": "renfe:70111",
+      "renfe_stop_id": "70111",
+      "adif_dependency_code": "70111",
+      "name": "La Garena",
+      "normalized_name": "la-garena",
+      "latitude": 40.4805448,
+      "longitude": -3.3930055,
+      "mapping_method": "exact_code",
+      "confidence": 1.0,
+      "verified_at": "2026-07-31T14:55:47.848078Z"
     },
     {
       "canonical_station_id": "renfe:70200",
@@ -553,7 +565,7 @@
       "longitude": -3.1822602,
       "mapping_method": "exact_code",
       "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
+      "verified_at": "2026-07-31T14:55:47.848078Z"
     },
     {
       "canonical_station_id": "renfe:97100",
@@ -565,19 +577,19 @@
       "longitude": -3.7261603,
       "mapping_method": "exact_code",
       "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
+      "verified_at": "2026-07-31T14:55:47.848078Z"
     },
     {
-      "canonical_station_id": "renfe:97200",
-      "renfe_stop_id": "97200",
-      "adif_dependency_code": "97200",
-      "name": "Mirasierra-Paco de Lucía",
-      "normalized_name": "mirasierra-paco-de-lucia",
-      "latitude": 40.499759,
-      "longitude": -3.7092505,
+      "canonical_station_id": "renfe:97201",
+      "renfe_stop_id": "97201",
+      "adif_dependency_code": "97201",
+      "name": "Madrid-Ramón y Cajal",
+      "normalized_name": "ramon-y-cajal",
+      "latitude": 40.4881473,
+      "longitude": -3.6948037,
       "mapping_method": "exact_code",
       "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
+      "verified_at": "2026-07-31T14:55:47.848078Z"
     },
     {
       "canonical_station_id": "renfe:98003",
@@ -589,19 +601,7 @@
       "longitude": -3.6630608,
       "mapping_method": "exact_code",
       "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
-    },
-    {
-      "canonical_station_id": "renfe:98304",
-      "renfe_stop_id": "98304",
-      "adif_dependency_code": "98304",
-      "name": "Valdebebas",
-      "normalized_name": "valdebebas",
-      "latitude": 40.4821016,
-      "longitude": -3.6162874,
-      "mapping_method": "exact_code",
-      "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
+      "verified_at": "2026-07-31T14:55:47.848078Z"
     },
     {
       "canonical_station_id": "renfe:98305",
@@ -613,7 +613,7 @@
       "longitude": -3.5932297,
       "mapping_method": "exact_code",
       "confidence": 1.0,
-      "verified_at": "2026-07-31T14:36:39.401647Z"
+      "verified_at": "2026-07-31T14:55:47.848078Z"
     }
   ]
 }
