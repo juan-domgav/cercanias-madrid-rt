@@ -79,11 +79,16 @@ def normalize_entity(
     if static_info is not None:
         route_id = static_info.route_id
         direction_id = static_info.direction_id
+        # La marca de derivacion viaja con el dato: si se pierde aqui, el
+        # consumidor ve `resolution=trip_static` y da por oficial un
+        # direction_id que es una convencion local (ver TripStaticInfo).
+        direction_derived = static_info.direction_derived
         trip_headsign = static_info.trip_headsign
         resolution = ResolutionMethod.TRIP_STATIC
     else:
         route_id = None
         direction_id = None
+        direction_derived = False
         trip_headsign = None
         resolution = ResolutionMethod.FALLBACK_LABEL
 
@@ -124,6 +129,7 @@ def normalize_entity(
         route_group=parsed.route_group,
         route_id=route_id,
         direction_id=direction_id,
+        direction_derived=direction_derived,
         trip_headsign=trip_headsign,
         resolution=resolution,
         has_position=has_position,

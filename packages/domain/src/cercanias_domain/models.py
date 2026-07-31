@@ -59,6 +59,13 @@ class VehicleObservation(BaseModel):
     route_group: str
     route_id: str | None
     direction_id: int | None
+    #: ``True`` si ``direction_id`` es una convención local derivada, no un dato
+    #: oficial. El GTFS estático de Renfe NO publica columna ``direction_id``
+    #: (contra lo que asumen A.4 y C-5), así que se deriva ordenando los
+    #: ``route_id`` que comparten ``route_short_name``. Sin este campo el
+    #: consumidor no puede distinguir un valor inventado de uno oficial y acaba
+    #: presentando como dirección confirmada algo que no lo es.
+    direction_derived: bool = False
     trip_headsign: str | None
     resolution: ResolutionMethod
 

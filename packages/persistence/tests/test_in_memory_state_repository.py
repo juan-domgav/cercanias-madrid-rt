@@ -76,3 +76,43 @@ def test_observation_without_position_has_no_previous_position() -> None:
     )
     repo.update(obs)
     assert repo.get_previous_position("30000") is None
+
+
+def test_gps_gap_does_not_lose_last_known_position() -> None:
+    """C-4: un frame sin `position` (Anexo A.7) no debe romper la cadena de rumbo.
+
+    Regresion: `previous` se guardaba pero nunca se leia, asi que el primer
+    frame sin GPS borraba de facto la ultima posicion conocida y el siguiente
+    frame con GPS reiniciaba el rumbo a NO_PREVIOUS_SNAPSHOT.
+    """
+    repo = InMemoryCurrentStateRepository()
+    repo.update(_obs("40000", 40.35, -3.68, bearing=42.0))
+
+    sin_gps = _obs("40000", 0.0, 0.0).model_copy(
+        update={"has_position": False, "latitude": None, "longitude": None}
+    )
+    repo.update(sin_gps)
+
+    # `current` no trae GPS, pero `previous` si: debe recuperarse de ahi.
+    prev = repo.get_previous_position("40000")
+    assert prev is not None, "la posicion previa se perdio al llegar un frame sin GPS"
+    assert prev.latitude == 40.35
+    assert prev.longitude == -3.68
+
+
+def test_gps_gap_does_not_lose_last_known_bearing() -> None:
+    """C-4: por debajo del umbral (o sin datos) se conserva el ultimo rumbo conocido."""
+    repo = InMemoryCurrentStateRepository()
+    repo.update(_obs("40001", 40.35, -3.68, bearing=137.5))
+
+    sin_gps = _obs("40001", 0.0, 0.0).model_copy(
+        update={
+            "has_position": False,
+            "latitude": None,
+            "longitude": None,
+            "bearing_degrees": None,
+        }
+    )
+    repo.update(sin_gps)
+
+    assert repo.get_previous_bearing("40001") == 137.5

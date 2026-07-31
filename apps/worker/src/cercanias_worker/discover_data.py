@@ -49,6 +49,11 @@ from cercanias_domain.nucleo_filter import build_nucleo_filter
 from cercanias_domain.station_matching import normalize_station_name
 from cercanias_worker.config import WorkerConfig
 
+#: Codigo de salida cuando ninguna de las tres fuentes GTFS estaticas responde.
+#: C-1 exige fallo explicito: sin GTFS estatico no hay Puerta 0-A que evaluar y
+#: cualquier informe generado seria una metrica calculada sobre datos vacios.
+EXIT_NO_STATIC_GTFS = 3
+
 # Tabla de referencia de codigos de nucleo del Anexo A.2 (lista de exclusion,
 # NO verdad oficial segun el propio anexo) junto con el codigo equivalente
 # observado en vivo el 31/07/2026 (ver ANOMALIA en nucleo_filter.py):
@@ -160,12 +165,19 @@ def main() -> int:  # noqa: PLR0915 - orquestacion secuencial de un CLI, se mant
             if not attempt.ok:
                 anomalies.append(f"Fuente GTFS '{attempt.source_name}' fallo: {attempt.reason}")
     except GtfsStaticUnavailableError as exc:
-        anomalies.append(f"GTFS estatico: NINGUNA fuente respondio ({exc}).")
-        assumptions.append(
-            "Sin GTFS estatico disponible, todos los trip_id quedan sin resolver "
-            "(resolution=fallback_label) y la Puerta 0-A no puede evaluarse en esta ejecucion."
+        # C-1 / Anexo A.10: si ninguna de las tres fuentes responde hay que FALLAR
+        # de forma explicita, nunca continuar con datos vacios. Continuar producia
+        # informes de cobertura con aspecto normal (100 % de trip_id "sin resolver"
+        # presentado como resultado) construidos sobre la nada, que es peor que no
+        # tener informe: invita a cerrar la Puerta 0-A con datos inexistentes.
+        print(
+            f"ERROR FATAL: ninguna de las fuentes GTFS estaticas respondio ({exc}).\n"
+            "C-1 exige fallar explicitamente en este caso; no se generan informes ni "
+            "mappings, porque cualquier metrica de cobertura calculada ahora seria falsa.\n"
+            "Resuelve el origen de datos antes de reintentar (runbook, bloque 2).",
+            file=sys.stderr,
         )
-        print(f"ERROR (no bloqueante para el comando): {exc}", file=sys.stderr)
+        return EXIT_NO_STATIC_GTFS
 
     # --- 2. Feed en vivo, con fallback a fixture (Puerta 0-A no debe bloquear el descubrimiento) ---
     nucleo_filter = build_nucleo_filter(config.renfe_nucleo_codes)
