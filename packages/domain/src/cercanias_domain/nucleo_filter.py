@@ -36,9 +36,24 @@ from dataclasses import dataclass
 #:       fixtures congeladas de test.
 #: 1010: código observado en una descarga en vivo el 2026-07-31 (ver
 #:       ANOMALÍA en docs/informes/feed-freshness.md). Se asume vigente hoy.
-DEFAULT_NUCLEO_CODES: tuple[str, ...] = ("1080", "1010")
+#: Por defecto se filtra por el PREFIJO de 2 dígitos, no por el código de 4.
+#:
+#: Los dos últimos dígitos del ``tripId`` NO identifican el núcleo: rotan con el
+#: día, junto con la letra separadora (ver ADR-012). Observado en tres días
+#: consecutivos sobre el mismo núcleo de Madrid:
+#:
+#:     2026-07-29 (jueves)  1080J20316C4a
+#:     2026-07-31 (viernes) 1010V21348C10
+#:     2026-08-01 (sábado)  1011S27455C4b
+#:
+#: Los dos primeros dígitos (``10`` = Madrid) son lo único estable, y es
+#: coherente con que el patrón especial del Anexo A.2 sea ``SPECIAL_10_*``,
+#: también de dos dígitos. Filtrar por el código de 4 rompe el sistema cada vez
+#: que Renfe rota el calendario, y rompe en silencio: filtra a cero.
+DEFAULT_NUCLEO_CODES: tuple[str, ...] = ("10",)
 
 _NUCLEO_CODE_RE = re.compile(r"\d{4}")
+_NUCLEO_PREFIX_RE = re.compile(r"\d{2}")
 
 
 @dataclass(frozen=True)
@@ -53,15 +68,22 @@ class NucleoFilter:
 
 
 def build_nucleo_filter(codes: Sequence[str] | None = None) -> NucleoFilter:
-    """Construye el filtro de núcleo a partir de una lista de códigos de 4 dígitos.
+    """Construye el filtro de núcleo. Acepta prefijos de 2 dígitos o códigos de 4.
 
-    Genera un patrón equivalente al de Anexo A.2 pero generalizado a N
-    códigos y sin fijar el carácter separador:
+    - **2 dígitos** (recomendado): identifica el núcleo y tolera la rotación
+      diaria de los dos últimos dígitos. ``"10"`` genera::
 
-        ^(?:(?:1080|1010)[A-Z]|SPECIAL_10_)
+          ^(?:10\\d{2}[A-Z]|SPECIAL_10_)
 
-    Prohibido filtrar por etiqueta de línea (C-3): esta función nunca mira
-    el sufijo del ``tripId``, solo el prefijo de núcleo.
+      que casa con ``1080J…``, ``1010V…`` y ``1011S…`` sin tocar configuración.
+
+    - **4 dígitos**: coincidencia exacta. Sigue admitiéndose para poder fijar un
+      día concreto en un test, pero NO debe usarse en producción: el código de 4
+      caduca cada día (ADR-012) y el fallo es silencioso, porque un filtro que no
+      reconoce nada devuelve cero sin error.
+
+    Prohibido filtrar por etiqueta de línea (C-3): esta función nunca mira el
+    sufijo del ``tripId``, solo el prefijo de núcleo.
     """
     resolved = tuple(codes) if codes is not None else DEFAULT_NUCLEO_CODES
     if not resolved:
@@ -70,10 +92,18 @@ def build_nucleo_filter(codes: Sequence[str] | None = None) -> NucleoFilter:
     trip_alternatives: list[str] = []
     special_prefixes: set[str] = set()
     for code in resolved:
-        if not _NUCLEO_CODE_RE.fullmatch(code):
-            raise ValueError(f"Codigo de nucleo invalido: {code!r} (se esperan 4 digitos)")
-        trip_alternatives.append(re.escape(code))
-        special_prefixes.add(re.escape(code[:2]))
+        if _NUCLEO_PREFIX_RE.fullmatch(code):
+            # Prefijo estable + comodín para los dos dígitos que rotan a diario.
+            trip_alternatives.append(rf"{re.escape(code)}\d{{2}}")
+            special_prefixes.add(re.escape(code))
+        elif _NUCLEO_CODE_RE.fullmatch(code):
+            trip_alternatives.append(re.escape(code))
+            special_prefixes.add(re.escape(code[:2]))
+        else:
+            raise ValueError(
+                f"Codigo de nucleo invalido: {code!r} "
+                "(se esperan 2 digitos de prefijo, recomendado, o 4 de codigo exacto)"
+            )
 
     trip_alt = "|".join(trip_alternatives)
     special_alt = "|".join(sorted(special_prefixes))
