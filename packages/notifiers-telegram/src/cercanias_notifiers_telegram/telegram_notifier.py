@@ -160,6 +160,37 @@ class TelegramNotifier:
     def configured(self) -> bool:
         return bool(self._token and self._chat_id)
 
+    def _call(self, method: str, params: dict[str, str] | None = None) -> dict[str, object]:
+        """Llamada de sólo lectura a la Bot API, para diagnóstico.
+
+        No pasa por el limitador de ritmo: ``getMe`` y ``getChat`` no envían
+        nada y no cuentan contra las cuotas de mensajes de C-8.
+        """
+        client = self._client or httpx.Client(timeout=DEFAULT_TIMEOUT_SECONDS)
+        try:
+            response = client.get(f"{TELEGRAM_API_BASE}/bot{self._token}/{method}", params=params)
+            body = response.json()
+            if not isinstance(body, dict):
+                raise TelegramSendError(f"{method} devolvio un cuerpo inesperado")
+            if not body.get("ok"):
+                description = str(body.get("description", "sin descripcion"))
+                raise TelegramSendError(_redact(f"{method}: {description}", self._token))
+            result = body.get("result")
+            return result if isinstance(result, dict) else {}
+        except httpx.HTTPError as exc:
+            raise TelegramSendError(_redact(f"{method}: error de red: {exc}", self._token)) from exc
+        finally:
+            if self._owns_client:
+                client.close()
+
+    def get_me(self) -> dict[str, object]:
+        """Identidad del bot. Falla si el token no es valido."""
+        return self._call("getMe")
+
+    def get_chat(self, chat_id: str | None = None) -> dict[str, object]:
+        """Resuelve el destino. Falla si el chat_id no existe o el bot no lo ve."""
+        return self._call("getChat", {"chat_id": chat_id or self._chat_id or ""})
+
     def send(self, text: str, *, chat_id: str | None = None) -> SendOutcome:
         target = chat_id or self._chat_id or "<dry-run>"
 

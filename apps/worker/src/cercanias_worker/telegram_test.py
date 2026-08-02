@@ -84,13 +84,44 @@ def main() -> int:
         print(f"\nERROR de configuracion: {exc}", file=sys.stderr)
         return EXIT_MISSING_CONFIG
 
+    # 1. ¿Es valido el token? getMe no envia nada y responde quien es el bot.
+    print("\n[1/3] Identificando el bot (getMe)...")
+    try:
+        me = notifier.get_me()
+    except TelegramSendError as exc:
+        print(f"  FALLO: {exc}", file=sys.stderr)
+        ayuda = _diagnostico(str(exc))
+        print(f"\nProbable causa:\n  {ayuda or 'token no valido o sin conexion.'}", file=sys.stderr)
+        return EXIT_SEND_FAILED
+    print(f"  OK  bot: @{me.get('username')} ({me.get('first_name')})")
+
+    # 2. ¿Existe el destino y lo ve el bot? Aqui es donde falla casi siempre.
+    print("[2/3] Resolviendo el destino (getChat)...")
+    try:
+        chat = notifier.get_chat()
+    except TelegramSendError as exc:
+        print(f"  FALLO: {exc}", file=sys.stderr)
+        ayuda = _diagnostico(str(exc))
+        if ayuda:
+            print(f"\nProbable causa:\n  {ayuda}", file=sys.stderr)
+        print(
+            "\nRecuerda: TELEGRAM_CHAT_ID NO es el nombre visible del canal.\n"
+            "  - Canal publico:  @nombre_de_usuario_del_canal (sin espacios)\n"
+            "  - Canal privado:  id numerico que empieza por -100\n"
+            "  - Chat contigo:   id numerico, tras escribir al bot",
+            file=sys.stderr,
+        )
+        return EXIT_SEND_FAILED
+    titulo = chat.get("title") or chat.get("username") or chat.get("first_name")
+    print(f"  OK  destino: {titulo!r} (tipo: {chat.get('type')}, id: {chat.get('id')})")
+
     mensaje = (
         "<b>Cercanias Madrid — prueba de integracion</b>\n"
         "Si lees esto, el token y el chat_id funcionan.\n"
         "<i>Mensaje de prueba; no corresponde a ninguna incidencia real.</i>"
     )
 
-    print(f"\nEnviando mensaje de prueba a {chat_id}...")
+    print(f"[3/3] Enviando mensaje de prueba a {chat_id}...")
     try:
         outcome = notifier.send(mensaje)
     except TelegramSendError as exc:
