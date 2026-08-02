@@ -108,6 +108,35 @@ def detect_incidents(
     return tuple(sorted(incidents, key=lambda i: -i.max_delay_seconds))
 
 
+#: Proporción de la línea afectada que, por sí sola, justifica un aviso aunque
+#: los retrasos sean leves. Una disrupción amplia y suave —media línea con 6
+#: minutos— no la ve un umbral de retraso, pero el viajero sí.
+#:
+#: 0,5 y no 0,4 por una observación concreta: el 02/08/2026 la C4 osciló entre
+#: 6/19 y 8/19 trenes afectados (32 %-42 %) en cinco pasadas consecutivas. Con el
+#: listón en 0,4 habría entrado y salido del aviso entre pasadas. El umbral tiene
+#: que quedar por encima de la banda de ruido que genera el propio feed.
+DEFAULT_NOTIFY_AFFECTED_RATIO = 0.5
+
+
+@dataclass(frozen=True)
+class AlertPolicy:
+    """Qué incidencias merecen notificación.
+
+    Deliberadamente separado de la detección: ``detect_incidents`` sigue
+    devolviendo todo lo que supera el umbral de 5 minutos, porque eso alimenta el
+    snapshot y el mapa. Notificar es otra decisión, con un listón más alto: un
+    mensaje que no aporta enseña a ignorar los siguientes.
+    """
+
+    notify_affected_ratio: float = DEFAULT_NOTIFY_AFFECTED_RATIO
+
+    def should_notify(self, incident: LineIncident) -> bool:
+        if incident.severity is IncidentSeverity.MAJOR:
+            return True
+        return incident.affected_ratio >= self.notify_affected_ratio
+
+
 #: Silencio por línea tras avisar, salvo empeoramiento material.
 DEFAULT_COOLDOWN = timedelta(minutes=30)
 

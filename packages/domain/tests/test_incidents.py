@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 from cercanias_domain.incidents import (
     AlertCooldown,
+    AlertPolicy,
     IncidentSeverity,
     IncidentThresholds,
     TrainDelay,
@@ -130,3 +131,55 @@ def test_mensaje_traduce_segundos_a_algo_legible() -> None:
     mensaje = format_incident_message(detect_incidents(_trenes("C4", 5400, 5400, 5400)))
     assert "1 h 30 min" in mensaje, mensaje
     assert "5400" not in mensaje, "no se muestran segundos crudos al usuario"
+
+
+# --- politica de notificacion (distinta de la deteccion) ----------------------
+
+
+def test_grave_siempre_se_notifica() -> None:
+    inc = detect_incidents(_trenes("C7", 4080, 4080, 4080))[0]
+    assert inc.severity is IncidentSeverity.MAJOR
+    assert AlertPolicy().should_notify(inc) is True
+
+
+def test_leve_y_minoritario_no_se_notifica() -> None:
+    """El caso real de la C4 el 02/08/2026: 7 de 19 trenes con 5-8 min.
+
+    Se DETECTA (alimenta el snapshot y el mapa) pero no se notifica: en una red
+    de cercanias eso es una tarde normal, y colarlo en el mismo mensaje que un
+    fallo de 68 minutos diluye la senal.
+    """
+    delays = _trenes("C4", *([480] * 7), *([0] * 12))
+    inc = detect_incidents(delays)[0]
+    assert inc.severity is IncidentSeverity.MINOR
+    assert inc.affected_trains == 7
+    assert inc.total_trains == 19
+    assert AlertPolicy().should_notify(inc) is False
+
+
+def test_leve_pero_generalizado_si_se_notifica() -> None:
+    """Media linea con retraso leve es una disrupcion que el viajero nota."""
+    delays = _trenes("C3", *([480] * 6), *([0] * 4))
+    inc = detect_incidents(delays)[0]
+    assert inc.severity is IncidentSeverity.MINOR
+    assert inc.affected_ratio >= 0.5
+    assert AlertPolicy().should_notify(inc) is True
+
+
+def test_el_umbral_queda_por_encima_del_ruido_observado() -> None:
+    """La C4 oscilo entre 32 % y 42 % en cinco pasadas seguidas.
+
+    Con el liston en 0,4 habria entrado y salido del aviso entre pasadas. Este
+    test fija que ninguna de las proporciones observadas ese dia notifica.
+    """
+    politica = AlertPolicy()
+    for afectados in (6, 7, 8):  # de 19 trenes: 32 %, 37 %, 42 %
+        delays = _trenes("C4", *([480] * afectados), *([0] * (19 - afectados)))
+        inc = detect_incidents(delays)[0]
+        assert politica.should_notify(inc) is False, f"{afectados}/19 no deberia notificar"
+
+
+def test_umbral_de_proporcion_configurable() -> None:
+    delays = _trenes("C4", *([480] * 7), *([0] * 12))
+    inc = detect_incidents(delays)[0]
+    assert AlertPolicy(notify_affected_ratio=0.3).should_notify(inc) is True

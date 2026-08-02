@@ -46,6 +46,7 @@ from cercanias_domain.health import (
 )
 from cercanias_domain.incidents import (
     AlertCooldown,
+    AlertPolicy,
     LineIncident,
     TrainDelay,
     detect_incidents,
@@ -238,6 +239,43 @@ def _build_notifier(config: WorkerConfig) -> TelegramNotifier:
         return TelegramNotifier(token=None, chat_id=None, options=TelegramOptions(dry_run=True))
 
 
+def _report_incidents(
+    cycle: CycleResult,
+    policy: AlertPolicy,
+    cooldown: AlertCooldown,
+    notifier: TelegramNotifier,
+) -> None:
+    """Imprime las incidencias y notifica las que corresponda.
+
+    Detectar y notificar son decisiones distintas: se detecta desde 5 minutos,
+    porque eso alimenta el snapshot y el mapa, pero sólo se notifica lo grave o
+    lo suficientemente extendido. Un mensaje que no aporta enseña a ignorar los
+    siguientes.
+    """
+    ahora = datetime.now(tz=UTC)
+    notificables = [inc for inc in cycle.incidents if policy.should_notify(inc)]
+    nuevas = [inc for inc in notificables if cooldown.should_alert(inc, ahora)]
+
+    for inc in cycle.incidents:
+        if inc in nuevas:
+            marca = "AVISO"
+        elif inc in notificables:
+            marca = "en enfriamiento"
+        else:
+            marca = "solo snapshot, no se notifica"
+        print(
+            f"    ~ {inc.route_group}: {inc.affected_trains}/{inc.total_trains} trenes "
+            f"({inc.affected_ratio:.0%}), max {inc.max_delay_seconds // 60} min "
+            f"[{inc.severity}] ({marca})"
+        )
+
+    if nuevas:
+        outcome = notifier.send(format_incident_message(tuple(nuevas)))
+        for inc in nuevas:
+            cooldown.record(inc, ahora)
+        print(f"    -> Telegram (incidencias): {outcome.detail}")
+
+
 def main() -> int:
     config = WorkerConfig()
     cycles = int(_env("MVP_CYCLES", "5"))
@@ -252,6 +290,7 @@ def main() -> int:
     consecutive_critical = 0
     worst_seen = Severity.OK
     cooldown = AlertCooldown()
+    policy = AlertPolicy()
 
     for i in range(1, cycles + 1):
         print(f"[{i}/{cycles}] {datetime.now(tz=MADRID_TZ):%H:%M:%S}")
@@ -270,20 +309,7 @@ def main() -> int:
         for inv in cycle.health.failures:
             print(f"    ! {inv.name}: {inv.detail}")
 
-        # --- avisos de incidencia por linea (independientes de la salud) ---
-        ahora = datetime.now(tz=UTC)
-        nuevas = [inc for inc in cycle.incidents if cooldown.should_alert(inc, ahora)]
-        for inc in cycle.incidents:
-            marca = "AVISO" if inc in nuevas else "en enfriamiento"
-            print(
-                f"    ~ {inc.route_group}: {inc.affected_trains}/{inc.total_trains} trenes, "
-                f"max {inc.max_delay_seconds // 60} min [{inc.severity}] ({marca})"
-            )
-        if nuevas:
-            outcome = notifier.send(format_incident_message(tuple(nuevas)))
-            for inc in nuevas:
-                cooldown.record(inc, ahora)
-            print(f"    -> Telegram (incidencias): {outcome.detail}")
+        _report_incidents(cycle, policy, cooldown, notifier)
 
         if estado is Severity.CRITICAL:
             consecutive_critical += 1

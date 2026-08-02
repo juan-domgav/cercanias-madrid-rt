@@ -1,378 +1,63 @@
 {
- "generated_at": "2026-08-02T15:29:23.987225+00:00",
- "local_time": "17:29:23.987225",
+ "generated_at": "2026-08-02T15:49:31.457679+00:00",
+ "local_time": "17:49:31.457679",
  "nucleo_codes": [
   "10"
  ],
  "vehicles": [
   {
-   "trip_id": "1012D27479C4b",
-   "route": "C4b",
-   "lat": 40.24143,
-   "lon": -3.769159,
-   "platform": "2",
-   "bearing": null,
-   "delay_seconds": 960
-  },
-  {
-   "trip_id": "1012D79142C7",
-   "route": "C7",
-   "lat": 40.42163,
-   "lon": -3.7193205,
-   "platform": "2",
-   "bearing": null,
-   "delay_seconds": 4500
-  },
-  {
-   "trip_id": "1012D79144C7",
-   "route": "C7",
-   "lat": 40.47113,
-   "lon": -3.6828332,
-   "platform": "8",
-   "bearing": null,
-   "delay_seconds": 240
-  },
-  {
-   "trip_id": "1012D27058C3",
-   "route": "C3",
-   "lat": 40.231213,
-   "lon": -3.696651,
-   "platform": "2",
-   "bearing": 140.69771354443577,
-   "delay_seconds": 120
-  },
-  {
-   "trip_id": "1012D79146C7",
-   "route": "C7",
-   "lat": 40.42163,
-   "lon": -3.7193205,
-   "platform": "2",
-   "bearing": null,
-   "delay_seconds": 900
-  },
-  {
-   "trip_id": "1012D79325C7",
-   "route": "C7",
-   "lat": 40.4889,
-   "lon": -3.3666708,
-   "platform": "2",
-   "bearing": null,
-   "delay_seconds": 1020
-  },
-  {
-   "trip_id": "1012D27472C4b",
-   "route": "C4b",
-   "lat": 40.501648,
-   "lon": -3.6821797,
-   "platform": "2",
-   "bearing": null,
-   "delay_seconds": 60
-  },
-  {
-   "trip_id": "1012D79145C7",
-   "route": "C7",
-   "lat": 40.448578,
-   "lon": -3.78556,
-   "platform": "1",
-   "bearing": null,
-   "delay_seconds": 60
-  },
-  {
-   "trip_id": "1012D79148C7",
-   "route": "C7",
-   "lat": 40.42163,
-   "lon": -3.7193205,
-   "platform": "3",
-   "bearing": null,
-   "delay_seconds": 780
-  },
-  {
-   "trip_id": "1012D27470C4b",
-   "route": "C4b",
-   "lat": 40.417023,
-   "lon": -3.7031636,
-   "platform": "8",
-   "bearing": null,
-   "delay_seconds": 180
-  },
-  {
-   "trip_id": "1012D27471C4b",
-   "route": "C4b",
-   "lat": 40.24143,
-   "lon": -3.769159,
-   "platform": "2",
-   "bearing": null,
-   "delay_seconds": 5760
-  },
-  {
-   "trip_id": "1012D79147C7",
-   "route": "C7",
-   "lat": 40.47113,
-   "lon": -3.6828332,
-   "platform": "9",
-   "bearing": null,
-   "delay_seconds": 120
-  },
-  {
-   "trip_id": "1012D27059C3",
-   "route": "C3",
-   "lat": 40.352676,
-   "lon": -3.6839325,
-   "platform": "4",
-   "bearing": null,
-   "delay_seconds": 180
-  },
-  {
-   "trip_id": "1012D27476C4b",
-   "route": "C4b",
-   "lat": 40.644844,
-   "lon": -3.7762609,
-   "platform": "3",
-   "bearing": null,
-   "delay_seconds": 0
-  },
-  {
-   "trip_id": "1012D79149C7",
-   "route": "C7",
-   "lat": 40.44655,
-   "lon": -3.691473,
-   "platform": "1",
-   "bearing": null,
-   "delay_seconds": 0
-  },
-  {
-   "trip_id": "1012D79328C7",
-   "route": "C7",
-   "lat": 40.40667,
-   "lon": -3.6893938,
-   "platform": "3",
-   "bearing": null,
-   "delay_seconds": 0
-  },
-  {
-   "trip_id": "1012D27477C4b",
-   "route": "C4b",
-   "lat": 40.471325,
-   "lon": -3.6833096,
-   "platform": "6",
-   "bearing": null,
-   "delay_seconds": 120
-  },
-  {
-   "trip_id": "1012D27056C3",
+   "trip_id": "1012D27067C3",
    "route": "C3",
    "lat": 40.035027,
    "lon": -3.6189713,
-   "platform": "4",
+   "platform": "1",
    "bearing": null,
-   "delay_seconds": 60
+   "delay_seconds": 0
   },
   {
-   "trip_id": "1012D27474C4b",
+   "trip_id": "1012D27062C3",
+   "route": "C3",
+   "lat": 40.352676,
+   "lon": -3.6839325,
+   "platform": "6",
+   "bearing": 167.16901794417015,
+   "delay_seconds": 360
+  },
+  {
+   "trip_id": "1012D27060C3",
+   "route": "C3",
+   "lat": 40.196156,
+   "lon": -3.6648214,
+   "platform": "2",
+   "bearing": null,
+   "delay_seconds": 180
+  },
+  {
+   "trip_id": "1012D79977C8b",
+   "route": "C8b",
+   "lat": 40.196156,
+   "lon": -3.6648214,
+   "platform": "2",
+   "bearing": 174.90435290087453,
+   "delay_seconds": 0
+  },
+  {
+   "trip_id": "1012D27478C4b",
    "route": "C4b",
    "lat": 40.644844,
    "lon": -3.7762609,
    "platform": "3",
    "bearing": null,
-   "delay_seconds": 180
-  },
-  {
-   "trip_id": "1012D79327C7",
-   "route": "C7",
-   "lat": 40.4889,
-   "lon": -3.3666708,
-   "platform": "5",
-   "bearing": null,
-   "delay_seconds": 540
-  },
-  {
-   "trip_id": "1012D27475C4b",
-   "route": "C4b",
-   "lat": 40.558834,
-   "lon": -3.7141593,
-   "platform": "1",
-   "bearing": 178.1413711955854,
-   "delay_seconds": 60
-  },
-  {
-   "trip_id": "1012D27057C3",
-   "route": "C3",
-   "lat": 40.471382,
-   "lon": -3.6834786,
-   "platform": "6",
-   "bearing": null,
-   "delay_seconds": 360
-  },
-  {
-   "trip_id": "1012D79827C8a",
-   "route": "C8a",
-   "lat": 40.626564,
-   "lon": -4.011786,
-   "platform": "1",
-   "bearing": 275.7396957822695,
-   "delay_seconds": 240
-  },
-  {
-   "trip_id": "1012D79329C7",
-   "route": "C7",
-   "lat": 40.4889,
-   "lon": -3.3666708,
-   "platform": "5",
-   "bearing": null,
    "delay_seconds": 0
-  },
-  {
-   "trip_id": "1012D79829C8a",
-   "route": "C8a",
-   "lat": 40.406666,
-   "lon": -3.6893961,
-   "platform": "2",
-   "bearing": null,
-   "delay_seconds": 300
-  },
-  {
-   "trip_id": "1012D79471C2",
-   "route": "C2",
-   "lat": 40.40667,
-   "lon": -3.689395,
-   "platform": "1",
-   "bearing": null,
-   "delay_seconds": 0
-  },
-  {
-   "trip_id": "1012D79331C7",
-   "route": "C7",
-   "lat": 40.4889,
-   "lon": -3.3666708,
-   "platform": "5",
-   "bearing": null,
-   "delay_seconds": 0
-  },
-  {
-   "trip_id": "1012D76243C5",
-   "route": "C5",
-   "lat": 40.3791,
-   "lon": -3.6987777,
-   "platform": "2",
-   "bearing": null,
-   "delay_seconds": 0
-  },
-  {
-   "trip_id": "1012D76244C5",
-   "route": "C5",
-   "lat": 40.39592,
-   "lon": -3.6779969,
-   "platform": "2",
-   "bearing": null,
-   "delay_seconds": 0
-  },
-  {
-   "trip_id": "1012D79975C8b",
-   "route": "C8b",
-   "lat": 40.49547,
-   "lon": -3.7261994,
-   "platform": "1",
-   "bearing": null,
-   "delay_seconds": 240
-  },
-  {
-   "trip_id": "1012D76761C5",
-   "route": "C5",
-   "lat": 40.29673,
-   "lon": -3.7924793,
-   "platform": "1",
-   "bearing": null,
-   "delay_seconds": 180
-  },
-  {
-   "trip_id": "1012D76245C5",
-   "route": "C5",
-   "lat": 40.34132,
-   "lon": -3.7123663,
-   "platform": "4",
-   "bearing": null,
-   "delay_seconds": 0
-  },
-  {
-   "trip_id": "1012D76506C5",
-   "route": "C5",
-   "lat": 40.330883,
-   "lon": -3.8823783,
-   "platform": "2",
-   "bearing": null,
-   "delay_seconds": 0
-  },
-  {
-   "trip_id": "1012D27281C4a",
-   "route": "C4a",
-   "lat": 40.24143,
-   "lon": -3.769159,
-   "platform": "1",
-   "bearing": null,
-   "delay_seconds": 0
-  },
-  {
-   "trip_id": "1012D27282C4a",
-   "route": "C4a",
-   "lat": 40.546417,
-   "lon": -3.6351175,
-   "platform": "2",
-   "bearing": null,
-   "delay_seconds": 0
-  },
-  {
-   "trip_id": "1012D27280C4a",
-   "route": "C4a",
-   "lat": 40.546417,
-   "lon": -3.6351175,
-   "platform": "2",
-   "bearing": null,
-   "delay_seconds": 300
-  },
-  {
-   "trip_id": "1012D79320C7",
-   "route": "C7",
-   "lat": 40.40667,
-   "lon": -3.6893938,
-   "platform": "3",
-   "bearing": null,
-   "delay_seconds": 2940
-  },
-  {
-   "trip_id": "1012D79974C8b",
-   "route": "C8b",
-   "lat": 40.500324,
-   "lon": -3.7078378,
-   "platform": "2",
-   "bearing": 68.14182760111606,
-   "delay_seconds": 120
-  },
-  {
-   "trip_id": "1012D79561C2",
-   "route": "C2",
-   "lat": 40.471153,
-   "lon": -3.6823752,
-   "platform": "1",
-   "bearing": 276.1794991672741,
-   "delay_seconds": 1860
   },
   {
    "trip_id": "1012D76500C5",
    "route": "C5",
-   "lat": 40.330883,
-   "lon": -3.8823783,
-   "platform": "2",
-   "bearing": null,
-   "delay_seconds": 480
-  },
-  {
-   "trip_id": "1012D79322C7",
-   "route": "C7",
-   "lat": 40.480347,
-   "lon": -3.39294,
-   "platform": "2",
-   "bearing": null,
-   "delay_seconds": 180
+   "lat": 40.386257,
+   "lon": -3.7610443,
+   "platform": "1",
+   "bearing": 70.15203452826432,
+   "delay_seconds": 660
   },
   {
    "trip_id": "1012D76501C5",
@@ -386,17 +71,44 @@
   {
    "trip_id": "1012D79976C8b",
    "route": "C8b",
-   "lat": 40.737614,
-   "lon": -4.0662985,
-   "platform": "4",
+   "lat": 40.65798,
+   "lon": -4.035108,
+   "platform": "1",
+   "bearing": 332.4502838321794,
+   "delay_seconds": 120
+  },
+  {
+   "trip_id": "1012D27479C4b",
+   "route": "C4b",
+   "lat": 40.409554,
+   "lon": -3.693056,
+   "platform": "5",
+   "bearing": 317.25549215294023,
+   "delay_seconds": 420
+  },
+  {
+   "trip_id": "1012D79146C7",
+   "route": "C7",
+   "lat": 40.42163,
+   "lon": -3.7193205,
+   "platform": "2",
    "bearing": null,
-   "delay_seconds": 360
+   "delay_seconds": 2100
   },
   {
    "trip_id": "1012D76502C5",
    "route": "C5",
-   "lat": 40.330883,
-   "lon": -3.8823783,
+   "lat": 40.3521,
+   "lon": -3.8294992,
+   "platform": "1",
+   "bearing": 43.9457279033478,
+   "delay_seconds": 660
+  },
+  {
+   "trip_id": "1012D76503C5",
+   "route": "C5",
+   "lat": 40.405067,
+   "lon": -3.7026901,
    "platform": "2",
    "bearing": null,
    "delay_seconds": 0
@@ -404,6 +116,60 @@
   {
    "trip_id": "1012D76504C5",
    "route": "C5",
+   "lat": 40.356674,
+   "lon": -3.8156087,
+   "platform": "1",
+   "bearing": 62.616180347660304,
+   "delay_seconds": 60
+  },
+  {
+   "trip_id": "1012D76505C5",
+   "route": "C5",
+   "lat": 40.405067,
+   "lon": -3.7026901,
+   "platform": "2",
+   "bearing": null,
+   "delay_seconds": 0
+  },
+  {
+   "trip_id": "1012D76506C5",
+   "route": "C5",
+   "lat": 40.330883,
+   "lon": -3.8823783,
+   "platform": "2",
+   "bearing": null,
+   "delay_seconds": 300
+  },
+  {
+   "trip_id": "1012D27281C4a",
+   "route": "C4a",
+   "lat": 40.323135,
+   "lon": -3.7273622,
+   "platform": "1",
+   "bearing": 19.97994452999876,
+   "delay_seconds": 0
+  },
+  {
+   "trip_id": "1012D27472C4b",
+   "route": "C4b",
+   "lat": 40.442665,
+   "lon": -3.6924522,
+   "platform": "8",
+   "bearing": 184.0275422217066,
+   "delay_seconds": 120
+  },
+  {
+   "trip_id": "1012D27282C4a",
+   "route": "C4a",
+   "lat": 40.546417,
+   "lon": -3.6351175,
+   "platform": "2",
+   "bearing": null,
+   "delay_seconds": 480
+  },
+  {
+   "trip_id": "1012D76508C5",
+   "route": "C5",
    "lat": 40.330883,
    "lon": -3.8823783,
    "platform": "2",
@@ -411,7 +177,331 @@
    "delay_seconds": 0
   },
   {
+   "trip_id": "1012D27280C4a",
+   "route": "C4a",
+   "lat": 40.501648,
+   "lon": -3.6821797,
+   "platform": "2",
+   "bearing": null,
+   "delay_seconds": 180
+  },
+  {
+   "trip_id": "1012D79148C7",
+   "route": "C7",
+   "lat": 40.433647,
+   "lon": -3.7354908,
+   "platform": "3",
+   "bearing": 290.48204363917455,
+   "delay_seconds": 300
+  },
+  {
+   "trip_id": "1012D27470C4b",
+   "route": "C4b",
+   "lat": 40.323135,
+   "lon": -3.7273622,
+   "platform": "2",
+   "bearing": 231.17995852240745,
+   "delay_seconds": 120
+  },
+  {
+   "trip_id": "1012D79320C7",
+   "route": "C7",
+   "lat": 40.40667,
+   "lon": -3.6893938,
+   "platform": "3",
+   "bearing": null,
+   "delay_seconds": 4140
+  },
+  {
+   "trip_id": "1012D79561C2",
+   "route": "C2",
+   "lat": 40.44277,
+   "lon": -3.5339844,
+   "platform": "1",
+   "bearing": null,
+   "delay_seconds": 2280
+  },
+  {
+   "trip_id": "1012D79563C2",
+   "route": "C2",
+   "lat": 40.480347,
+   "lon": -3.39294,
+   "platform": "1",
+   "bearing": 246.43654521418225,
+   "delay_seconds": 1440
+  },
+  {
+   "trip_id": "1012D79147C7",
+   "route": "C7",
+   "lat": 40.493298,
+   "lon": -3.740556,
+   "platform": "1",
+   "bearing": 274.94579292972776,
+   "delay_seconds": 720
+  },
+  {
+   "trip_id": "1012D27476C4b",
+   "route": "C4b",
+   "lat": 40.644844,
+   "lon": -3.7762609,
+   "platform": "3",
+   "bearing": null,
+   "delay_seconds": 300
+  },
+  {
+   "trip_id": "1012D79324C7",
+   "route": "C7",
+   "lat": 40.4889,
+   "lon": -3.3666708,
+   "platform": "6",
+   "bearing": 66.52843407920511,
+   "delay_seconds": 0
+  },
+  {
+   "trip_id": "1012D79565C2",
+   "route": "C2",
+   "lat": 40.644257,
+   "lon": -3.1823237,
+   "platform": "1",
+   "bearing": null,
+   "delay_seconds": 0
+  },
+  {
+   "trip_id": "1012D79326C7",
+   "route": "C7",
+   "lat": 40.401035,
+   "lon": -3.5957618,
+   "platform": "2",
+   "bearing": 229.53208128991093,
+   "delay_seconds": 420
+  },
+  {
+   "trip_id": "1012D79325C7",
+   "route": "C7",
+   "lat": 40.4889,
+   "lon": -3.3666708,
+   "platform": "2",
+   "bearing": null,
+   "delay_seconds": 2280
+  },
+  {
+   "trip_id": "1012D27059C3",
+   "route": "C3",
+   "lat": 40.471382,
+   "lon": -3.6834786,
+   "platform": "4",
+   "bearing": null,
+   "delay_seconds": 60
+  },
+  {
+   "trip_id": "1012D79328C7",
+   "route": "C7",
+   "lat": 40.381805,
+   "lon": -3.6681077,
+   "platform": "2",
+   "bearing": 301.7560642376338,
+   "delay_seconds": 60
+  },
+  {
+   "trip_id": "1012D79149C7",
+   "route": "C7",
+   "lat": 40.448742,
+   "lon": -3.6912746,
+   "platform": "3",
+   "bearing": 3.9401739195020014,
+   "delay_seconds": 0
+  },
+  {
+   "trip_id": "1012D79327C7",
+   "route": "C7",
+   "lat": 40.423397,
+   "lon": -3.561349,
+   "platform": "1",
+   "bearing": 49.50977208156854,
+   "delay_seconds": 240
+  },
+  {
+   "trip_id": "1012D27477C4b",
+   "route": "C4b",
+   "lat": 40.54373,
+   "lon": -3.7003317,
+   "platform": "1",
+   "bearing": null,
+   "delay_seconds": 360
+  },
+  {
+   "trip_id": "1012D79329C7",
+   "route": "C7",
+   "lat": 40.4889,
+   "lon": -3.3666708,
+   "platform": "5",
+   "bearing": null,
+   "delay_seconds": 360
+  },
+  {
+   "trip_id": "1012D27474C4b",
+   "route": "C4b",
+   "lat": 40.558834,
+   "lon": -3.7141593,
+   "platform": "2",
+   "bearing": null,
+   "delay_seconds": 180
+  },
+  {
+   "trip_id": "1012D80693C9",
+   "route": "C9",
+   "lat": 40.73769,
+   "lon": -4.0657763,
+   "platform": "1",
+   "bearing": null,
+   "delay_seconds": 840
+  },
+  {
+   "trip_id": "1012D79829C8a",
+   "route": "C8a",
+   "lat": 40.488266,
+   "lon": -3.6947744,
+   "platform": "11",
+   "bearing": null,
+   "delay_seconds": 660
+  },
+  {
+   "trip_id": "1012D79469C2",
+   "route": "C2",
+   "lat": 40.464172,
+   "lon": -3.4414766,
+   "platform": "5",
+   "bearing": 72.98269537807141,
+   "delay_seconds": 360
+  },
+  {
+   "trip_id": "1012D79331C7",
+   "route": "C7",
+   "lat": 40.4889,
+   "lon": -3.3666708,
+   "platform": "1",
+   "bearing": null,
+   "delay_seconds": 900
+  },
+  {
+   "trip_id": "1012D79330C7",
+   "route": "C7",
+   "lat": 40.40667,
+   "lon": -3.6893938,
+   "platform": "3",
+   "bearing": null,
+   "delay_seconds": 0
+  },
+  {
+   "trip_id": "1012D79333C7",
+   "route": "C7",
+   "lat": 40.4889,
+   "lon": -3.3666708,
+   "platform": "5",
+   "bearing": null,
+   "delay_seconds": 0
+  },
+  {
+   "trip_id": "1012D79332C7",
+   "route": "C7",
+   "lat": 40.40667,
+   "lon": -3.6893938,
+   "platform": "3",
+   "bearing": null,
+   "delay_seconds": 0
+  },
+  {
+   "trip_id": "1012D27283C4a",
+   "route": "C4a",
+   "lat": 40.24143,
+   "lon": -3.769159,
+   "platform": "1",
+   "bearing": null,
+   "delay_seconds": 0
+  },
+  {
+   "trip_id": "1012D27284C4a",
+   "route": "C4a",
+   "lat": 40.546417,
+   "lon": -3.6351175,
+   "platform": "2",
+   "bearing": null,
+   "delay_seconds": 0
+  },
+  {
+   "trip_id": "1012D79975C8b",
+   "route": "C8b",
+   "lat": 40.574413,
+   "lon": -3.9567041,
+   "platform": "1",
+   "bearing": 143.27117002927247,
+   "delay_seconds": 120
+  },
+  {
+   "trip_id": "1012D27278C4a",
+   "route": "C4a",
+   "lat": 40.417023,
+   "lon": -3.7031636,
+   "platform": "2",
+   "bearing": null,
+   "delay_seconds": 540
+  },
+  {
+   "trip_id": "1012D76510C5",
+   "route": "C5",
+   "lat": 40.330883,
+   "lon": -3.8823783,
+   "platform": "2",
+   "bearing": null,
+   "delay_seconds": 0
+  },
+  {
+   "trip_id": "1012D27279C4a",
+   "route": "C4a",
+   "lat": 40.40654,
+   "lon": -3.6895106,
+   "platform": "2",
+   "bearing": null,
+   "delay_seconds": 420
+  },
+  {
+   "trip_id": "1012D79746C10",
+   "route": "C10",
+   "lat": 40.40282,
+   "lon": -3.7112896,
+   "platform": "2",
+   "bearing": null,
+   "delay_seconds": 600
+  },
+  {
+   "trip_id": "1012D27276C4a",
+   "route": "C4a",
+   "lat": 40.24143,
+   "lon": -3.769159,
+   "platform": "2",
+   "bearing": 201.72981125784216,
+   "delay_seconds": 120
+  },
+  {
+   "trip_id": "1012D79974C8b",
+   "route": "C8b",
+   "lat": 40.42198,
+   "lon": -3.6919599,
+   "platform": "2",
+   "bearing": 199.26287698944407,
+   "delay_seconds": 240
+  },
+  {
    "trip_id": "1012D79650C10",
+   "route": "C10",
+   "lat": 40.574413,
+   "lon": -3.9567041,
+   "platform": "2",
+   "bearing": 296.01408285144316,
+   "delay_seconds": 0
+  },
+  {
+   "trip_id": "1012D79652C10",
    "route": "C10",
    "lat": 40.62599,
    "lon": -4.0081153,
@@ -426,218 +516,29 @@
    "lon": -3.769159,
    "platform": "2",
    "bearing": null,
-   "delay_seconds": 0
-  },
-  {
-   "trip_id": "1012D27481C4b",
-   "route": "C4b",
-   "lat": 40.24143,
-   "lon": -3.769159,
-   "platform": "2",
-   "bearing": null,
-   "delay_seconds": 120
-  },
-  {
-   "trip_id": "1012D77060C5",
-   "route": "C5",
-   "lat": 40.34132,
-   "lon": -3.7123663,
-   "platform": "4",
-   "bearing": null,
-   "delay_seconds": 240
-  },
-  {
-   "trip_id": "1012D77061C5",
-   "route": "C5",
-   "lat": 40.283237,
-   "lon": -3.7991464,
-   "platform": "2",
-   "bearing": null,
-   "delay_seconds": 0
-  },
-  {
-   "trip_id": "1012D79563C2",
-   "route": "C2",
-   "lat": 40.643414,
-   "lon": -3.1831472,
-   "platform": "6",
-   "bearing": 36.67287409669029,
-   "delay_seconds": 240
-  },
-  {
-   "trip_id": "1012D77062C5",
-   "route": "C5",
-   "lat": 40.34132,
-   "lon": -3.7123663,
-   "platform": "6",
-   "bearing": null,
-   "delay_seconds": 0
-  },
-  {
-   "trip_id": "1012D77063C5",
-   "route": "C5",
-   "lat": 40.283237,
-   "lon": -3.7991464,
-   "platform": "1",
-   "bearing": null,
-   "delay_seconds": 0
-  },
-  {
-   "trip_id": "1012D76491C5",
-   "route": "C5",
-   "lat": 40.3503,
-   "lon": -3.8317595,
-   "platform": "2",
-   "bearing": 48.46806516603948,
    "delay_seconds": 360
-  },
-  {
-   "trip_id": "1012D79324C7",
-   "route": "C7",
-   "lat": 40.423397,
-   "lon": -3.561349,
-   "platform": "2",
-   "bearing": 45.000657641536236,
-   "delay_seconds": 180
-  },
-  {
-   "trip_id": "1012D79565C2",
-   "route": "C2",
-   "lat": 40.644257,
-   "lon": -3.1823237,
-   "platform": "1",
-   "bearing": null,
-   "delay_seconds": 0
-  },
-  {
-   "trip_id": "1012D79323C7",
-   "route": "C7",
-   "lat": 40.381805,
-   "lon": -3.6681077,
-   "platform": "1",
-   "bearing": null,
-   "delay_seconds": 60
-  },
-  {
-   "trip_id": "1012D79326C7",
-   "route": "C7",
-   "lat": 40.40667,
-   "lon": -3.6893938,
-   "platform": "3",
-   "bearing": null,
-   "delay_seconds": 60
-  },
-  {
-   "trip_id": "1012D80693C9",
-   "route": "C9",
-   "lat": 40.73769,
-   "lon": -4.0657763,
-   "platform": "1",
-   "bearing": null,
-   "delay_seconds": 0
-  },
-  {
-   "trip_id": "1012D79469C2",
-   "route": "C2",
-   "lat": 40.47097,
-   "lon": -3.68245,
-   "platform": "10",
-   "bearing": null,
-   "delay_seconds": 360
-  },
-  {
-   "trip_id": "1012D76493C5",
-   "route": "C5",
-   "lat": 40.383408,
-   "lon": -3.7694812,
-   "platform": "2",
-   "bearing": 75.33586603782709,
-   "delay_seconds": 240
-  },
-  {
-   "trip_id": "1012D76495C5",
-   "route": "C5",
-   "lat": 40.406597,
-   "lon": -3.711235,
-   "platform": "2",
-   "bearing": null,
-   "delay_seconds": 180
-  },
-  {
-   "trip_id": "1012D79744C10",
-   "route": "C10",
-   "lat": 40.422802,
-   "lon": -3.720801,
-   "platform": "2",
-   "bearing": 315.782612476749,
-   "delay_seconds": 0
-  },
-  {
-   "trip_id": "1012D76496C5",
-   "route": "C5",
-   "lat": 40.38258,
-   "lon": -3.7736351,
-   "platform": "1",
-   "bearing": 75.26501859015661,
-   "delay_seconds": 720
-  },
-  {
-   "trip_id": "1012D76497C5",
-   "route": "C5",
-   "lat": 40.405067,
-   "lon": -3.7026901,
-   "platform": "2",
-   "bearing": null,
-   "delay_seconds": 0
-  },
-  {
-   "trip_id": "1012D27278C4a",
-   "route": "C4a",
-   "lat": 40.501648,
-   "lon": -3.6821797,
-   "platform": "2",
-   "bearing": null,
-   "delay_seconds": 180
-  },
-  {
-   "trip_id": "1012D27279C4a",
-   "route": "C4a",
-   "lat": 40.24143,
-   "lon": -3.769159,
-   "platform": "1",
-   "bearing": null,
-   "delay_seconds": 480
-  },
-  {
-   "trip_id": "1012D76752C5",
-   "route": "C5",
-   "lat": 40.283237,
-   "lon": -3.7991464,
-   "platform": "2",
-   "bearing": 200.21037553625007,
-   "delay_seconds": 120
-  },
-  {
-   "trip_id": "1012D79746C10",
-   "route": "C10",
-   "lat": 40.40042,
-   "lon": -3.6927843,
-   "platform": "2",
-   "bearing": null,
-   "delay_seconds": 0
-  },
-  {
-   "trip_id": "1012D27276C4a",
-   "route": "C4a",
-   "lat": 40.40654,
-   "lon": -3.6895106,
-   "platform": "6",
-   "bearing": 355.6043140998019,
-   "delay_seconds": 180
   },
   {
    "trip_id": "1012D76754C5",
    "route": "C5",
+   "lat": 40.25559,
+   "lon": -3.8284667,
+   "platform": "2",
+   "bearing": 211.278700905666,
+   "delay_seconds": 300
+  },
+  {
+   "trip_id": "1012D27277C4a",
+   "route": "C4a",
+   "lat": 40.501648,
+   "lon": -3.6821797,
+   "platform": "1",
+   "bearing": 161.84036057275625,
+   "delay_seconds": 60
+  },
+  {
+   "trip_id": "1012D76756C5",
+   "route": "C5",
    "lat": 40.34132,
    "lon": -3.7123663,
    "platform": "6",
@@ -645,16 +546,7 @@
    "delay_seconds": 0
   },
   {
-   "trip_id": "1012D27277C4a",
-   "route": "C4a",
-   "lat": 40.417023,
-   "lon": -3.7031636,
-   "platform": "5",
-   "bearing": null,
-   "delay_seconds": 0
-  },
-  {
-   "trip_id": "1012D76756C5",
+   "trip_id": "1012D76758C5",
    "route": "C5",
    "lat": 40.34132,
    "lon": -3.7123663,
@@ -672,13 +564,211 @@
    "delay_seconds": 0
   },
   {
-   "trip_id": "1012D76498C5",
-   "route": "C5",
-   "lat": 40.3503,
-   "lon": -3.8317595,
+   "trip_id": "1012D80690C9",
+   "route": "C9",
+   "lat": 40.82242,
+   "lon": -3.9645553,
+   "platform": "2",
+   "bearing": null,
+   "delay_seconds": 3960
+  },
+  {
+   "trip_id": "1012D27481C4b",
+   "route": "C4b",
+   "lat": 40.32969,
+   "lon": -3.7242157,
+   "platform": "1",
+   "bearing": 20.08990903901622,
+   "delay_seconds": 300
+  },
+  {
+   "trip_id": "1012D79471C2",
+   "route": "C2",
+   "lat": 40.40667,
+   "lon": -3.689395,
    "platform": "1",
    "bearing": null,
-   "delay_seconds": 960
+   "delay_seconds": 300
+  },
+  {
+   "trip_id": "1012D27485C4b",
+   "route": "C4b",
+   "lat": 40.24143,
+   "lon": -3.769159,
+   "platform": "2",
+   "bearing": null,
+   "delay_seconds": 0
+  },
+  {
+   "trip_id": "1012D19901C1",
+   "route": "C1",
+   "lat": 40.4924,
+   "lon": -3.593483,
+   "platform": "2",
+   "bearing": null,
+   "delay_seconds": 0
+  },
+  {
+   "trip_id": "1012D79473C2",
+   "route": "C2",
+   "lat": 40.40667,
+   "lon": -3.689395,
+   "platform": "1",
+   "bearing": null,
+   "delay_seconds": 0
+  },
+  {
+   "trip_id": "1012D77061C5",
+   "route": "C5",
+   "lat": 40.34099,
+   "lon": -3.7439544,
+   "platform": "1",
+   "bearing": 87.73192438358905,
+   "delay_seconds": 240
+  },
+  {
+   "trip_id": "1012D76244C5",
+   "route": "C5",
+   "lat": 40.363075,
+   "lon": -3.7054646,
+   "platform": "2",
+   "bearing": 191.51233739189314,
+   "delay_seconds": 120
+  },
+  {
+   "trip_id": "1012D76245C5",
+   "route": "C5",
+   "lat": 40.34132,
+   "lon": -3.7123663,
+   "platform": "4",
+   "bearing": null,
+   "delay_seconds": 0
+  },
+  {
+   "trip_id": "1012D76246C5",
+   "route": "C5",
+   "lat": 40.39592,
+   "lon": -3.6779969,
+   "platform": "2",
+   "bearing": null,
+   "delay_seconds": 0
+  },
+  {
+   "trip_id": "1012D76763C5",
+   "route": "C5",
+   "lat": 40.328766,
+   "lon": -3.7714624,
+   "platform": "1",
+   "bearing": 29.11102979042778,
+   "delay_seconds": 0
+  },
+  {
+   "trip_id": "1012D76765C5",
+   "route": "C5",
+   "lat": 40.25559,
+   "lon": -3.8284667,
+   "platform": "1",
+   "bearing": null,
+   "delay_seconds": 0
+  },
+  {
+   "trip_id": "1012D77062C5",
+   "route": "C5",
+   "lat": 40.34132,
+   "lon": -3.7123663,
+   "platform": "4",
+   "bearing": null,
+   "delay_seconds": 0
+  },
+  {
+   "trip_id": "1012D19896C1",
+   "route": "C1",
+   "lat": 40.47102,
+   "lon": -3.6825693,
+   "platform": "12",
+   "bearing": null,
+   "delay_seconds": 0
+  },
+  {
+   "trip_id": "1012D77063C5",
+   "route": "C5",
+   "lat": 40.283237,
+   "lon": -3.7991464,
+   "platform": "1",
+   "bearing": null,
+   "delay_seconds": 0
+  },
+  {
+   "trip_id": "1012D77064C5",
+   "route": "C5",
+   "lat": 40.34132,
+   "lon": -3.7123663,
+   "platform": "6",
+   "bearing": null,
+   "delay_seconds": 0
+  },
+  {
+   "trip_id": "1012D77065C5",
+   "route": "C5",
+   "lat": 40.283237,
+   "lon": -3.7991464,
+   "platform": "2",
+   "bearing": null,
+   "delay_seconds": 0
+  },
+  {
+   "trip_id": "1012D19892C1",
+   "route": "C1",
+   "lat": 40.481926,
+   "lon": -3.61354,
+   "platform": "2",
+   "bearing": 89.34111146272505,
+   "delay_seconds": 240
+  },
+  {
+   "trip_id": "1012D76495C5",
+   "route": "C5",
+   "lat": 40.3483,
+   "lon": -3.8342996,
+   "platform": "2",
+   "bearing": 224.08283897518018,
+   "delay_seconds": 360
+  },
+  {
+   "trip_id": "1012D76497C5",
+   "route": "C5",
+   "lat": 40.386257,
+   "lon": -3.7610443,
+   "platform": "2",
+   "bearing": 71.12895882626071,
+   "delay_seconds": 300
+  },
+  {
+   "trip_id": "1012D19894C1",
+   "route": "C1",
+   "lat": 40.47102,
+   "lon": -3.6825693,
+   "platform": "12",
+   "bearing": null,
+   "delay_seconds": 480
+  },
+  {
+   "trip_id": "1012D76498C5",
+   "route": "C5",
+   "lat": 40.405067,
+   "lon": -3.7026901,
+   "platform": "2",
+   "bearing": 78.9540275664707,
+   "delay_seconds": 1020
+  },
+  {
+   "trip_id": "1012D79467C2",
+   "route": "C2",
+   "lat": 40.644257,
+   "lon": -3.1823237,
+   "platform": "2",
+   "bearing": 38.576064477137436,
+   "delay_seconds": 0
   },
   {
    "trip_id": "1012D76499C5",
@@ -687,25 +777,34 @@
    "lon": -3.7026901,
    "platform": "2",
    "bearing": null,
+   "delay_seconds": 180
+  },
+  {
+   "trip_id": "1012D79648C10",
+   "route": "C10",
+   "lat": 40.40282,
+   "lon": -3.7112896,
+   "platform": "1",
+   "bearing": 128.96040922356678,
    "delay_seconds": 0
   },
   {
-   "trip_id": "1012D80690C9",
-   "route": "C9",
-   "lat": 40.82242,
-   "lon": -3.9645553,
-   "platform": "2",
-   "bearing": null,
-   "delay_seconds": 2760
-  },
-  {
-   "trip_id": "1012D27468C4b",
-   "route": "C4b",
-   "lat": 40.309868,
-   "lon": -3.733689,
-   "platform": "2",
+   "trip_id": "1012D79151C7",
+   "route": "C7",
+   "lat": 40.44655,
+   "lon": -3.691473,
+   "platform": "1",
    "bearing": null,
    "delay_seconds": 0
+  },
+  {
+   "trip_id": "1012D79150C7",
+   "route": "C7",
+   "lat": 40.42163,
+   "lon": -3.7193205,
+   "platform": "4",
+   "bearing": null,
+   "delay_seconds": 60
   },
   {
    "trip_id": "1012D27065C3",
@@ -717,237 +816,97 @@
    "delay_seconds": 0
   },
   {
+   "trip_id": "1012D27066C3",
+   "route": "C3",
+   "lat": 40.471382,
+   "lon": -3.6834786,
+   "platform": "2",
+   "bearing": null,
+   "delay_seconds": 0
+  },
+  {
    "trip_id": "1012D27063C3",
    "route": "C3",
-   "lat": 40.035027,
-   "lon": -3.6189713,
+   "lat": 40.200817,
+   "lon": -3.667994,
    "platform": "1",
-   "bearing": null,
-   "delay_seconds": 0
-  },
-  {
-   "trip_id": "1012D77059C5",
-   "route": "C5",
-   "lat": 40.341072,
-   "lon": -3.7410817,
-   "platform": "1",
-   "bearing": null,
+   "bearing": 332.5139622153581,
    "delay_seconds": 240
-  },
-  {
-   "trip_id": "1012D76763C5",
-   "route": "C5",
-   "lat": 40.25559,
-   "lon": -3.8284667,
-   "platform": "1",
-   "bearing": null,
-   "delay_seconds": 0
-  },
-  {
-   "trip_id": "1012D76489C5",
-   "route": "C5",
-   "lat": 40.32875,
-   "lon": -3.8636916,
-   "platform": "2",
-   "bearing": null,
-   "delay_seconds": 600
-  },
-  {
-   "trip_id": "1012D79830C8a",
-   "route": "C8a",
-   "lat": 40.420784,
-   "lon": -3.6925101,
-   "platform": "2",
-   "bearing": null,
-   "delay_seconds": 840
   },
   {
    "trip_id": "1012D27064C3",
    "route": "C3",
    "lat": 40.471382,
    "lon": -3.6834786,
-   "platform": "2",
+   "platform": "5",
    "bearing": null,
-   "delay_seconds": 0
-  },
-  {
-   "trip_id": "1012D19895C1",
-   "route": "C1",
-   "lat": 40.482,
-   "lon": -3.6031663,
-   "platform": "2",
-   "bearing": 264.95569186788896,
-   "delay_seconds": 60
-  },
-  {
-   "trip_id": "1012D19897C1",
-   "route": "C1",
-   "lat": 40.4924,
-   "lon": -3.593483,
-   "platform": "2",
-   "bearing": null,
-   "delay_seconds": 0
+   "delay_seconds": 900
   },
   {
    "trip_id": "1012D79832C8a",
    "route": "C8a",
-   "lat": 40.623234,
-   "lon": -3.9986806,
-   "platform": "2",
-   "bearing": null,
-   "delay_seconds": 240
+   "lat": 40.516506,
+   "lon": -3.8787034,
+   "platform": "4",
+   "bearing": 158.9407331790312,
+   "delay_seconds": 420
   },
   {
-   "trip_id": "1012D79559C2",
-   "route": "C2",
-   "lat": 40.47097,
-   "lon": -3.68245,
-   "platform": "11",
-   "bearing": null,
-   "delay_seconds": 540
-  },
-  {
-   "trip_id": "1012D19892C1",
-   "route": "C1",
-   "lat": 40.47102,
-   "lon": -3.6825693,
-   "platform": "12",
-   "bearing": null,
-   "delay_seconds": 0
-  },
-  {
-   "trip_id": "1012D19894C1",
-   "route": "C1",
-   "lat": 40.47102,
-   "lon": -3.6825693,
-   "platform": "12",
-   "bearing": null,
-   "delay_seconds": 0
-  },
-  {
-   "trip_id": "1012D27061C3",
-   "route": "C3",
-   "lat": 40.204445,
-   "lon": -3.670462,
-   "platform": "1",
-   "bearing": null,
-   "delay_seconds": 240
-  },
-  {
-   "trip_id": "1012D27062C3",
-   "route": "C3",
-   "lat": 40.471382,
-   "lon": -3.6834786,
+   "trip_id": "1012D79834C8a",
+   "route": "C8a",
+   "lat": 40.58532,
+   "lon": -4.1321955,
    "platform": "3",
    "bearing": null,
-   "delay_seconds": 1020
-  },
-  {
-   "trip_id": "1012D27274C4a",
-   "route": "C4a",
-   "lat": 40.288372,
-   "lon": -3.7373493,
-   "platform": "2",
-   "bearing": null,
-   "delay_seconds": 180
-  },
-  {
-   "trip_id": "1012D27060C3",
-   "route": "C3",
-   "lat": 40.405613,
-   "lon": -3.6884873,
-   "platform": "6",
-   "bearing": 319.18267736405716,
-   "delay_seconds": 360
-  },
-  {
-   "trip_id": "1012D27275C4a",
-   "route": "C4a",
-   "lat": 40.51271,
-   "lon": -3.6841269,
-   "platform": "1",
-   "bearing": 177.02406642395272,
-   "delay_seconds": 120
-  },
-  {
-   "trip_id": "1012D79742C10",
-   "route": "C10",
-   "lat": 40.574413,
-   "lon": -3.9567041,
-   "platform": "1",
-   "bearing": null,
-   "delay_seconds": 60
-  },
-  {
-   "trip_id": "1012D79467C2",
-   "route": "C2",
-   "lat": 40.454636,
-   "lon": -3.4796963,
-   "platform": "2",
-   "bearing": null,
-   "delay_seconds": 360
+   "delay_seconds": 0
   }
  ],
  "incidents": [
   {
-   "linea": "C4",
-   "afectados": 4,
-   "total": 20,
-   "max_retraso_s": 5760,
-   "severidad": "major"
-  },
-  {
    "linea": "C7",
-   "afectados": 6,
+   "afectados": 8,
    "total": 17,
-   "max_retraso_s": 4500,
+   "max_retraso_s": 4140,
    "severidad": "major"
   },
   {
    "linea": "C2",
    "afectados": 4,
    "total": 7,
-   "max_retraso_s": 1860,
-   "severidad": "major"
-  },
-  {
-   "linea": "C3",
-   "afectados": 3,
-   "total": 10,
-   "max_retraso_s": 1020,
+   "max_retraso_s": 2280,
    "severidad": "major"
   },
   {
    "linea": "C5",
-   "afectados": 5,
+   "afectados": 7,
    "total": 26,
-   "max_retraso_s": 960,
+   "max_retraso_s": 1020,
    "severidad": "major"
   },
   {
-   "linea": "C8",
-   "afectados": 3,
-   "total": 7,
-   "max_retraso_s": 840,
+   "linea": "C4",
+   "afectados": 8,
+   "total": 19,
+   "max_retraso_s": 540,
    "severidad": "minor"
   }
  ],
  "health": {
   "nucleo_filter_yield": {
    "severity": "ok",
-   "detail": "98 entidades, dentro de lo esperado para punta de tarde."
+   "detail": "95 entidades, dentro de lo esperado para punta de tarde."
   },
   "payload_not_empty": {
    "severity": "ok",
-   "detail": "239 entidades en el payload."
+   "detail": "241 entidades en el payload."
   },
   "trip_id_resolution": {
    "severity": "ok",
-   "detail": "98/98 (100.0%) trip_id resueltos contra el GTFS estatico."
+   "detail": "95/95 (100.0%) trip_id resueltos contra el GTFS estatico."
   },
   "delay_coverage": {
    "severity": "ok",
-   "detail": "98/98 (100.0%) tripUpdate con retraso publicado."
+   "detail": "95/95 (100.0%) tripUpdate con retraso publicado."
   },
   "feed_freshness": {
    "severity": "ok",
