@@ -18,6 +18,7 @@ check-feed-freshness = "cercanias_worker.check_feed_freshness:main"
 discover-data = "cercanias_worker.discover_data:main"
 ideadif-explore = "cercanias_worker.ideadif_explore:main"
 mvp = "cercanias_worker.mvp:main"
+telegram-test = "cercanias_worker.telegram_test:main"
 
 [build-system]
 requires = ["hatchling"]

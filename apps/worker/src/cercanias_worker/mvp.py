@@ -44,6 +44,13 @@ from cercanias_domain.health import (
     Severity,
     evaluate_feed_health,
 )
+from cercanias_domain.incidents import (
+    AlertCooldown,
+    LineIncident,
+    TrainDelay,
+    detect_incidents,
+    format_incident_message,
+)
 from cercanias_domain.nucleo_filter import build_nucleo_filter
 from cercanias_notifiers_telegram.telegram_notifier import (
     TelegramConfigError,
@@ -110,6 +117,7 @@ class CycleResult:
     madrid_vehicles: int
     madrid_delays: int
     with_bearing: int
+    incidents: tuple[LineIncident, ...]
     published: bool
     note: str
 
@@ -161,6 +169,21 @@ def run_cycle(
     )
 
     by_trip = delays.by_trip_id()
+
+    # Incidencias por linea: solo dato oficial, sin reportes de comunidad, asi
+    # que la corroboracion de C-6 no aplica.
+    incidents = detect_incidents(
+        [
+            TrainDelay(
+                trip_id=o.trip_id,
+                route_group=o.route_group,
+                delay_seconds=by_trip[o.trip_id].delay_seconds,
+            )
+            for o in result.observations
+            if o.trip_id in by_trip
+        ]
+    )
+
     snapshot: dict[str, object] = {
         "generated_at": now.isoformat(),
         "local_time": local_time.isoformat(),
@@ -177,6 +200,16 @@ def run_cycle(
             }
             for o in result.observations
         ],
+        "incidents": [
+            {
+                "linea": inc.route_group,
+                "afectados": inc.affected_trains,
+                "total": inc.total_trains,
+                "max_retraso_s": inc.max_delay_seconds,
+                "severidad": str(inc.severity),
+            }
+            for inc in incidents
+        ],
         "health": {i.name: {"severity": str(i.severity), "detail": i.detail} for i in health.invariants},
     }
 
@@ -188,6 +221,7 @@ def run_cycle(
         madrid_vehicles=len(result.observations),
         madrid_delays=delays.with_delay,
         with_bearing=sum(1 for o in result.observations if o.bearing_degrees is not None),
+        incidents=incidents,
         published=published,
         note=note,
     )
@@ -217,6 +251,7 @@ def main() -> int:
 
     consecutive_critical = 0
     worst_seen = Severity.OK
+    cooldown = AlertCooldown()
 
     for i in range(1, cycles + 1):
         print(f"[{i}/{cycles}] {datetime.now(tz=MADRID_TZ):%H:%M:%S}")
@@ -229,10 +264,26 @@ def main() -> int:
 
         print(
             f"  trenes={cycle.madrid_vehicles}  retrasos={cycle.madrid_delays}  "
-            f"rumbos={cycle.with_bearing}  salud={estado.upper()}  {cycle.note}"
+            f"rumbos={cycle.with_bearing}  incidencias={len(cycle.incidents)}  "
+            f"salud={estado.upper()}  {cycle.note}"
         )
         for inv in cycle.health.failures:
             print(f"    ! {inv.name}: {inv.detail}")
+
+        # --- avisos de incidencia por linea (independientes de la salud) ---
+        ahora = datetime.now(tz=UTC)
+        nuevas = [inc for inc in cycle.incidents if cooldown.should_alert(inc, ahora)]
+        for inc in cycle.incidents:
+            marca = "AVISO" if inc in nuevas else "en enfriamiento"
+            print(
+                f"    ~ {inc.route_group}: {inc.affected_trains}/{inc.total_trains} trenes, "
+                f"max {inc.max_delay_seconds // 60} min [{inc.severity}] ({marca})"
+            )
+        if nuevas:
+            outcome = notifier.send(format_incident_message(tuple(nuevas)))
+            for inc in nuevas:
+                cooldown.record(inc, ahora)
+            print(f"    -> Telegram (incidencias): {outcome.detail}")
 
         if estado is Severity.CRITICAL:
             consecutive_critical += 1

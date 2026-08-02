@@ -32,6 +32,7 @@ help:
 	@echo "  make discover-data         - E7: informe de cobertura de estaciones y nucleos"
 	@echo "  make ideadif-explore       - E6: GetCapabilities WMS/WFS de IDEADIF"
 	@echo "  make mvp                   - bucle MVP end-to-end (snapshot + salud + Telegram)"
+	@echo "  make telegram-test         - comprueba las credenciales de Telegram"
 	@echo "  make ci                    - lint + typecheck + test (lo que corre en GitHub Actions)"
 
 install:
@@ -83,6 +84,10 @@ ideadif-explore: unhide
 # Sin TELEGRAM_BOT_TOKEN funciona en dry-run.
 mvp: unhide
 	uv run mvp
+
+# Verifica TELEGRAM_BOT_TOKEN y TELEGRAM_CHAT_ID enviando un mensaje de prueba.
+telegram-test: unhide
+	uv run telegram-test
 
 # Cada etapa en su propia invocacion de make: `unhide` es prerequisito de todas,
 # pero make solo lo ejecuta UNA vez por invocacion. Como cualquier `uv run`
