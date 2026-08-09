@@ -185,29 +185,85 @@ function renderTrains() {
   }).join("");
 }
 
+function onPosition(pos) {
+  $("geo-msg").innerHTML = "";
+  const { latitude, longitude, accuracy } = pos.coords;
+  currentChips = stations
+    .map(s => ({ station: s, km: haversineKm(latitude, longitude, s.latitude, s.longitude) }))
+    .sort((a, b) => a.km - b.km).slice(0, 5);
+  renderChips(currentChips);
+  if (currentChips.length) selectStation(currentChips[0].station);
+  if (accuracy > 1000) {
+    $("geo-msg").innerHTML = `<div class="banner warn">Ubicación aproximada
+      (±${Math.round(accuracy)} m). Si la estación no es la tuya, elígela abajo.</div>`;
+  }
+}
+
+// Diagnostico explicito: sin esto, "no funciona el GPS" puede ser permiso
+// denegado, tiempo agotado o posicion no disponible, y cada uno se arregla de
+// una forma distinta.
+function geoErrorHelp(err) {
+  if (err.code === 1) return ["Permiso denegado.",
+    "El navegador tiene bloqueada la ubicación para esta página. En Chrome: icono " +
+    "de candado junto a la dirección → Permisos → Ubicación → Permitir. En iOS: " +
+    "Ajustes → Safari → Ubicación."];
+  if (err.code === 2) return ["Posición no disponible.",
+    "El dispositivo no consigue fijar la posición. Es lo habitual en andenes " +
+    "subterráneos y en trenes en marcha."];
+  if (err.code === 3) return ["Se agotó el tiempo de espera.",
+    "El GPS tardó demasiado en responder."];
+  return [err.message || "Error desconocido.", ""];
+}
+
 function locate() {
-  if (!navigator.geolocation) { $("geo-msg").innerHTML = `<div class="banner warn">Este navegador no permite geolocalización.</div>`; return; }
+  if (!navigator.geolocation) {
+    $("geo-msg").innerHTML = `<div class="banner warn">Este navegador no permite geolocalización.</div>`;
+    return;
+  }
+  if (!window.isSecureContext) {
+    $("geo-msg").innerHTML = `<div class="banner warn">La geolocalización exige HTTPS
+      y esta página no se está sirviendo de forma segura.</div>`;
+    return;
+  }
+
   $("geo-msg").innerHTML = `<div class="banner warn">Buscando tu posición…</div>`;
+
+  // Dos intentos: primero rapido y poco exigente, que casi siempre resuelve por
+  // wifi/red en segundos; si falla, uno largo con GPS real. Al reves —que era
+  // como estaba— el GPS agota el tiempo justo donde peor cobertura hay.
+  const preciso = { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 };
+  const rapido  = { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 };
+
   navigator.geolocation.getCurrentPosition(
-    (pos) => {
-      $("geo-msg").innerHTML = "";
-      const { latitude, longitude } = pos.coords;
-      currentChips = stations
-        .map(s => ({ station: s, km: haversineKm(latitude, longitude, s.latitude, s.longitude) }))
-        .sort((a, b) => a.km - b.km).slice(0, 5);
-      renderChips(currentChips);
-      if (currentChips.length) selectStation(currentChips[0].station);
+    onPosition,
+    () => {
+      $("geo-msg").innerHTML = `<div class="banner warn">Afinando con GPS…</div>`;
+      navigator.geolocation.getCurrentPosition(
+        onPosition,
+        (err) => {
+          const [titulo, ayuda] = geoErrorHelp(err);
+          $("geo-msg").innerHTML = `<div class="banner warn">
+            <strong>${titulo}</strong> ${ayuda}
+            <br><br>Elige tu estación en la lista de abajo.
+            <br><small>código ${err.code}</small></div>`;
+        },
+        preciso
+      );
     },
-    (err) => {
-      // Muchas estaciones de Cercanias son subterraneas: el GPS falla justo
-      // donde esta el usuario. El selector manual no es un plan B, es la via
-      // principal para ese caso.
-      $("geo-msg").innerHTML = `<div class="banner warn">
-        No se pudo obtener tu ubicación (${err.message}). Elige la estación manualmente
-        en la lista de abajo — en andenes subterráneos el GPS suele fallar.</div>`;
-    },
-    { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
+    rapido
   );
+}
+
+// Si el navegador expone el estado del permiso, decirlo ANTES de que pulse:
+// enterarse de que esta bloqueado tras esperar 30 s es la peor version.
+if (navigator.permissions?.query) {
+  navigator.permissions.query({ name: "geolocation" }).then(p => {
+    if (p.state === "denied") {
+      $("geo-msg").innerHTML = `<div class="banner warn">La ubicación está
+        <strong>bloqueada</strong> para esta página. Puedes desbloquearla en los permisos
+        del navegador, o elegir tu estación manualmente abajo.</div>`;
+    }
+  }).catch(() => {});
 }
 
 async function boot() {

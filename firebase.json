@@ -1,0 +1,21 @@
+{
+  "hosting": {
+    "public": "apps/web/public",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "headers": [
+      {
+        "source": "/snapshot.json",
+        "headers": [{ "key": "Cache-Control", "value": "public, max-age=30" }]
+      },
+      {
+        "source": "/estaciones.json",
+        "headers": [{ "key": "Cache-Control", "value": "public, max-age=3600" }]
+      },
+      {
+        "source": "/index.html",
+        "headers": [{ "key": "Cache-Control", "value": "public, max-age=60" }]
+      }
+    ],
+    "rewrites": [{ "source": "**", "destination": "/index.html" }]
+  }
+}
