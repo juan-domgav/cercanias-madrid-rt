@@ -197,6 +197,11 @@ def run_cycle(
                 "lon": o.longitude,
                 "platform": o.platform,
                 "bearing": o.bearing_degrees,
+                # Necesario para la vista por estacion: permite saber que trenes
+                # tienen TU estacion como proxima parada, unico caso en que el
+                # sentido es seguro sin topologia de linea.
+                "next_stop_id": o.stop_id_resolvable,
+                "status": str(o.current_status),
                 "delay_seconds": (by_trip[o.trip_id].delay_seconds if o.trip_id in by_trip else None),
             }
             for o in result.observations

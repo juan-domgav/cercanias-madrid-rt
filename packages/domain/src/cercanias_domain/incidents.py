@@ -26,6 +26,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import StrEnum
+from typing import Any
 
 
 class IncidentSeverity(StrEnum):
@@ -183,6 +184,45 @@ class AlertCooldown:
             severity=incident.severity,
             max_delay_seconds=incident.max_delay_seconds,
         )
+
+    # --- persistencia ---------------------------------------------------------
+    # El enfriamiento sólo funciona si sobrevive al proceso. En un bucle largo
+    # basta con la memoria; en invocaciones programadas que arrancan de cero cada
+    # minuto, un enfriamiento vacío haría que Telegram repitiera el mismo aviso
+    # una vez por minuto. Serializarlo es responsabilidad del dominio y no de
+    # quien lo guarda: así el adaptador de turno (S3, GCS, disco) no necesita
+    # conocer la forma interna del estado.
+
+    def to_dict(self) -> dict[str, dict[str, str | int]]:
+        return {
+            route: {
+                "at": last.at.isoformat(),
+                "severity": str(last.severity),
+                "max_delay_seconds": last.max_delay_seconds,
+            }
+            for route, last in self._last.items()
+        }
+
+    @classmethod
+    def from_dict(
+        cls, state: dict[str, Any], *, cooldown: timedelta = DEFAULT_COOLDOWN
+    ) -> AlertCooldown:
+        """Rehidrata el estado, ignorando entradas corruptas.
+
+        Una entrada ilegible no debe abortar el tick: como mucho provoca un aviso
+        de más, que es preferible a no publicar el snapshot.
+        """
+        restored = cls(cooldown=cooldown)
+        for route, entry in (state or {}).items():
+            try:
+                restored._last[route] = _LastAlert(
+                    at=datetime.fromisoformat(str(entry["at"])),
+                    severity=IncidentSeverity(str(entry["severity"])),
+                    max_delay_seconds=int(entry["max_delay_seconds"]),
+                )
+            except (KeyError, ValueError, TypeError):
+                continue
+        return restored
 
 
 def _format_minutes(seconds: int) -> str:

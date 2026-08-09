@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Cercanías Madrid — tiempo real</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #16181d; --muted: #6b7280; --line: #e5e7eb;
+    --card: #f9fafb; --accent: #1d4ed8; --late: #b91c1c; --ok: #047857;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1115; --fg: #e8eaed; --muted: #9aa0a6; --line: #2a2e35;
+      --card: #171a20; --accent: #7aa2f7; --late: #f87171; --ok: #34d399;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0 1rem 3rem; background: var(--bg); color: var(--fg);
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    max-width: 34rem; margin-inline: auto;
+  }
+  header { padding: 1.25rem 0 .75rem; }
+  h1 { font-size: 1.25rem; margin: 0; }
+  .sub { color: var(--muted); font-size: .8rem; margin-top: .25rem; }
+  button {
+    font: inherit; border: 1px solid var(--line); background: var(--card);
+    color: var(--fg); border-radius: .6rem; padding: .7rem 1rem; cursor: pointer;
+  }
+  button.primary { background: var(--accent); color: #fff; border-color: transparent; width: 100%; font-weight: 600; }
+  button:active { opacity: .8; }
+  select { font: inherit; width: 100%; padding: .7rem; border-radius: .6rem;
+           border: 1px solid var(--line); background: var(--card); color: var(--fg); }
+  .row { display: flex; gap: .5rem; align-items: center; }
+  .stations { display: flex; flex-wrap: wrap; gap: .4rem; margin: .75rem 0; }
+  .chip { border-radius: 999px; padding: .45rem .8rem; font-size: .85rem; }
+  .chip[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: transparent; }
+  .train {
+    border: 1px solid var(--line); border-radius: .7rem; padding: .8rem;
+    margin-bottom: .55rem; background: var(--card);
+  }
+  .train .top { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; }
+  .route { font-weight: 700; font-size: 1.05rem; }
+  .delay { font-weight: 600; }
+  .delay.late { color: var(--late); } .delay.ontime { color: var(--ok); }
+  .meta { color: var(--muted); font-size: .85rem; margin-top: .3rem; }
+  .banner { border-radius: .6rem; padding: .7rem .85rem; margin: .75rem 0; font-size: .9rem; }
+  .banner.warn { background: #fef3c7; color: #92400e; }
+  @media (prefers-color-scheme: dark) { .banner.warn { background: #3a2c07; color: #fcd34d; } }
+  footer { margin-top: 2rem; color: var(--muted); font-size: .75rem; border-top: 1px solid var(--line); padding-top: 1rem; }
+  .empty { color: var(--muted); padding: 1.5rem 0; text-align: center; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Cercanías Madrid</h1>
+  <div class="sub" id="updated">Cargando…</div>
+</header>
+
+<button class="primary" id="locate">📍 Estaciones cerca de mí</button>
+<div id="geo-msg"></div>
+
+<div class="stations" id="chips"></div>
+
+<div class="row" style="margin:.75rem 0">
+  <select id="picker"><option value="">— o elige una estación —</option></select>
+</div>
+
+<div id="banner"></div>
+<div id="trains"></div>
+
+<footer>
+  Datos de horarios y tiempo real: Renfe (CC BY 4.0). Información de infraestructura
+  y estado de la red: Adif. Proyecto independiente, sin relación con Renfe ni Adif;
+  no vende billetes ni tramita reclamaciones.
+  <br><br>
+  Tu ubicación se usa <strong>solo en este dispositivo</strong> para ordenar las
+  estaciones por cercanía. No se envía a ningún servidor ni se almacena.
+</footer>
+
+<script>
+// La posicion del usuario NUNCA sale del dispositivo: el catalogo de estaciones
+// son unos pocos KB, asi que la distancia se calcula aqui. Eso evita tratar un
+// dato personal (RGPD) y mantiene la lectura como un fichero estatico tras CDN.
+const SNAPSHOT_URL = "./snapshot.json";
+const STATIONS_URL = "./estaciones.json";
+const RADIUS_KM = 30;
+
+let stations = [], snapshot = null, selected = null;
+
+const tg = window.Telegram?.WebApp;
+if (tg) { tg.ready(); tg.expand(); }
+
+const $ = (id) => document.getElementById(id);
+
+function haversineKm(aLat, aLon, bLat, bLon) {
+  const R = 6371, toRad = (d) => d * Math.PI / 180;
+  const dLat = toRad(bLat - aLat), dLon = toRad(bLon - aLon);
+  const h = Math.sin(dLat/2)**2 +
+            Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLon/2)**2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+function minutes(sec) {
+  if (sec === null || sec === undefined) return null;
+  return Math.round(sec / 60);
+}
+
+function renderUpdated() {
+  if (!snapshot) return;
+  const t = new Date(snapshot.generated_at);
+  const age = Math.round((Date.now() - t.getTime()) / 1000);
+  const hhmm = t.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
+  $("updated").textContent =
+    `${snapshot.vehicles.length} trenes · actualizado ${hhmm} (hace ${age}s)`;
+
+  // ADR-011: el nucleo desaparece del feed a ratos. Si se esta sirviendo el
+  // ultimo bueno conocido, hay que decirlo en vez de fingir que es actual.
+  $("banner").innerHTML = snapshot.degraded
+    ? `<div class="banner warn">⚠️ Datos no actualizados. ${snapshot.reason || ""}</div>`
+    : "";
+}
+
+function renderChips(list) {
+  $("chips").innerHTML = "";
+  list.forEach(({ station, km }) => {
+    const b = document.createElement("button");
+    b.className = "chip";
+    b.setAttribute("aria-pressed", selected?.stop_id === station.stop_id);
+    b.textContent = km !== null ? `${station.name} · ${km.toFixed(1)} km` : station.name;
+    b.onclick = () => selectStation(station);
+    $("chips").appendChild(b);
+  });
+}
+
+function selectStation(station) {
+  selected = station;
+  $("picker").value = station.stop_id;
+  renderChips(currentChips);
+  renderTrains();
+}
+
+let currentChips = [];
+
+function renderTrains() {
+  const box = $("trains");
+  if (!selected) { box.innerHTML = `<div class="empty">Elige una estación para ver sus trenes.</div>`; return; }
+
+  const near = snapshot.vehicles
+    .filter(v => v.lat != null && v.lon != null)
+    .map(v => ({ ...v, km: haversineKm(v.lat, v.lon, selected.latitude, selected.longitude) }))
+    .filter(v => v.km <= RADIUS_KM)
+    // Los que tienen ESTA estacion como proxima parada primero: son los unicos
+    // de los que se puede afirmar el sentido sin la topologia de la linea.
+    .sort((a, b) => (a.next_stop_id === selected.stop_id ? 0 : 1) -
+                    (b.next_stop_id === selected.stop_id ? 0 : 1) || a.km - b.km)
+    .slice(0, 12);
+
+  if (!near.length) { box.innerHTML = `<div class="empty">No hay trenes cerca de ${selected.name} ahora mismo.</div>`; return; }
+
+  box.innerHTML = near.map(v => {
+    const m = minutes(v.delay_seconds);
+    const delayTxt = m === null ? "sin dato"
+                   : m <= 0 ? "en hora"
+                   : `+${m} min`;
+    const delayCls = m === null ? "" : (m > 3 ? "late" : "ontime");
+    const esProxima = v.next_stop_id === selected.stop_id;
+    const sentido = esProxima
+      ? (v.lat < selected.latitude ? "llega desde el sur" : "llega desde el norte")
+      : null;
+    const dir = esProxima
+      ? `<strong>Próxima parada: ${selected.name}</strong>${sentido ? " · " + sentido : ""}`
+      : `A ${v.km.toFixed(1)} km · sentido no confirmado`;
+    return `<div class="train">
+      <div class="top">
+        <span class="route">${v.route}</span>
+        <span class="delay ${delayCls}">${delayTxt}</span>
+      </div>
+      <div class="meta">${dir}</div>
+      <div class="meta">${v.platform ? "Andén " + v.platform + " · " : ""}${v.status || ""}</div>
+    </div>`;
+  }).join("");
+}
+
+function locate() {
+  if (!navigator.geolocation) { $("geo-msg").innerHTML = `<div class="banner warn">Este navegador no permite geolocalización.</div>`; return; }
+  $("geo-msg").innerHTML = `<div class="banner warn">Buscando tu posición…</div>`;
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      $("geo-msg").innerHTML = "";
+      const { latitude, longitude } = pos.coords;
+      currentChips = stations
+        .map(s => ({ station: s, km: haversineKm(latitude, longitude, s.latitude, s.longitude) }))
+        .sort((a, b) => a.km - b.km).slice(0, 5);
+      renderChips(currentChips);
+      if (currentChips.length) selectStation(currentChips[0].station);
+    },
+    (err) => {
+      // Muchas estaciones de Cercanias son subterraneas: el GPS falla justo
+      // donde esta el usuario. El selector manual no es un plan B, es la via
+      // principal para ese caso.
+      $("geo-msg").innerHTML = `<div class="banner warn">
+        No se pudo obtener tu ubicación (${err.message}). Elige la estación manualmente
+        en la lista de abajo — en andenes subterráneos el GPS suele fallar.</div>`;
+    },
+    { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
+  );
+}
+
+async function boot() {
+  try {
+    const [snapRes, stRes] = await Promise.all([fetch(SNAPSHOT_URL, {cache: "no-store"}), fetch(STATIONS_URL)]);
+    snapshot = await snapRes.json();
+    const raw = await stRes.json();
+    stations = (raw.stations || raw).map(s => ({
+      stop_id: s.renfe_stop_id || s.stop_id,
+      name: s.name,
+      latitude: s.latitude,
+      longitude: s.longitude,
+    })).filter(s => s.latitude && s.longitude);
+
+    stations.slice().sort((a,b) => a.name.localeCompare(b.name, "es")).forEach(s => {
+      const o = document.createElement("option");
+      o.value = s.stop_id; o.textContent = s.name;
+      $("picker").appendChild(o);
+    });
+
+    renderUpdated();
+    renderTrains();
+  } catch (e) {
+    $("updated").textContent = "No se pudieron cargar los datos.";
+    $("trains").innerHTML = `<div class="banner warn">Error al cargar: ${e.message}</div>`;
+  }
+}
+
+$("locate").onclick = locate;   // permiso SOLO tras accion del usuario
+$("picker").onchange = (e) => {
+  const s = stations.find(x => x.stop_id === e.target.value);
+  if (s) { currentChips = []; renderChips([]); selectStation(s); }
+};
+
+boot();
+setInterval(() => { fetch(SNAPSHOT_URL, {cache:"no-store"}).then(r=>r.json()).then(s => { snapshot = s; renderUpdated(); renderTrains(); }).catch(()=>{}); }, 30000);
+</script>
+</body>
+</html>

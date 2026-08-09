@@ -224,6 +224,7 @@ dependencies = [
     { name = "cercanias-domain" },
     { name = "cercanias-notifiers-telegram" },
     { name = "cercanias-persistence" },
+    { name = "cercanias-storage" },
     { name = "httpx" },
     { name = "pyyaml" },
 ]
@@ -235,6 +236,7 @@ requires-dist = [
     { name = "cercanias-domain", editable = "packages/domain" },
     { name = "cercanias-notifiers-telegram", editable = "packages/notifiers-telegram" },
     { name = "cercanias-persistence", editable = "packages/persistence" },
+    { name = "cercanias-storage", editable = "packages/storage" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "pyyaml", specifier = ">=6.0" },
 ]
