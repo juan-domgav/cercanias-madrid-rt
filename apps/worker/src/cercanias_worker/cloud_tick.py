@@ -28,8 +28,17 @@ import os
 import sys
 import time
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
+from cercanias_domain.departures import (
+    DepartureQuery,
+    LiveTrain,
+    ScheduledStop,
+    destinations_available,
+    next_departures,
+)
 from cercanias_domain.incidents import AlertCooldown, AlertPolicy, format_incident_message
 from cercanias_notifiers_telegram.telegram_notifier import (
     TelegramConfigError,
@@ -39,11 +48,17 @@ from cercanias_notifiers_telegram.telegram_notifier import (
 )
 from cercanias_persistence.in_memory_state_repository import InMemoryCurrentStateRepository
 from cercanias_storage.publishers import publisher_from_env
+from cercanias_storage.secrets import read_secret
 from cercanias_worker.config import WorkerConfig
 from cercanias_worker.mvp import SnapshotStore, run_cycle
 
 SNAPSHOT_KEY = os.environ.get("SNAPSHOT_KEY", "snapshot.json")
 ALERT_STATE_KEY = os.environ.get("ALERT_STATE_KEY", "alert-state.json")
+BOARDS_KEY = os.environ.get("BOARDS_KEY", "boards.json")
+#: Horarios empaquetados en la imagen: cambian una vez al dia, asi que leerlos
+#: del bucket en cada invocacion seria pagar por algo estatico.
+SCHEDULES_DIR = Path(os.environ.get("SCHEDULES_DIR", "data/horarios"))
+MADRID_TZ = ZoneInfo("Europe/Madrid")
 
 #: C-7: 2-3 pasadas internas por invocación, separadas 20 s.
 PASSES_PER_INVOCATION = int(os.environ.get("PASSES_PER_INVOCATION", "3"))
@@ -110,9 +125,100 @@ def _save_cooldown(publisher: Any, cooldown: AlertCooldown) -> None:
     )
 
 
+def _load_schedule(stop_id: str) -> list[ScheduledStop]:
+    ruta = SCHEDULES_DIR / f"{stop_id}.json"
+    if not ruta.exists():
+        return []
+    datos = json.loads(ruta.read_text(encoding="utf-8"))
+    return [
+        ScheduledStop(d["trip"], d["t"], d.get("route", ""), d.get("dest"), bool(d.get("terminates")))
+        for d in datos.get("departures", [])
+    ]
+
+
+def _build_boards(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """Precalcula el tablon de salidas de cada estacion.
+
+    Se hace AQUI, en Python probado, y no en el JavaScript de la pagina: tener la
+    misma logica dos veces garantiza que se separen. Ademas mantiene la ruta de
+    lectura como un fichero estatico tras CDN (C-7): la pagina solo pinta, no
+    calcula, y el coste no crece con los lectores.
+    """
+    vehiculos = snapshot.get("vehicles", [])
+    live = {
+        v["trip_id"]: LiveTrain(v["trip_id"], v.get("delay_seconds"), v.get("platform"))
+        for v in vehiculos
+        if v.get("trip_id")
+    }
+    conteo: dict[str, int] = {}
+    for v in vehiculos:
+        p = (v.get("trip_id") or "")[:5]
+        if p:
+            conteo[p] = conteo.get(p, 0) + 1
+    servicio = max(conteo, key=lambda k: conteo[k]) if conteo else ""
+
+    ahora = datetime.now(tz=MADRID_TZ)
+    minutos = ahora.hour * 60 + ahora.minute
+    estaciones: dict[str, Any] = {}
+
+    for ruta in sorted(SCHEDULES_DIR.glob("*.json")):
+        stop_id = ruta.stem
+        horario = _load_schedule(stop_id)
+        if not horario:
+            continue
+        salidas = next_departures(
+            horario, live, DepartureQuery(now_minutes=minutos, service_prefix=servicio, limit=10)
+        )
+        estaciones[stop_id] = {
+            "destinations": list(destinations_available(horario, service_prefix=servicio)),
+            "departures": [
+                {
+                    "t": d.scheduled_hhmm,
+                    "eta": d.expected_hhmm,
+                    "route": d.route,
+                    "dest": d.destination,
+                    "train": d.train_number,
+                    "delay": d.delay_minutes,
+                    "platform": d.platform,
+                    "in": d.minutes_until,
+                    "live": d.located,
+                }
+                for d in salidas
+            ],
+        }
+    # Los horarios se generan por lotes de dias (ADR-012: el indice de calendario
+    # avanza a diario). Cuando el servicio en circulacion cae fuera del lote, los
+    # tablones salen vacios SIN error: es el mismo fallo silencioso de siempre, y
+    # hay que gritarlo antes de que llegue al anden.
+    con_salidas = sum(1 for e in estaciones.values() if e["departures"])
+    if servicio and con_salidas == 0 and estaciones:
+        print(
+            f"AVISO GRAVE: servicio {servicio} sin ninguna salida en {len(estaciones)} "
+            "estaciones. Los horarios empaquetados no cubren el dia de hoy: hay que "
+            "regenerarlos (ver docs/DESPLIEGUE.md).",
+            file=sys.stderr,
+        )
+    return {
+        "generated_at": ahora.isoformat(),
+        "service": servicio,
+        "stations_with_departures": con_salidas,
+        "stations": estaciones,
+    }
+
+
 def _build_notifier() -> TelegramNotifier:
+    """Notificador real si hay token; dry-run si no.
+
+    El token se resuelve en ejecucion y no montado como variable de entorno: si
+    se monta, Cloud Run se niega a ARRANCAR el contenedor cuando el secreto no
+    resuelve, y un problema de notificaciones deja la aplicacion sin datos.
+    """
+    token = read_secret("TELEGRAM_BOT_TOKEN", secret_env_var="TELEGRAM_BOT_TOKEN_SECRET")
+    if not token:
+        print("Telegram en dry-run: no hay token disponible", file=sys.stderr)
+        return TelegramNotifier(token=None, chat_id=None, options=TelegramOptions(dry_run=True))
     try:
-        return TelegramNotifier()
+        return TelegramNotifier(token=token)
     except TelegramConfigError as exc:
         print(f"Telegram en dry-run: {exc.args[0].split('.')[0]}", file=sys.stderr)
         return TelegramNotifier(token=None, chat_id=None, options=TelegramOptions(dry_run=True))
@@ -165,6 +271,14 @@ def main() -> int:
         content_type="application/json",
     )
     print(f"snapshot publicado en {ref} ({len(salida.get('vehicles', []))} trenes)")
+
+    boards = _build_boards(salida)
+    publisher.publish(
+        BOARDS_KEY,
+        json.dumps(boards, ensure_ascii=False, separators=(",", ":")).encode("utf-8"),
+        content_type="application/json",
+    )
+    print(f"tablones publicados: {len(boards['stations'])} estaciones (servicio {boards['service']})")
 
     ahora = datetime.now(tz=UTC)
     notificables = [inc for inc in ultimo.incidents if policy.should_notify(inc)]

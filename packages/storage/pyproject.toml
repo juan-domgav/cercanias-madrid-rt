@@ -7,7 +7,7 @@ dependencies = ["cercanias-domain"]
 
 [project.optional-dependencies]
 aws = ["boto3>=1.35"]
-gcp = ["google-cloud-storage>=2.18"]
+gcp = ["google-cloud-storage>=2.18", "google-cloud-secret-manager>=2.20"]
 
 [build-system]
 requires = ["hatchling"]
