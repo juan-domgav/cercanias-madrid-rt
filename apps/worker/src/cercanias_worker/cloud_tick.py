@@ -53,14 +53,36 @@ EXIT_NO_DATA = 4
 
 
 class _MemoryStore(SnapshotStore):
-    """Reutiliza la lógica de último bueno conocido sin tocar disco."""
+    """Reutiliza la lógica de último bueno conocido sin tocar disco.
 
-    def __init__(self) -> None:
+    ``previous_good`` es imprescindible y no un adorno: cada invocación arranca
+    con el proceso vacío, así que sin sembrar el último bueno desde el bucket la
+    lógica de ADR-011 no protege de nada. Una pasada durante una desaparición del
+    núcleo publicaría el snapshot vacío encima del bueno, y la app se quedaría
+    sin trenes hasta el minuto siguiente. Ocurrió en producción antes de esto.
+    """
+
+    def __init__(self, previous_good: dict[str, Any] | None = None) -> None:
         self.latest: dict[str, Any] | None = None
-        self.published_ok = False
+        self._last_good = previous_good
 
     def _write(self, payload: dict[str, object]) -> None:
         self.latest = dict(payload)
+
+
+def _read_previous_snapshot(publisher: Any) -> dict[str, Any] | None:
+    """Último snapshot publicado, si lo hay y es legible."""
+    raw = publisher.read(SNAPSHOT_KEY)
+    if not raw:
+        return None
+    try:
+        previous = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(previous, dict) or not previous.get("vehicles"):
+        # Un snapshot vacío o degradado no sirve como "último bueno".
+        return None
+    return previous
 
 
 def _load_cooldown(publisher: Any) -> AlertCooldown:
@@ -106,7 +128,11 @@ def main() -> int:
     # El estado de rumbo sí es intra-invocación: con 3 pasadas hay 2
     # oportunidades de calcularlo. Persistirlo entre invocaciones es WP-3.
     state = InMemoryCurrentStateRepository()
-    store = _MemoryStore()
+    previo = _read_previous_snapshot(publisher)
+    if previo:
+        print(f"ultimo bueno conocido: {previo.get('generated_at')} "
+              f"({len(previo.get('vehicles', []))} trenes)")
+    store = _MemoryStore(previous_good=previo)
 
     ultimo = None
     for i in range(1, PASSES_PER_INVOCATION + 1):
@@ -123,12 +149,22 @@ def main() -> int:
         print("ninguna pasada produjo snapshot", file=sys.stderr)
         return EXIT_NO_DATA
 
+    salida = store.latest
+    if not salida.get("vehicles") and previo:
+        # ADR-011: mejor servir datos de hace un minuto, etiquetados, que un mapa
+        # vacio. Un mapa vacio no parece un fallo, parece que no hay trenes.
+        salida = dict(previo)
+        salida["degraded"] = True
+        salida["stale_since"] = store.latest.get("generated_at")
+        salida["reason"] = "el feed no publico el nucleo en esta pasada; se conserva el anterior"
+        print("PASADA VACIA: se conserva el snapshot anterior")
+
     ref = publisher.publish(
         SNAPSHOT_KEY,
-        json.dumps(store.latest, ensure_ascii=False).encode("utf-8"),
+        json.dumps(salida, ensure_ascii=False).encode("utf-8"),
         content_type="application/json",
     )
-    print(f"snapshot publicado en {ref}")
+    print(f"snapshot publicado en {ref} ({len(salida.get('vehicles', []))} trenes)")
 
     ahora = datetime.now(tz=UTC)
     notificables = [inc for inc in ultimo.incidents if policy.should_notify(inc)]

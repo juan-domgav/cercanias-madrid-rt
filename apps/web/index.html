@@ -52,6 +52,12 @@
   @media (prefers-color-scheme: dark) { .banner.warn { background: #3a2c07; color: #fcd34d; } }
   footer { margin-top: 2rem; color: var(--muted); font-size: .75rem; border-top: 1px solid var(--line); padding-top: 1rem; }
   .empty { color: var(--muted); padding: 1.5rem 0; text-align: center; }
+  .plat {
+    display: inline-block; font-weight: 700; font-size: .95rem; color: var(--fg);
+    background: var(--bg); border: 2px solid var(--accent); border-radius: .4rem;
+    padding: .1rem .5rem;
+  }
+  .plat-unknown { border-color: var(--line); color: var(--muted); font-weight: 500; }
 </style>
 </head>
 <body>
@@ -87,9 +93,16 @@
 // dato personal (RGPD) y mantiene la lectura como un fichero estatico tras CDN.
 const SNAPSHOT_URL = "./snapshot.json";
 const STATIONS_URL = "./estaciones.json";
+const LINES_URL = "./lineas.json";
 const RADIUS_KM = 30;
 
 let stations = [], snapshot = null, selected = null;
+// Mapa autoritativo estacion -> lineas, derivado del GTFS estatico
+// (trips + stop_times). Es la verdad; lo observado solo lo complementa.
+let staticLines = {};
+let horario = null;          // horario de la estacion seleccionada
+let servicioHoy = null;      // p.ej. "1020L": el indice de calendario de hoy
+let sentidoFiltro = null;    // destino elegido, o null = todos
 
 const tg = window.Telegram?.WebApp;
 if (tg) { tg.ready(); tg.expand(); }
@@ -136,53 +149,249 @@ function renderChips(list) {
   });
 }
 
-function selectStation(station) {
+async function selectStation(station) {
   selected = station;
+  sentidoFiltro = null;
   $("picker").value = station.stop_id;
   renderChips(currentChips);
-  renderTrains();
+  renderTrains();                 // pinta ya con lo que hay
+  await cargarHorario(station.stop_id);
+  renderTrains();                 // repinta con el tablon de salidas
 }
 
 let currentChips = [];
+
+// Velocidad media de un Cercanias entre dos paradas consecutivas, incluida la
+// frenada. Sirve para una ESTIMACION en linea recta; no sustituye al horario.
+const AVG_SPEED_KMH = 55;
+// La via nunca va en linea recta. Este factor corrige la distancia geodesica
+// hacia la real por via; es una aproximacion grosera y por eso el resultado se
+// presenta siempre como "aprox".
+const TRACK_FACTOR = 1.25;
+
+let showAll = false;
+
+// Minutos estimados. Se usa SIEMPRE para ordenar, aunque el texto que se
+// muestre venga del `status`: ordenar por distancia y escribir tiempos era
+// justo lo que hacia el listado incomprensible.
+function etaMinutes(v) { return (v.km * TRACK_FACTOR) / AVG_SPEED_KMH * 60; }
+
+function etaText(v) {
+  const m = etaMinutes(v);
+  // El `status` del feed solo se cree si concuerda con la distancia. Un tren a
+  // 8 km que se declara "INCOMING_AT" es un dato contradictorio, y mostrarlo
+  // como "Llegando" junto a otro a la misma distancia con "~9 min" es
+  // exactamente la incoherencia que se veia en pantalla.
+  if (v.status && v.status.includes("STOPPED_AT") && v.km < 1.5) return ["En la estación", true];
+  if (v.status && v.status.includes("INCOMING_AT") && v.km < 3) return ["Llegando", true];
+  if (m < 1.5) return ["Llegando", false];
+  return [`~${Math.round(m)} min`, false];
+}
+
+// Numero de tren, para distinguir unos de otros: tres trenes de la C4b se
+// mostraban como tres tarjetas identicas que parecian el mismo tren repetido.
+// Formato del tripId: NNNN + letra del dia + numero de tren + linea.
+function trainNumber(tripId) {
+  const m = /^\d{4}[A-Z](\d+)/.exec(tripId || "");
+  return m ? m[1] : (tripId || "").slice(0, 8);
+}
+
+// Que lineas paran en esta estacion. Se deduce de los propios datos: cualquier
+// tren que declare esta estacion como proxima parada demuestra que su linea la
+// sirve. Es la correccion al fallo de filtrar solo por distancia: a 30 km de
+// Colmenar hay trenes de lineas que no pasan por alli en su vida.
+function linesServing(stationId) {
+  const s = new Set(staticLines[stationId] || []);
+  // Lo observado complementa al horario: si un tren declara esta estacion como
+  // proxima parada, la sirve, diga lo que diga un GTFS que puede estar viejo.
+  (snapshot?.vehicles || []).forEach(v => { if (v.next_stop_id === stationId) s.add(v.route); });
+  (servedIndex[stationId] || []).forEach(r => s.add(r));
+  return s;
+}
+
+// Indice acumulado entre recargas: una sola instantanea solo ve los trenes que
+// se acercan AHORA, asi que de noche o en hora valle una linea real podria no
+// aparecer. Se recuerda lo visto.
+let servedIndex = JSON.parse(localStorage.getItem("servedIndex") || "{}");
+function rememberServed() {
+  let changed = false;
+  (snapshot?.vehicles || []).forEach(v => {
+    if (!v.next_stop_id) return;
+    const arr = servedIndex[v.next_stop_id] || (servedIndex[v.next_stop_id] = []);
+    if (!arr.includes(v.route)) { arr.push(v.route); changed = true; }
+  });
+  if (changed) localStorage.setItem("servedIndex", JSON.stringify(servedIndex));
+}
+
+// El indice de calendario avanza a diario (ADR-012), asi que no se puede fijar:
+// se deduce del prefijo mas frecuente entre los trenes que circulan ahora.
+function servicioDelDia() {
+  const c = {};
+  (snapshot?.vehicles || []).forEach(v => {
+    const p = (v.trip_id || "").slice(0, 5);
+    if (p) c[p] = (c[p] || 0) + 1;
+  });
+  return Object.entries(c).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+}
+
+function hhmmAhora() {
+  const d = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Madrid" }));
+  return d.getHours() * 60 + d.getMinutes();
+}
+function aMinutos(t) {
+  const [h, m] = (t || "0:0").split(":").map(Number);
+  return h * 60 + m;   // GTFS admite >24:00 para servicios de madrugada
+}
+function sumaMin(t, delta) {
+  let v = (aMinutos(t) + delta) % 1440; if (v < 0) v += 1440;
+  return `${String(Math.floor(v / 60)).padStart(2, "0")}:${String(v % 60).padStart(2, "0")}`;
+}
+
+async function cargarHorario(stationId) {
+  horario = null;
+  try {
+    // URL versionada con el codigo de servicio del dia: cambia cada dia, que es
+    // justo cuando el horario deja de valer. Sin esto, una cache de 24 h deja al
+    // navegador con el fichero de ayer y no hay forma de corregirlo en caliente
+    // (paso: los destinos se quedaron en "desconocido" con el servidor ya bien).
+    const r = await fetch(`./horarios/${stationId}.json?v=${servicioHoy || "0"}`);
+    if (r.ok) horario = await r.json();
+  } catch { /* sin horario se cae a la vista por distancia */ }
+}
+
+function renderSalidas() {
+  if (!horario || !servicioHoy) return "";
+  const ahora = hhmmAhora();
+  const vivos = {};
+  (snapshot?.vehicles || []).forEach(v => { vivos[v.trip_id] = v; });
+
+  const ventana = horario.departures
+    .filter(d => d.trip.startsWith(servicioHoy))
+    .map(d => ({ ...d, min: aMinutos(d.t) }))
+    // -3 min de margen: un tren que acaba de salir sigue siendo informacion util
+    .filter(d => d.min >= ahora - 3 && d.min <= ahora + 120)
+    // Los que TERMINAN aqui son llegadas, no salidas. Mezclarlos seria mentir:
+    // en un final de linea como Colmenar, la mitad de las paradas del horario
+    // son trenes que acaban su recorrido.
+    .filter(d => !d.terminates)
+    .sort((a, b) => a.min - b.min);
+
+  // Filtro de sentido: en una estacion de paso como Tres Cantos conviven los dos
+  // sentidos, y sin distinguirlos el tablon no sirve para decidir nada.
+  const destinos = [...new Set(ventana.map(d => d.dest).filter(Boolean))];
+  const chips = destinos.length > 1
+    ? `<div class="stations">` + [null, ...destinos].map(dst =>
+        `<button class="chip dir" data-dst="${dst === null ? "" : dst}"
+           aria-pressed="${sentidoFiltro === dst}">${dst === null ? "Ambos sentidos" : "→ " + dst}</button>`
+      ).join("") + `</div>`
+    : "";
+
+  const prox = ventana.filter(d => !sentidoFiltro || d.dest === sentidoFiltro).slice(0, 8);
+  if (!prox.length) return chips + `<div class="empty">No hay salidas programadas en las próximas 2 h.</div>`;
+
+  return chips + `<div class="meta" style="margin:.4rem 0">Próximas salidas según horario, con el retraso publicado:</div>` +
+    prox.map(d => {
+      const v = vivos[d.trip];
+      const rt = v && v.delay_seconds != null ? Math.round(v.delay_seconds / 60) : null;
+      const hora = d.t.slice(0, 5);
+      const real = rt ? sumaMin(d.t, rt) : hora;
+      const enFalta = d.min - ahora;
+      const cls = rt === null ? "" : rt > 3 ? "late" : "ontime";
+      const etiqueta = rt === null ? "sin datos en vivo" : rt <= 0 ? "en hora" : `+${rt} min`;
+      // El anden es el dato mas accionable de todos: dice donde ponerse. Solo
+      // existe en el feed en vivo (Anexo A.6), no en el horario, asi que se
+      // muestra cuando el tren esta localizado y se dice claramente cuando no.
+      const anden = v && v.platform
+        ? `<span class="plat">Andén ${v.platform}</span>`
+        : `<span class="plat plat-unknown">Andén —</span>`;
+      return `<div class="train">
+        <div class="top">
+          <span class="route">${hora}${rt ? ` → <strong>${real}</strong>` : ""}
+            <span style="font-weight:400;color:var(--muted)">· ${d.route || ""} tren ${trainNumber(d.trip)}</span></span>
+          <span class="delay ${cls}">${etiqueta}</span></div>
+        <div class="meta" style="font-size:1rem;color:var(--fg)">
+          <strong>→ ${d.dest || "destino desconocido"}</strong></div>
+        <div class="meta" style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
+          ${anden}
+          <span>${enFalta <= 0 ? "saliendo" : `en ${enFalta} min`}</span>
+          ${v ? "" : '<span style="opacity:.7">· sin datos en vivo todavía</span>'}
+        </div>
+      </div>`;
+    }).join("");
+}
 
 function renderTrains() {
   const box = $("trains");
   if (!selected) { box.innerHTML = `<div class="empty">Elige una estación para ver sus trenes.</div>`; return; }
 
-  const near = snapshot.vehicles
+  const lineas = linesServing(selected.stop_id);
+  const conDistancia = (snapshot.vehicles || [])
     .filter(v => v.lat != null && v.lon != null)
     .map(v => ({ ...v, km: haversineKm(v.lat, v.lon, selected.latitude, selected.longitude) }))
-    .filter(v => v.km <= RADIUS_KM)
-    // Los que tienen ESTA estacion como proxima parada primero: son los unicos
-    // de los que se puede afirmar el sentido sin la topologia de la linea.
+    .filter(v => v.km <= RADIUS_KM);
+
+  // Relevantes = paran aqui (seguro), o son de una linea que sirve la estacion.
+  const relevantes = conDistancia
+    .filter(v => v.next_stop_id === selected.stop_id || lineas.has(v.route))
     .sort((a, b) => (a.next_stop_id === selected.stop_id ? 0 : 1) -
-                    (b.next_stop_id === selected.stop_id ? 0 : 1) || a.km - b.km)
-    .slice(0, 12);
+                    (b.next_stop_id === selected.stop_id ? 0 : 1)
+                    || etaMinutes(a) - etaMinutes(b));
+  const resto = conDistancia.filter(v => !relevantes.includes(v)).sort((a,b) => a.km - b.km);
 
-  if (!near.length) { box.innerHTML = `<div class="empty">No hay trenes cerca de ${selected.name} ahora mismo.</div>`; return; }
+  const lista = showAll ? relevantes.concat(resto) : relevantes.slice(0, 8);
 
-  box.innerHTML = near.map(v => {
+  const cabecera = lineas.size
+    ? `<div class="meta" style="margin:.25rem 0 .6rem">Líneas en ${selected.name}: <strong>${[...lineas].sort().join(", ")}</strong></div>`
+    : `<div class="banner warn">Aún no sé qué líneas paran en ${selected.name}. Se aprende
+       observando qué trenes la declaran como próxima parada; vuelve en unos minutos.</div>`;
+
+  if (!lista.length) {
+    box.innerHTML = cabecera + renderSalidas() +
+      `<div class="empty">Ningún tren de esas líneas localizado ahora mismo.</div>` + toggleHtml(resto.length);
+    return;
+  }
+
+  const tablon = renderSalidas();
+  box.innerHTML = cabecera + tablon +
+    `<div class="meta" style="margin:1.2rem 0 .4rem">Trenes localizados cerca:</div>` +
+    lista.map(v => {
     const m = minutes(v.delay_seconds);
-    const delayTxt = m === null ? "sin dato"
-                   : m <= 0 ? "en hora"
-                   : `+${m} min`;
+    const delayTxt = m === null ? "sin dato" : m <= 0 ? "en hora" : `+${m} min`;
     const delayCls = m === null ? "" : (m > 3 ? "late" : "ontime");
     const esProxima = v.next_stop_id === selected.stop_id;
-    const sentido = esProxima
-      ? (v.lat < selected.latitude ? "llega desde el sur" : "llega desde el norte")
-      : null;
-    const dir = esProxima
-      ? `<strong>Próxima parada: ${selected.name}</strong>${sentido ? " · " + sentido : ""}`
-      : `A ${v.km.toFixed(1)} km · sentido no confirmado`;
-    return `<div class="train">
+    const [eta, seguro] = etaText(v);
+
+    if (esProxima) {
+      const sentido = v.lat < selected.latitude ? "desde el sur" : "desde el norte";
+      return `<div class="train">
+        <div class="top">
+          <span class="route">${v.route} <span style="font-weight:400;color:var(--muted)">· tren ${trainNumber(v.trip_id)}</span></span>
+          <span class="delay ${delayCls}">${delayTxt}</span></div>
+        <div class="meta" style="font-size:1rem;color:var(--fg)"><strong>${eta}</strong>${seguro ? "" : " <span style=\"color:var(--muted)\">(estimado)</span>"}</div>
+        <div class="meta" style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
+          ${v.platform ? `<span class="plat">Andén ${v.platform}</span>` : ""}
+          <span>Llega ${sentido} · a ${v.km.toFixed(1)} km</span></div>
+      </div>`;
+    }
+    return `<div class="train" style="opacity:.7">
       <div class="top">
-        <span class="route">${v.route}</span>
-        <span class="delay ${delayCls}">${delayTxt}</span>
-      </div>
-      <div class="meta">${dir}</div>
-      <div class="meta">${v.platform ? "Andén " + v.platform + " · " : ""}${v.status || ""}</div>
+        <span class="route">${v.route} <span style="font-weight:400;color:var(--muted)">· tren ${trainNumber(v.trip_id)}</span></span>
+        <span class="delay ${delayCls}">${delayTxt}</span></div>
+      <div class="meta">A ${v.km.toFixed(1)} km · aún no ha declarado parada aquí</div>
     </div>`;
-  }).join("");
+  }).join("") + toggleHtml(resto.length);
+
+  const btn = document.getElementById("toggle-all");
+  if (btn) btn.onclick = () => { showAll = !showAll; renderTrains(); };
+  document.querySelectorAll("button.dir").forEach(b => {
+    b.onclick = () => { sentidoFiltro = b.dataset.dst || null; renderTrains(); };
+  });
+}
+
+function toggleHtml(n) {
+  if (!n) return "";
+  return `<button id="toggle-all" style="width:100%;margin-top:.5rem">
+    ${showAll ? "Ocultar" : `Ver ${n} trenes más de otras líneas`}</button>`;
 }
 
 function onPosition(pos) {
@@ -268,8 +477,10 @@ if (navigator.permissions?.query) {
 
 async function boot() {
   try {
-    const [snapRes, stRes] = await Promise.all([fetch(SNAPSHOT_URL, {cache: "no-store"}), fetch(STATIONS_URL)]);
+    const [snapRes, stRes, lnRes] = await Promise.all([
+      fetch(SNAPSHOT_URL, {cache: "no-store"}), fetch(STATIONS_URL), fetch(LINES_URL)]);
     snapshot = await snapRes.json();
+    try { staticLines = (await lnRes.json()).stations || {}; } catch { staticLines = {}; }
     const raw = await stRes.json();
     stations = (raw.stations || raw).map(s => ({
       stop_id: s.renfe_stop_id || s.stop_id,
@@ -284,6 +495,8 @@ async function boot() {
       $("picker").appendChild(o);
     });
 
+    servicioHoy = servicioDelDia();
+    rememberServed();
     renderUpdated();
     renderTrains();
   } catch (e) {
@@ -299,7 +512,7 @@ $("picker").onchange = (e) => {
 };
 
 boot();
-setInterval(() => { fetch(SNAPSHOT_URL, {cache:"no-store"}).then(r=>r.json()).then(s => { snapshot = s; renderUpdated(); renderTrains(); }).catch(()=>{}); }, 30000);
+setInterval(() => { fetch(SNAPSHOT_URL, {cache:"no-store"}).then(r=>r.json()).then(s => { snapshot = s; servicioHoy = servicioDelDia(); rememberServed(); renderUpdated(); renderTrains(); }).catch(()=>{}); }, 30000);
 </script>
 </body>
 </html>
