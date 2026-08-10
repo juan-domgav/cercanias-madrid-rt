@@ -8,13 +8,24 @@
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
   :root {
-    --bg: #ffffff; --fg: #16181d; --muted: #6b7280; --line: #e5e7eb;
-    --card: #f9fafb; --accent: #1d4ed8; --late: #b91c1c; --ok: #047857;
+    /* Dentro de Telegram se adoptan sus variables de tema: si no, la pagina
+       parece una web ajena incrustada en la app. Fuera de Telegram esas
+       variables no existen y valen los colores propios. */
+    --bg: var(--tg-theme-bg-color, #ffffff);
+    --fg: var(--tg-theme-text-color, #16181d);
+    --muted: var(--tg-theme-hint-color, #6b7280);
+    --card: var(--tg-theme-secondary-bg-color, #f9fafb);
+    --accent: var(--tg-theme-button-color, #1d4ed8);
+    --line: #e5e7eb; --late: #b91c1c; --ok: #047857;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #0f1115; --fg: #e8eaed; --muted: #9aa0a6; --line: #2a2e35;
-      --card: #171a20; --accent: #7aa2f7; --late: #f87171; --ok: #34d399;
+      --bg: var(--tg-theme-bg-color, #0f1115);
+      --fg: var(--tg-theme-text-color, #e8eaed);
+      --muted: var(--tg-theme-hint-color, #9aa0a6);
+      --card: var(--tg-theme-secondary-bg-color, #171a20);
+      --accent: var(--tg-theme-button-color, #7aa2f7);
+      --line: #2a2e35; --late: #f87171; --ok: #34d399;
     }
   }
   * { box-sizing: border-box; }
@@ -52,6 +63,8 @@
   @media (prefers-color-scheme: dark) { .banner.warn { background: #3a2c07; color: #fcd34d; } }
   footer { margin-top: 2rem; color: var(--muted); font-size: .75rem; border-top: 1px solid var(--line); padding-top: 1rem; }
   .empty { color: var(--muted); padding: 1.5rem 0; text-align: center; }
+  body.en-telegram header h1 { display: none; }
+  body.en-telegram { padding-bottom: 5rem; }  /* hueco para el MainButton */
   .plat {
     display: inline-block; font-weight: 700; font-size: .95rem; color: var(--fg);
     background: var(--bg); border: 2px solid var(--accent); border-radius: .4rem;
@@ -105,7 +118,24 @@ let servicioHoy = null;      // p.ej. "1020L": el indice de calendario de hoy
 let sentidoFiltro = null;    // destino elegido, o null = todos
 
 const tg = window.Telegram?.WebApp;
-if (tg) { tg.ready(); tg.expand(); }
+const enTelegram = Boolean(tg?.initData !== undefined && tg?.platform && tg.platform !== "unknown");
+if (tg) {
+  tg.ready();
+  tg.expand();
+  // Evita que un gesto de scroll cierre la Mini App a media consulta.
+  tg.disableVerticalSwipes?.();
+  tg.setHeaderColor?.("secondary_bg_color");
+  document.body.classList.add("en-telegram");
+}
+
+// Vibracion breve al elegir: dentro de Telegram es la senal de que el toque ha
+// hecho algo, sobre todo si los datos tardan en llegar.
+function haptic(tipo = "selection") {
+  try {
+    if (tipo === "selection") tg?.HapticFeedback?.selectionChanged();
+    else tg?.HapticFeedback?.impactOccurred(tipo);
+  } catch { /* fuera de Telegram no existe */ }
+}
 
 const $ = (id) => document.getElementById(id);
 
@@ -144,7 +174,7 @@ function renderChips(list) {
     b.className = "chip";
     b.setAttribute("aria-pressed", selected?.stop_id === station.stop_id);
     b.textContent = km !== null ? `${station.name} · ${km.toFixed(1)} km` : station.name;
-    b.onclick = () => selectStation(station);
+    b.onclick = () => { haptic(); selectStation(station); };
     $("chips").appendChild(b);
   });
 }
@@ -384,7 +414,7 @@ function renderTrains() {
   const btn = document.getElementById("toggle-all");
   if (btn) btn.onclick = () => { showAll = !showAll; renderTrains(); };
   document.querySelectorAll("button.dir").forEach(b => {
-    b.onclick = () => { sentidoFiltro = b.dataset.dst || null; renderTrains(); };
+    b.onclick = () => { haptic(); sentidoFiltro = b.dataset.dst || null; renderTrains(); };
   });
 }
 
@@ -505,7 +535,16 @@ async function boot() {
   }
 }
 
-$("locate").onclick = locate;   // permiso SOLO tras accion del usuario
+$("locate").onclick = () => { haptic("light"); locate(); };  // permiso SOLO tras accion del usuario
+
+// Dentro de Telegram, el boton principal del sistema es mas descubrible que uno
+// propio y queda fijado abajo, al alcance del pulgar.
+if (enTelegram && tg?.MainButton) {
+  document.getElementById("locate").style.display = "none";
+  tg.MainButton.setText("📍 Estaciones cerca de mí");
+  tg.MainButton.show();
+  tg.MainButton.onClick(() => { haptic("light"); locate(); });
+}
 $("picker").onchange = (e) => {
   const s = stations.find(x => x.stop_id === e.target.value);
   if (s) { currentChips = []; renderChips([]); selectStation(s); }
