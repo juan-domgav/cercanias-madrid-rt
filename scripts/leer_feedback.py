@@ -28,7 +28,7 @@ def main() -> int:
         print("Sin feedback todavia (o sin acceso al bucket privado).")
         return 0
 
-    filas = [json.loads(l) for l in salida.stdout.splitlines() if l.strip()]
+    filas = [json.loads(linea) for linea in salida.stdout.splitlines() if linea.strip()]
     if not filas:
         print("Sin feedback todavia.")
         return 0

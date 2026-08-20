@@ -15,7 +15,7 @@ SHELL := /bin/bash
 # En Linux (CI) UF_HIDDEN no existe y `chflags` tampoco: el paso es un no-op.
 export UV_NO_SYNC := 1
 
-.PHONY: help install unhide feedback lint format typecheck test test-cov \
+.PHONY: help install unhide feedback analizar lint format typecheck test test-cov \
         check-feed-freshness discover-data ideadif-explore ci clean
 
 unhide:
@@ -34,6 +34,7 @@ help:
 	@echo "  make mvp                   - bucle MVP end-to-end (snapshot + salud + Telegram)"
 	@echo "  make telegram-test         - comprueba las credenciales de Telegram"
 	@echo "  make feedback              - lee los avisos enviados por el bot"
+	@echo "  make analizar              - analiza el archivo historico de pasadas"
 	@echo "  make ci                    - lint + typecheck + test (lo que corre en GitHub Actions)"
 
 install:
@@ -93,6 +94,10 @@ telegram-test: unhide
 # Lee el feedback que llega por el bot (bucket privado: lleva chat_id).
 feedback:
 	@python3 scripts/leer_feedback.py
+
+# Analiza el archivo historico: propagacion del retraso en cabecera y supresiones.
+analizar:
+	@python3 scripts/analizar_archivo.py
 
 # Cada etapa en su propia invocacion de make: `unhide` es prerequisito de todas,
 # pero make solo lo ejecuta UNA vez por invocacion. Como cualquier `uv run`

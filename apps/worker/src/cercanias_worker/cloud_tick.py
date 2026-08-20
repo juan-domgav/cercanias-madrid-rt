@@ -55,6 +55,16 @@ SNAPSHOT_KEY = os.environ.get("SNAPSHOT_KEY", "snapshot.json")
 ALERT_STATE_KEY = os.environ.get("ALERT_STATE_KEY", "alert-state.json")
 #: Estado operativo: no es personal, pero tampoco tiene por que ser publico.
 PRIVATE_BUCKET = os.environ.get("PRIVATE_BUCKET", "")
+
+#: Archivo historico. Se guarda una entrada por PASADA (no por invocacion), lo
+#: que da resolucion de 20 s: suficiente para ver el momento exacto del relevo en
+#: cabecera, que es lo que hay que medir.
+#:
+#: Un objeto por pasada, en vez de anadir a un fichero unico: en almacenamiento
+#: de objetos "anadir" significa leer y reescribir entero, y el coste crece con
+#: el cuadrado del dia.
+ARCHIVE_PREFIX = os.environ.get("ARCHIVE_PREFIX", "archivo")
+ARCHIVE_ENABLED = os.environ.get("ARCHIVE_ENABLED", "1") == "1"
 BOARDS_KEY = os.environ.get("BOARDS_KEY", "boards.json")
 #: Los horarios viven en el bucket, un fichero por dia de servicio
 #: (``horarios/1030J.json``). Estaban empaquetados en la imagen y caducaron sin
@@ -226,6 +236,50 @@ def _build_boards(snapshot: dict[str, Any], publisher: Any) -> dict[str, Any]:
     }
 
 
+def _archive_pass(publisher: Any, snapshot: dict[str, Any], momento: datetime) -> None:
+    """Guarda una foto compacta de la pasada para el analisis posterior.
+
+    Solo lo que hace falta para responder dos preguntas que hoy no se pueden
+    responder: cuanto retraso sobrevive al cambio de sentido en cabecera, y con
+    que frecuencia un servicio programado sencillamente no circula.
+
+    Se escribe en el bucket PRIVADO: no es dato personal, pero es material de
+    trabajo y no tiene por que servirse en la web.
+    """
+    if not ARCHIVE_ENABLED:
+        return
+    vehiculos = snapshot.get("vehicles") or []
+    if not vehiculos:
+        return
+    compacto = {
+        "ts": momento.isoformat(),
+        "n": len(vehiculos),
+        # Listas posicionales en vez de objetos: reduce el tamano a la mitad y
+        # una semana de archivo se lee entera sin pensar en el coste.
+        "cols": ["trip", "delay", "next_stop", "status", "platform", "lat", "lon"],
+        "trains": [
+            [
+                v.get("trip_id"), v.get("delay_seconds"), v.get("next_stop_id"),
+                v.get("status"), v.get("platform"), v.get("lat"), v.get("lon"),
+            ]
+            for v in vehiculos
+        ],
+    }
+    clave = f"{ARCHIVE_PREFIX}/{momento:%Y-%m-%d}/{momento:%H%M%S}.json"
+    try:
+        publisher.publish(
+            clave,
+            # Salto final para que concatenar objetos siga siendo NDJSON valido:
+            # `gcloud storage cat` con comodin no separa los ficheros, y sin esto
+            # dos pasadas se funden en una linea ilegible.
+            (json.dumps(compacto, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8"),
+            content_type="application/x-ndjson",
+        )
+    except Exception as exc:
+        # El archivo es material de estudio: que falle no debe tumbar la ingesta.
+        print(f"aviso: no se pudo archivar {clave}: {exc}", file=sys.stderr)
+
+
 def _build_notifier() -> TelegramNotifier:
     """Notificador real si hay token; dry-run si no.
 
@@ -262,6 +316,7 @@ def main() -> int:
     store = _MemoryStore(previous_good=previo)
 
     ultimo = None
+    archivadas = 0
     for i in range(1, PASSES_PER_INVOCATION + 1):
         ultimo = run_cycle(config, store, state)
         print(
@@ -269,6 +324,9 @@ def main() -> int:
             f"retrasos={ultimo.madrid_delays} rumbos={ultimo.with_bearing} "
             f"salud={ultimo.health.worst} incidencias={len(ultimo.incidents)}"
         )
+        if store.latest:
+            _archive_pass(estado, store.latest, datetime.now(tz=MADRID_TZ))
+            archivadas += 1
         if i < PASSES_PER_INVOCATION:
             time.sleep(SECONDS_BETWEEN_PASSES)
 
@@ -300,6 +358,8 @@ def main() -> int:
         content_type="application/json",
     )
     print(f"tablones publicados: {len(boards['stations'])} estaciones (servicio {boards['service']})")
+    if ARCHIVE_ENABLED:
+        print(f"pasadas archivadas: {archivadas}")
 
     ahora = datetime.now(tz=UTC)
     notificables = [inc for inc in ultimo.incidents if policy.should_notify(inc)]
