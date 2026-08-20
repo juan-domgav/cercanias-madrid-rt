@@ -7,18 +7,9 @@ cada comando sin levantar el servicio ni hablar con Telegram.
 from __future__ import annotations
 
 import unicodedata
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from cercanias_domain.departures import (
-    Departure,
-    DepartureQuery,
-    LiveTrain,
-    ScheduledStop,
-    destinations_available,
-    next_departures,
-)
 from cercanias_domain.station_view import Station, nearest_stations
 
 MAX_FEEDBACK_CHARS = 1000
@@ -86,28 +77,26 @@ def find_station(query: str, stations: list[Station]) -> Station | None:
     return min(contiene, key=lambda s: len(s.name)) if contiene else None
 
 
-def format_departures(station: Station, salidas: tuple[Departure, ...], destinos: tuple[str, ...]) -> str:
+def format_departures(station: Station, salidas: list[dict[str, Any]], destinos: list[str]) -> str:
     if not salidas:
-        return (
-            f"<b>{station.name}</b>\nNo hay salidas programadas en las próximas 2 horas."
-        )
+        return f"<b>{station.name}</b>\nNo hay salidas programadas en las próximas 2 horas."
     lineas = [f"<b>{station.name}</b>"]
     if len(destinos) > 1:
         lineas.append(f"<i>Sentidos: {' · '.join(destinos)}</i>")
     lineas.append("")
-    for d in salidas:
-        hora = f"<b>{d.expected_hhmm}</b>"
-        if d.delay_minutes:
-            hora += f" <s>{d.scheduled_hhmm}</s>"
+    for d in salidas[:6]:
+        hora = f"<b>{d['eta']}</b>"
+        if d.get("delay"):
+            hora += f" <s>{d['t']}</s>"
         retraso = (
-            "sin datos en vivo" if d.delay_minutes is None
-            else "en hora" if d.delay_minutes <= 0
-            else f"+{d.delay_minutes} min"
+            "sin datos en vivo" if d.get("delay") is None
+            else "en hora" if d["delay"] <= 0
+            else f"+{d['delay']} min"
         )
-        anden = f"Andén <b>{d.platform}</b>" if d.platform else "Andén —"
+        anden = f"Andén <b>{d['platform']}</b>" if d.get("platform") else "Andén —"
         lineas.append(
-            f"{hora} → {d.destination or '?'}\n"
-            f"   {d.route} tren {d.train_number} · {anden} · {retraso}"
+            f"{hora} → {d.get('dest') or '?'}\n"
+            f"   {d.get('route','')} tren {d.get('train','')} · {anden} · {retraso}"
         )
     lineas.append("\n<i>Andén y retraso vienen del feed en vivo; si el tren aún no "
                   "está localizado, no se muestran.</i>")
@@ -116,13 +105,13 @@ def format_departures(station: Station, salidas: tuple[Departure, ...], destinos
 
 @dataclass(frozen=True)
 class BotContext:
-    """Todo lo que el bot necesita saber del mundo para contestar."""
+    """Todo lo que el bot necesita saber del mundo para contestar.
+
+    ``boards`` es el tablon ya calculado por la ingesta: el bot pinta, no calcula.
+    """
 
     stations: list[Station]
-    load_schedule: Callable[[str], list[ScheduledStop]]
-    live: dict[str, LiveTrain]
-    now_minutes: int
-    service_prefix: str
+    boards: dict[str, Any]
 
 
 def _handle_location(location: dict[str, Any], ctx: BotContext) -> BotResult:
@@ -157,11 +146,9 @@ def _handle_proximos(resto: str, ctx: BotContext) -> BotResult:
         return BotResult(reply=Reply(
             f"No conozco ninguna estación que se parezca a «{resto}».\n"
             "Prueba a enviar tu ubicación con el botón de abajo.", TECLADO_UBICACION))
-    scheduled = ctx.load_schedule(station.stop_id)
-    salidas = next_departures(scheduled, ctx.live, DepartureQuery(
-        now_minutes=ctx.now_minutes, service_prefix=ctx.service_prefix))
-    destinos = destinations_available(scheduled, service_prefix=ctx.service_prefix)
-    return BotResult(reply=Reply(format_departures(station, salidas, destinos)))
+    est = (ctx.boards.get("stations") or {}).get(station.stop_id) or {}
+    return BotResult(reply=Reply(format_departures(
+        station, est.get("departures") or [], est.get("destinations") or [])))
 
 
 def _message_and_chat(update: dict[str, Any]) -> tuple[dict[str, Any], int] | None:

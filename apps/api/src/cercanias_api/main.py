@@ -14,21 +14,24 @@ import json
 import os
 from datetime import UTC, datetime
 from typing import Any
-from zoneinfo import ZoneInfo
 
 import httpx
 import uvicorn
 from fastapi import FastAPI, Header, HTTPException, Request
 
 from cercanias_api.bot import BotContext, BotResult, Feedback, handle_update
-from cercanias_domain.departures import LiveTrain, ScheduledStop
+from cercanias_domain.departures import LiveTrain
 from cercanias_domain.station_view import Station
-from cercanias_storage.publishers import publisher_from_env
+from cercanias_storage.publishers import GcsSnapshotPublisher, publisher_from_env
 
 TELEGRAM_API = "https://api.telegram.org"
 WEBHOOK_SECRET = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "")
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 FEEDBACK_KEY = os.environ.get("FEEDBACK_KEY", "feedback.jsonl")
+#: Bucket PRIVADO. El feedback lleva un chat_id, que es un dato personal, y el
+#: bucket de la web es publico por definicion: cualquiera podia leerlo en una URL
+#: adivinable. Se separan por eso, no por orden.
+PRIVATE_BUCKET = os.environ.get("PRIVATE_BUCKET", "")
 
 #: Los datos cambian cada minuto; cachearlos unos segundos evita releer el bucket
 #: en cada mensaje sin llegar a servir nada rancio.
@@ -84,22 +87,31 @@ def load_live() -> tuple[dict[str, LiveTrain], str]:
     return live, prefix
 
 
-def load_schedule(stop_id: str) -> list[ScheduledStop]:
-    data = _cached(f"h:{stop_id}", lambda: _read_json(f"horarios/{stop_id}.json")) or {}
-    return [
-        ScheduledStop(d["trip"], d["t"], d.get("route", ""), d.get("dest"), bool(d.get("terminates")))
-        for d in data.get("departures", [])
-    ]
+def load_boards() -> dict[str, Any]:
+    """Tablones ya calculados por la ingesta.
+
+    El bot NO recalcula: consume el mismo ``boards.json`` que pinta la web. Antes
+    leia ``horarios/{stop_id}.json`` y dejo de funcionar en silencio cuando esos
+    ficheros se retiraron — el bot dejo de mostrar trenes sin un solo error.
+    """
+    return _cached("boards", lambda: _read_json("boards.json")) or {}
+
+
+def _private_publisher() -> Any:
+    """Publicador contra el bucket privado."""
+    if PRIVATE_BUCKET:
+        return GcsSnapshotPublisher(PRIVATE_BUCKET)
+    return publisher_from_env()
 
 
 def store_feedback(fb: Feedback) -> None:
-    """Añade el aviso a un JSONL en el bucket.
+    """Añade el aviso a un JSONL en el bucket PRIVADO.
 
     Se guarda el ``chat_id`` porque sin él no se puede responder a quien reporta,
-    pero nada más: ni nombre, ni usuario, ni ubicación. Es el mínimo que hace útil
-    el registro.
+    pero nada más: ni nombre, ni usuario, ni ubicación. Y nunca en el bucket
+    publico: es un identificador personal.
     """
-    publisher = publisher_from_env()
+    publisher = _private_publisher()
     previo = publisher.read(FEEDBACK_KEY) or b""
     entrada = json.dumps(
         {"at": datetime.now(tz=UTC).isoformat(), "chat_id": fb.chat_id, "text": fb.text},
@@ -144,14 +156,9 @@ async def telegram_webhook(
     if not isinstance(update, dict):
         raise HTTPException(status_code=400, detail="update invalido")
 
-    live, prefix = load_live()
-    local = datetime.now(tz=ZoneInfo("Europe/Madrid"))
     result = handle_update(update, BotContext(
         stations=load_stations(),
-        load_schedule=load_schedule,
-        live=live,
-        now_minutes=local.hour * 60 + local.minute,
-        service_prefix=prefix,
+        boards=load_boards(),
     ))
     if result.feedback:
         store_feedback(result.feedback)

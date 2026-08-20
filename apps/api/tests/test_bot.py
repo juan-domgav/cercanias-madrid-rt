@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from cercanias_api.bot import BotContext, find_station, handle_update, normalize
 
-from cercanias_domain.departures import LiveTrain, ScheduledStop
 from cercanias_domain.station_view import Station
 
 SERV = "1020L"
@@ -11,12 +10,15 @@ COLMENAR = Station("17005", "Colmenar Viejo", 40.6452, -3.7766)
 ATOCHA = Station("18000", "Madrid-Atocha Cercanías", 40.4067, -3.6903)
 STATIONS = [TRES_CANTOS, COLMENAR, ATOCHA]
 
-HORARIO = {
-    "17004": [
-        ScheduledStop(f"{SERV}20432C4b", "09:05:00", "C4b", "Colmenar Viejo", False),
-        ScheduledStop(f"{SERV}20433C4b", "09:07:00", "C4b", "Parla", False),
-    ]
-}
+# Tablon ya calculado por la ingesta: el bot pinta, no calcula.
+BOARDS = {"stations": {"17004": {
+    "destinations": ["Colmenar Viejo", "Parla"],
+    "departures": [
+        {"t": "09:05", "eta": "09:08", "route": "C4b", "dest": "Colmenar Viejo",
+         "train": "20432", "delay": 3, "platform": "3", "in": 8, "live": True},
+        {"t": "09:07", "eta": "09:07", "route": "C4b", "dest": "Parla",
+         "train": "20433", "delay": None, "platform": None, "in": 7, "live": False},
+    ]}}}
 
 
 def _msg(text: str = "", chat_id: int = 42, **extra: object) -> dict:
@@ -27,13 +29,10 @@ def _msg(text: str = "", chat_id: int = 42, **extra: object) -> dict:
     return {"message": m}
 
 
-def _run(update: dict, live: dict | None = None, now: int = 9 * 60):
+def _run(update: dict, boards: dict | None = None):
     return handle_update(update, BotContext(
         stations=STATIONS,
-        load_schedule=lambda sid: HORARIO.get(sid, []),
-        live=live or {},
-        now_minutes=now,
-        service_prefix=SERV,
+        boards=BOARDS if boards is None else boards,
     ))
 
 
@@ -56,8 +55,7 @@ def test_start_ofrece_el_boton_de_ubicacion() -> None:
 
 
 def test_proximos_devuelve_anden_y_destino() -> None:
-    live = {f"{SERV}20432C4b": LiveTrain(f"{SERV}20432C4b", 180, "3")}
-    r = _run(_msg("/proximos Tres Cantos"), live=live)
+    r = _run(_msg("/proximos Tres Cantos"))
     assert r.reply is not None
     t = r.reply.text
     assert "Tres Cantos" in t
@@ -67,6 +65,7 @@ def test_proximos_devuelve_anden_y_destino() -> None:
 
 
 def test_proximos_sin_datos_en_vivo_no_inventa_anden() -> None:
+    """El segundo tren del tablon no esta localizado: no debe inventarse anden."""
     r = _run(_msg("/proximos Tres Cantos"))
     assert "Andén —" in r.reply.text
     assert "sin datos en vivo" in r.reply.text

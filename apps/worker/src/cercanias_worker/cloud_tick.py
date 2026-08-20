@@ -28,7 +28,6 @@ import os
 import sys
 import time
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -47,17 +46,21 @@ from cercanias_notifiers_telegram.telegram_notifier import (
     TelegramSendError,
 )
 from cercanias_persistence.in_memory_state_repository import InMemoryCurrentStateRepository
-from cercanias_storage.publishers import publisher_from_env
+from cercanias_storage.publishers import GcsSnapshotPublisher, publisher_from_env
 from cercanias_storage.secrets import read_secret
 from cercanias_worker.config import WorkerConfig
 from cercanias_worker.mvp import SnapshotStore, run_cycle
 
 SNAPSHOT_KEY = os.environ.get("SNAPSHOT_KEY", "snapshot.json")
 ALERT_STATE_KEY = os.environ.get("ALERT_STATE_KEY", "alert-state.json")
+#: Estado operativo: no es personal, pero tampoco tiene por que ser publico.
+PRIVATE_BUCKET = os.environ.get("PRIVATE_BUCKET", "")
 BOARDS_KEY = os.environ.get("BOARDS_KEY", "boards.json")
-#: Horarios empaquetados en la imagen: cambian una vez al dia, asi que leerlos
-#: del bucket en cada invocacion seria pagar por algo estatico.
-SCHEDULES_DIR = Path(os.environ.get("SCHEDULES_DIR", "data/horarios"))
+#: Los horarios viven en el bucket, un fichero por dia de servicio
+#: (``horarios/1030J.json``). Estaban empaquetados en la imagen y caducaron sin
+#: que nadie lo viera: cada regeneracion exigia reconstruir el contenedor, asi
+#: que en la practica no se regeneraban. Desde el bucket basta con subirlos.
+SCHEDULES_PREFIX = os.environ.get("SCHEDULES_PREFIX", "horarios")
 MADRID_TZ = ZoneInfo("Europe/Madrid")
 
 #: C-7: 2-3 pasadas internas por invocación, separadas 20 s.
@@ -100,6 +103,12 @@ def _read_previous_snapshot(publisher: Any) -> dict[str, Any] | None:
     return previous
 
 
+def _private_publisher(publisher: Any) -> Any:
+    if PRIVATE_BUCKET:
+        return GcsSnapshotPublisher(PRIVATE_BUCKET)
+    return publisher
+
+
 def _load_cooldown(publisher: Any) -> AlertCooldown:
     """Reconstruye el enfriamiento desde el almacenamiento de objetos."""
     cooldown = AlertCooldown()
@@ -125,18 +134,24 @@ def _save_cooldown(publisher: Any, cooldown: AlertCooldown) -> None:
     )
 
 
-def _load_schedule(stop_id: str) -> list[ScheduledStop]:
-    ruta = SCHEDULES_DIR / f"{stop_id}.json"
-    if not ruta.exists():
-        return []
-    datos = json.loads(ruta.read_text(encoding="utf-8"))
-    return [
-        ScheduledStop(d["trip"], d["t"], d.get("route", ""), d.get("dest"), bool(d.get("terminates")))
-        for d in datos.get("departures", [])
-    ]
+def _load_day_schedule(publisher: Any, service: str) -> dict[str, list[ScheduledStop]]:
+    """Horario completo de un dia de servicio, por estacion."""
+    if not service:
+        return {}
+    raw = publisher.read(f"{SCHEDULES_PREFIX}/{service}.json")
+    if not raw:
+        return {}
+    datos = json.loads(raw)
+    return {
+        stop_id: [
+            ScheduledStop(d["trip"], d["t"], d.get("route", ""), d.get("dest"), bool(d.get("terminates")))
+            for d in paradas
+        ]
+        for stop_id, paradas in (datos.get("stations") or {}).items()
+    }
 
 
-def _build_boards(snapshot: dict[str, Any]) -> dict[str, Any]:
+def _build_boards(snapshot: dict[str, Any], publisher: Any) -> dict[str, Any]:
     """Precalcula el tablon de salidas de cada estacion.
 
     Se hace AQUI, en Python probado, y no en el JavaScript de la pagina: tener la
@@ -160,10 +175,9 @@ def _build_boards(snapshot: dict[str, Any]) -> dict[str, Any]:
     ahora = datetime.now(tz=MADRID_TZ)
     minutos = ahora.hour * 60 + ahora.minute
     estaciones: dict[str, Any] = {}
+    dia = _load_day_schedule(publisher, servicio)
 
-    for ruta in sorted(SCHEDULES_DIR.glob("*.json")):
-        stop_id = ruta.stem
-        horario = _load_schedule(stop_id)
+    for stop_id, horario in sorted(dia.items()):
         if not horario:
             continue
         salidas = next_departures(
@@ -191,11 +205,17 @@ def _build_boards(snapshot: dict[str, Any]) -> dict[str, Any]:
     # tablones salen vacios SIN error: es el mismo fallo silencioso de siempre, y
     # hay que gritarlo antes de que llegue al anden.
     con_salidas = sum(1 for e in estaciones.values() if e["departures"])
-    if servicio and con_salidas == 0 and estaciones:
+    if servicio and not dia:
+        print(
+            f"AVISO GRAVE: no existe horarios/{servicio}.json. El dia de servicio en "
+            "circulacion no esta cubierto y la app se queda SIN TRENES. Regenerar y "
+            "subir los horarios (ver docs/DESPLIEGUE.md).",
+            file=sys.stderr,
+        )
+    elif servicio and con_salidas == 0 and estaciones:
         print(
             f"AVISO GRAVE: servicio {servicio} sin ninguna salida en {len(estaciones)} "
-            "estaciones. Los horarios empaquetados no cubren el dia de hoy: hay que "
-            "regenerarlos (ver docs/DESPLIEGUE.md).",
+            "estaciones.",
             file=sys.stderr,
         )
     return {
@@ -229,7 +249,8 @@ def main() -> int:
     publisher = publisher_from_env()
     notifier = _build_notifier()
     policy = AlertPolicy()
-    cooldown = _load_cooldown(publisher)
+    estado = _private_publisher(publisher)
+    cooldown = _load_cooldown(estado)
 
     # El estado de rumbo sí es intra-invocación: con 3 pasadas hay 2
     # oportunidades de calcularlo. Persistirlo entre invocaciones es WP-3.
@@ -272,7 +293,7 @@ def main() -> int:
     )
     print(f"snapshot publicado en {ref} ({len(salida.get('vehicles', []))} trenes)")
 
-    boards = _build_boards(salida)
+    boards = _build_boards(salida, publisher)
     publisher.publish(
         BOARDS_KEY,
         json.dumps(boards, ensure_ascii=False, separators=(",", ":")).encode("utf-8"),
@@ -288,7 +309,7 @@ def main() -> int:
             outcome = notifier.send(format_incident_message(tuple(nuevas)))
             for inc in nuevas:
                 cooldown.record(inc, ahora)
-            _save_cooldown(publisher, cooldown)
+            _save_cooldown(estado, cooldown)
             print(f"Telegram: {outcome.detail} ({len(nuevas)} lineas)")
         except TelegramSendError as exc:
             # Un fallo de notificación no debe invalidar el snapshot ya
