@@ -37,6 +37,7 @@ from cercanias_domain.departures import (
     ScheduledStop,
     destinations_available,
     next_departures,
+    now_in_operating_day,
 )
 from cercanias_domain.incidents import AlertCooldown, AlertPolicy, format_incident_message
 from cercanias_notifiers_telegram.telegram_notifier import (
@@ -65,6 +66,10 @@ PRIVATE_BUCKET = os.environ.get("PRIVATE_BUCKET", "")
 #: el cuadrado del dia.
 ARCHIVE_PREFIX = os.environ.get("ARCHIVE_PREFIX", "archivo")
 ARCHIVE_ENABLED = os.environ.get("ARCHIVE_ENABLED", "1") == "1"
+
+#: Cuota minima de vehiculos para considerar que un segundo dia de servicio esta
+#: realmente en circulacion y no es ruido de material aparcado.
+SECOND_SERVICE_MIN_SHARE = 0.15
 BOARDS_KEY = os.environ.get("BOARDS_KEY", "boards.json")
 #: Los horarios viven en el bucket, un fichero por dia de servicio
 #: (``horarios/1030J.json``). Estaban empaquetados en la imagen y caducaron sin
@@ -157,6 +162,7 @@ def _load_day_schedule(publisher: Any, service: str) -> dict[str, list[Scheduled
             ScheduledStop(
                 d["trip"], d["t"], d.get("route", ""), d.get("dest"),
                 bool(d.get("terminates")), d.get("from"), d.get("slack"),
+                d.get("seq") == 1, stop_id,
             )
             for d in paradas
         ]
@@ -174,7 +180,9 @@ def _build_boards(snapshot: dict[str, Any], publisher: Any) -> dict[str, Any]:
     """
     vehiculos = snapshot.get("vehicles", [])
     live = {
-        v["trip_id"]: LiveTrain(v["trip_id"], v.get("delay_seconds"), v.get("platform"))
+        v["trip_id"]: LiveTrain(
+            v["trip_id"], v.get("delay_seconds"), v.get("platform"), v.get("next_stop_id")
+        )
         for v in vehiculos
         if v.get("trip_id")
     }
@@ -185,10 +193,25 @@ def _build_boards(snapshot: dict[str, Any], publisher: Any) -> dict[str, Any]:
             conteo[p] = conteo.get(p, 0) + 1
     servicio = max(conteo, key=lambda k: conteo[k]) if conteo else ""
 
+    # En la transicion de jornada pueden convivir dos dias de servicio: trenes de
+    # madrugada del dia anterior y material ya publicado para el siguiente. Elegir
+    # solo el mayoritario hacia desaparecer la otra mitad del tablon sin avisar.
+    total = sum(conteo.values()) or 1
+    candidatos = [p for p, n in sorted(conteo.items(), key=lambda kv: -kv[1])[:2]
+                  if n / total >= SECOND_SERVICE_MIN_SHARE]
+
     ahora = datetime.now(tz=MADRID_TZ)
-    minutos = ahora.hour * 60 + ahora.minute
+    # Coordenada de jornada de servicio, no reloj de pared: a las 00:36 hay que
+    # comparar contra un horario que llama "24:36" a ese mismo tren.
+    minutos = now_in_operating_day(ahora.hour, ahora.minute)
     estaciones: dict[str, Any] = {}
-    dia = _load_day_schedule(publisher, servicio)
+
+    dia: dict[str, list[ScheduledStop]] = {}
+    for cand in candidatos:
+        for stop_id, paradas in _load_day_schedule(publisher, cand).items():
+            dia.setdefault(stop_id, []).extend(paradas)
+    if len(candidatos) > 1:
+        print(f"transicion de jornada: se cargan {candidatos}")
 
     for stop_id, horario in sorted(dia.items()):
         if not horario:
@@ -212,6 +235,7 @@ def _build_boards(snapshot: dict[str, Any], publisher: Any) -> dict[str, Any]:
                     # Aviso, no prediccion: el tren que hara este servicio viene
                     # con retraso, pero la hora prevista no se toca.
                     "inbound_delay": d.inbound_delay_minutes,
+                    "unconfirmed": d.unconfirmed,
                 }
                 for d in salidas
             ],

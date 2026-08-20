@@ -24,6 +24,12 @@ from dataclasses import dataclass
 #: cruzan medianoche como 24:15, 25:03… (riesgo R-4).
 MINUTES_PER_DAY = 1440
 
+#: Hasta esta hora local, los trenes que circulan pertenecen mayoritariamente al
+#: día de servicio ANTERIOR: un tren de las 24:36 es de la jornada de ayer aunque
+#: el reloj marque las 00:36. Cercanías Madrid no presta servicio entre ~01:30 y
+#: ~05:00, así que 04:00 es un corte holgado y sin trenes que separar.
+OPERATING_DAY_ROLLOVER_HOUR = 4
+
 #: Longitud del prefijo de servicio: 4 digitos de calendario + letra del dia
 #: (p. ej. "1020L"). Ver ADR-012.
 SERVICE_PREFIX_LEN = 5
@@ -33,7 +39,17 @@ SERVICE_PREFIX_LEN = 5
 #: no se pueden comprimir.
 TURNAROUND_SAFETY_MARGIN_MINUTES = 2
 
-#: Suelo absoluto: por debajo de esto, avisar es ruido aunque no haya maniobra.
+#: A partir de este adelanto, un servicio que no aparece en el feed ni tiene
+#: enlace localizado deja de ser "todavía pronto" y pasa a ser desconocido. No es
+#: una cancelación —no hay feed que lo diga— pero tampoco es una salida normal, y
+#: presentarla con su hora limpia es la mentira que deja a alguien esperando.
+UNCONFIRMED_LEAD_MINUTES = 5
+
+#: Materialidad mínima. Renfe considera puntual un Cercanías con menos de tres
+#: minutos, así que por debajo de eso avisar es ruido AUNQUE la maniobra sea 0 y
+#: el andén esté técnicamente vacío. Se aplica siempre, no sólo cuando falta el
+#: dato de maniobra: un aviso que no cambia ninguna decisión enseña a ignorar los
+#: que sí la cambian.
 INBOUND_WARNING_FLOOR_MINUTES = 3
 
 
@@ -60,6 +76,13 @@ class ScheduledStop:
     #: El umbral tiene que ser relativo a él: con 35 minutos de margen un retraso
     #: de 10 se absorbe entero, y con 0 minutos cualquier retraso es crítico.
     turnaround_slack_minutes: int | None = None
+    #: ``True`` sólo si esta parada es el ORIGEN del viaje. El enlace de cabecera
+    #: sólo significa algo ahí: en una parada intermedia el tren ya circula y su
+    #: propio retraso es el dato bueno.
+    is_origin: bool = False
+    #: Estación de origen, para comprobar que el retraso del entrante está medido
+    #: precisamente ahí y no ocho paradas antes.
+    origin_stop_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -69,6 +92,11 @@ class LiveTrain:
     trip_id: str
     delay_seconds: int | None
     platform: str | None
+    #: Próxima parada declarada. Imprescindible para el aviso de enlace: el
+    #: retraso publicado es el retraso EN ESA PARADA, que puede estar a ocho
+    #: estaciones y cuarenta minutos de la cabecera. Sin esto, se presentaba un
+    #: dato sobre Pitis como si fuera un dato sobre El Escorial.
+    next_stop_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -88,6 +116,10 @@ class Departure:
     #: servicio se suprime. Decir "viene con +25" es honesto; decir "sale a las
     #: 09:30" cuando en realidad no se sabe, no lo es.
     inbound_delay_minutes: int | None = None
+    #: La hora se echa encima y no hay ni rastro del tren ni de su enlace. No
+    #: afirma que esté suprimido —sin un feed de supresiones eso no se puede
+    #: saber— pero sí que no hay nada que respalde esa hora.
+    unconfirmed: bool = False
 
     @property
     def at_risk(self) -> bool:
@@ -103,6 +135,21 @@ def parse_hhmm_to_minutes(value: str) -> int:
     """``"25:14:00"`` -> 1514. Admite horas >= 24 (R-4)."""
     parts = value.split(":")
     return int(parts[0]) * 60 + int(parts[1])
+
+
+def now_in_operating_day(hour: int, minute: int) -> int:
+    """Minutos desde el inicio de la jornada de servicio en curso.
+
+    A las 00:36 devuelve 1476, no 36: así compara directamente con un horario que
+    expresa ese mismo tren como ``24:36``. Sin esto, después de medianoche toda
+    la madrugada desaparecía del tablón —un servicio de las 24:08 quedaba a
+    1448 minutos de "ahora=8" y se descartaba por lejano— y el andén no mostraba
+    un tren que estaba a punto de salir.
+    """
+    minutos = hour * 60 + minute
+    if hour < OPERATING_DAY_ROLLOVER_HOUR:
+        return minutos + MINUTES_PER_DAY
+    return minutos
 
 
 def format_minutes(total: int) -> str:
@@ -135,6 +182,47 @@ class DepartureQuery:
     #: corriendo al andén.
     grace_minutes: int = 3
     limit: int = 6
+
+
+def _inbound_warning(
+    stop: ScheduledStop, live: dict[str, LiveTrain], propio: LiveTrain | None
+) -> int | None:
+    """Minutos de retraso del enlace entrante, si procede avisar.
+
+    Cinco condiciones, todas necesarias. Cada una corresponde a una forma
+    concreta de mentirle a alguien que está en un andén.
+    """
+    # 1. Sólo en el origen del viaje. En una parada intermedia el tren ya circula
+    #    y el enlace de cabecera no dice nada sobre él.
+    if not stop.is_origin or not stop.inbound_trip_id:
+        return None
+
+    # 2. El dato propio manda... pero sólo si es un dato de verdad. Un `delay` de
+    #    0 en un viaje que aún no ha salido es un marcador de posición, no una
+    #    lectura: tomarlo por bueno pinta "en hora" con el tren a 25 minutos.
+    if propio is not None and propio.delay_seconds:
+        return None
+
+    entrante = live.get(stop.inbound_trip_id)
+    if entrante is None or entrante.delay_seconds is None:
+        return None
+
+    # 3. El retraso publicado es el retraso en la PRÓXIMA parada del entrante. Si
+    #    esa parada no es la cabecera, no es un dato sobre esta salida.
+    if entrante.next_stop_id and stop.origin_stop_id and entrante.next_stop_id != stop.origin_stop_id:
+        return None
+
+    minutos = round(entrante.delay_seconds / 60)
+
+    # 4. El umbral es el margen REAL de este enlace, no una mediana de población.
+    # 5. Con maniobra 0, el suelo no aplica: +3 ya deja el andén vacío.
+    margen = stop.turnaround_slack_minutes
+    umbral = (
+        INBOUND_WARNING_FLOOR_MINUTES
+        if margen is None
+        else max(margen + TURNAROUND_SAFETY_MARGIN_MINUTES, INBOUND_WARNING_FLOOR_MINUTES)
+    )
+    return minutos if minutos >= umbral else None
 
 
 def next_departures(
@@ -172,22 +260,17 @@ def next_departures(
 
         # El aviso del enlace SOLO aplica mientras no haya dato propio: en cuanto
         # el tren aparece con su retraso, ese dato manda y el del enlace sobra.
-        retraso_enlace = None
-        if retraso is None and stop.inbound_trip_id:
-            entrante = live.get(stop.inbound_trip_id)
-            if entrante is not None and entrante.delay_seconds is not None:
-                minutos = round(entrante.delay_seconds / 60)
-                # El umbral es el margen REAL de este enlace, no una mediana de
-                # poblacion: con 35 min de maniobra un retraso de 10 se absorbe;
-                # con 0 min, cualquier retraso material deja el anden vacio.
-                margen = stop.turnaround_slack_minutes
-                umbral = (
-                    max(margen + TURNAROUND_SAFETY_MARGIN_MINUTES, INBOUND_WARNING_FLOOR_MINUTES)
-                    if margen is not None
-                    else INBOUND_WARNING_FLOOR_MINUTES
-                )
-                if minutos > umbral:
-                    retraso_enlace = minutos
+        retraso_enlace = _inbound_warning(stop, live, tren)
+
+        # Un tren que termina su recorrido desaparece del feed con normalidad: es
+        # el caso NORMAL de una maniobra, no una señal de supresión. Por eso la
+        # ausencia del entrante no genera aviso. Lo que sí se puede afirmar es que
+        # no hay nada que respalde esta hora.
+        sin_respaldo = (
+            tren is None
+            and retraso_enlace is None
+            and programada - now_minutes <= UNCONFIRMED_LEAD_MINUTES
+        )
 
         salidas.append(
             Departure(
@@ -201,6 +284,7 @@ def next_departures(
                 minutes_until=programada + (retraso or 0) - now_minutes,
                 located=tren is not None,
                 inbound_delay_minutes=retraso_enlace,
+                unconfirmed=sin_respaldo,
             )
         )
 
