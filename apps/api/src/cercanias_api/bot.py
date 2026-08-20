@@ -98,6 +98,10 @@ def format_departures(station: Station, salidas: list[dict[str, Any]], destinos:
             f"{hora} → {d.get('dest') or '?'}\n"
             f"   {d.get('route','')} tren {d.get('train','')} · {anden} · {retraso}"
         )
+        if d.get("inbound_delay"):
+            lineas.append(
+                f"   ⚠️ el tren que hace este servicio viene con +{d['inbound_delay']} min"
+            )
     lineas.append("\n<i>Andén y retraso vienen del feed en vivo; si el tren aún no "
                   "está localizado, no se muestran.</i>")
     return "\n".join(lineas)

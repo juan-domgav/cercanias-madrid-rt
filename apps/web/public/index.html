@@ -71,6 +71,11 @@
     padding: .1rem .5rem;
   }
   .plat-unknown { border-color: var(--line); color: var(--muted); font-weight: 500; }
+  /* Aviso de enlace: visible pero distinto de un retraso confirmado, porque no
+     lo es. No se altera la hora prevista. */
+  .riesgo { margin-top: .5rem; padding: .45rem .6rem; border-radius: .4rem;
+            background: #fef3c7; color: #92400e; font-size: .85rem; }
+  @media (prefers-color-scheme: dark) { .riesgo { background: #3a2c07; color: #fcd34d; } }
 </style>
 </head>
 <body>
@@ -208,7 +213,10 @@ function renderTrains() {
         <div class="meta" style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
           ${anden}<span>${d.in <= 0 ? "saliendo" : `en ${d.in} min`}</span>
           ${d.live ? "" : '<span style="opacity:.7">· aún no localizado</span>'}
-        </div></div>`;
+        </div>
+        ${d.inbound_delay ? `<div class="riesgo">⚠️ El tren que hace este servicio
+          viene con <strong>+${d.inbound_delay} min</strong>. Es probable que salga tarde.</div>` : ""}
+        </div>`;
     }).join("");
   }
   document.querySelectorAll("button.dir").forEach(b => {

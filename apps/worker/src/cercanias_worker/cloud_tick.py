@@ -154,7 +154,10 @@ def _load_day_schedule(publisher: Any, service: str) -> dict[str, list[Scheduled
     datos = json.loads(raw)
     return {
         stop_id: [
-            ScheduledStop(d["trip"], d["t"], d.get("route", ""), d.get("dest"), bool(d.get("terminates")))
+            ScheduledStop(
+                d["trip"], d["t"], d.get("route", ""), d.get("dest"),
+                bool(d.get("terminates")), d.get("from"), d.get("slack"),
+            )
             for d in paradas
         ]
         for stop_id, paradas in (datos.get("stations") or {}).items()
@@ -206,6 +209,9 @@ def _build_boards(snapshot: dict[str, Any], publisher: Any) -> dict[str, Any]:
                     "platform": d.platform,
                     "in": d.minutes_until,
                     "live": d.located,
+                    # Aviso, no prediccion: el tren que hara este servicio viene
+                    # con retraso, pero la hora prevista no se toca.
+                    "inbound_delay": d.inbound_delay_minutes,
                 }
                 for d in salidas
             ],

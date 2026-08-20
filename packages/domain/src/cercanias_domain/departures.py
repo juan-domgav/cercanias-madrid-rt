@@ -28,6 +28,14 @@ MINUTES_PER_DAY = 1440
 #: (p. ej. "1020L"). Ver ADR-012.
 SERVICE_PREFIX_LEN = 5
 
+#: Margen de seguridad sobre la maniobra prevista. El tren tiene que llegar,
+#: descargar, cambiar de cabina y salir; incluso "a su hora" hay unos minutos que
+#: no se pueden comprimir.
+TURNAROUND_SAFETY_MARGIN_MINUTES = 2
+
+#: Suelo absoluto: por debajo de esto, avisar es ruido aunque no haya maniobra.
+INBOUND_WARNING_FLOOR_MINUTES = 3
+
 
 @dataclass(frozen=True)
 class ScheduledStop:
@@ -38,6 +46,20 @@ class ScheduledStop:
     route: str
     destination: str | None
     terminates_here: bool
+    #: Viaje que trae físicamente el tren que hará este servicio. En cabecera, un
+    #: tren termina su recorrido, maniobra y sale en sentido contrario con otro
+    #: número. Si el entrante llega tarde, el saliente no puede salir a su hora.
+    #:
+    #: Sólo se rellena cuando el emparejamiento es **1:1 y de la misma familia de
+    #: línea**. La primera versión emparejaba por mera proximidad temporal y
+    #: asignaba el mismo tren a varias salidas: 142 entrantes repartidos entre 302
+    #: salidas, incluido un C1 que "formaba" a la vez un C3, un C2 y un C1. Tres
+    #: andenes habrían mostrado el mismo aviso y dos habrían mentido.
+    inbound_trip_id: str | None = None
+    #: Minutos de maniobra previstos para ESTE enlace (0 a 40 en el horario real).
+    #: El umbral tiene que ser relativo a él: con 35 minutos de margen un retraso
+    #: de 10 se absorbe entero, y con 0 minutos cualquier retraso es crítico.
+    turnaround_slack_minutes: int | None = None
 
 
 @dataclass(frozen=True)
@@ -60,6 +82,17 @@ class Departure:
     platform: str | None
     minutes_until: int
     located: bool
+    #: Retraso del enlace entrante, en minutos, cuando este servicio todavía no
+    #: circula. Es un AVISO, no una predicción: no se suma a la hora prevista
+    #: porque parte del retraso lo absorbe la maniobra y porque a veces el
+    #: servicio se suprime. Decir "viene con +25" es honesto; decir "sale a las
+    #: 09:30" cuando en realidad no se sabe, no lo es.
+    inbound_delay_minutes: int | None = None
+
+    @property
+    def at_risk(self) -> bool:
+        """¿Hay motivo fundado para dudar de la hora prevista?"""
+        return self.delay_minutes is None and bool(self.inbound_delay_minutes)
 
     @property
     def on_time(self) -> bool:
@@ -137,6 +170,25 @@ def next_departures(
         if tren is not None and tren.delay_seconds is not None:
             retraso = round(tren.delay_seconds / 60)
 
+        # El aviso del enlace SOLO aplica mientras no haya dato propio: en cuanto
+        # el tren aparece con su retraso, ese dato manda y el del enlace sobra.
+        retraso_enlace = None
+        if retraso is None and stop.inbound_trip_id:
+            entrante = live.get(stop.inbound_trip_id)
+            if entrante is not None and entrante.delay_seconds is not None:
+                minutos = round(entrante.delay_seconds / 60)
+                # El umbral es el margen REAL de este enlace, no una mediana de
+                # poblacion: con 35 min de maniobra un retraso de 10 se absorbe;
+                # con 0 min, cualquier retraso material deja el anden vacio.
+                margen = stop.turnaround_slack_minutes
+                umbral = (
+                    max(margen + TURNAROUND_SAFETY_MARGIN_MINUTES, INBOUND_WARNING_FLOOR_MINUTES)
+                    if margen is not None
+                    else INBOUND_WARNING_FLOOR_MINUTES
+                )
+                if minutos > umbral:
+                    retraso_enlace = minutos
+
         salidas.append(
             Departure(
                 scheduled_hhmm=format_minutes(programada),
@@ -148,6 +200,7 @@ def next_departures(
                 platform=tren.platform if tren else None,
                 minutes_until=programada + (retraso or 0) - now_minutes,
                 located=tren is not None,
+                inbound_delay_minutes=retraso_enlace,
             )
         )
 
