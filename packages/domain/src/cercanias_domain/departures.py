@@ -34,6 +34,10 @@ OPERATING_DAY_ROLLOVER_HOUR = 4
 #: (p. ej. "1020L"). Ver ADR-012.
 SERVICE_PREFIX_LEN = 5
 
+#: Minutos mínimos para dar la vuelta al tren: llegar, descargar, cambiar de
+#: cabina y salir. Aunque el horario prevea maniobra 0, esto no se comprime.
+MIN_PHYSICAL_TURNAROUND_MINUTES = 3
+
 #: Margen de seguridad sobre la maniobra prevista. El tren tiene que llegar,
 #: descargar, cambiar de cabina y salir; incluso "a su hora" hay unos minutos que
 #: no se pueden comprimir.
@@ -124,7 +128,18 @@ class Departure:
     @property
     def at_risk(self) -> bool:
         """¿Hay motivo fundado para dudar de la hora prevista?"""
-        return self.delay_minutes is None and bool(self.inbound_delay_minutes)
+        return bool(self.inbound_delay_minutes)
+
+    @property
+    def shows_on_time(self) -> bool:
+        """¿Puede afirmarse "en hora"?
+
+        Un ``delay`` de 0 en un viaje que aún no ha salido es un marcador de
+        posición del feed, no una lectura. Con el enlace en riesgo, presentarlo
+        como "en hora" es la peor forma de equivocarse: alguien se queda en el
+        andén tranquilo mientras su tren está a dieciséis minutos.
+        """
+        return self.delay_minutes is not None and self.delay_minutes <= 0 and not self.at_risk
 
     @property
     def on_time(self) -> bool:
@@ -207,22 +222,26 @@ def _inbound_warning(
     if entrante is None or entrante.delay_seconds is None:
         return None
 
-    # 3. El retraso publicado es el retraso en la PRÓXIMA parada del entrante. Si
-    #    esa parada no es la cabecera, no es un dato sobre esta salida.
-    if entrante.next_stop_id and stop.origin_stop_id and entrante.next_stop_id != stop.origin_stop_id:
-        return None
-
     minutos = round(entrante.delay_seconds / 60)
-
-    # 4. El umbral es el margen REAL de este enlace, no una mediana de población.
-    # 5. Con maniobra 0, el suelo no aplica: +3 ya deja el andén vacío.
     margen = stop.turnaround_slack_minutes
-    umbral = (
-        INBOUND_WARNING_FLOOR_MINUTES
-        if margen is None
-        else max(margen + TURNAROUND_SAFETY_MARGIN_MINUTES, INBOUND_WARNING_FLOOR_MINUTES)
-    )
-    return minutos if minutos >= umbral else None
+
+    # Sin maniobra conocida no se puede proyectar nada: sólo se avisa si el
+    # retraso es grande de por sí.
+    if margen is None:
+        return minutos if minutos >= INBOUND_WARNING_FLOOR_MINUTES else None
+
+    # La física del enlace, que no depende de DÓNDE se haya medido el retraso:
+    # el entrante llega a cabecera a su hora prevista más su retraso, y todavía
+    # necesita un mínimo para dar la vuelta. Lo que exceda de la maniobra
+    # programada se traslada a la salida.
+    #
+    # Antes se exigía que el entrante estuviese YA en la cabecera. Eso eliminaba
+    # el aviso justo cuando era útil: el 21/08 el tren del 16:12 de Colmenar iba
+    # +16 con tres paradas por delante, no podía salir a su hora, y el andén leía
+    # "En hora". Un aviso que sólo llega cuando el tren ya está entrando no sirve
+    # para decidir nada.
+    proyectado = minutos - margen + MIN_PHYSICAL_TURNAROUND_MINUTES
+    return minutos if proyectado >= INBOUND_WARNING_FLOOR_MINUTES else None
 
 
 def next_departures(

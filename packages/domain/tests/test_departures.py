@@ -200,10 +200,17 @@ def test_maniobra_nula_avisa_con_retraso_pequeno() -> None:
     assert d.at_risk is True
 
 
-def test_retraso_trivial_nunca_avisa_aunque_no_haya_maniobra() -> None:
+def test_retraso_trivial_con_maniobra_cero_si_avisa() -> None:
+    """Sustituye a un test que exigia silencio con +2 y maniobra 0.
+
+    Ese silencio venia de comparar el retraso contra un umbral. Ahora se proyecta
+    la fisica: el entrante llega +2, necesita 3 min minimos para dar la vuelta y
+    no tiene maniobra programada, asi que la salida se va a ~5 min. Eso si le
+    cambia la decision a quien espera.
+    """
     d = next_departures([_enlace("20432", "09:00:00", "20431", 0)], _vivo("20431", 2),
                         DepartureQuery(now_minutes=8*60+55, service_prefix=SERV))[0]
-    assert d.inbound_delay_minutes is None
+    assert d.inbound_delay_minutes == 2
 
 
 def test_sin_maniobra_conocida_se_usa_el_suelo() -> None:
@@ -240,13 +247,18 @@ def test_retraso_propio_de_cero_no_silencia_el_aviso() -> None:
     assert d.inbound_delay_minutes == 25, "el 0 propio no debe silenciar el aviso"
 
 
-def test_retraso_medido_lejos_de_cabecera_no_se_presenta_como_propio() -> None:
-    """El retraso publicado lo es EN LA PROXIMA PARADA del entrante. Si esa
-    parada no es la cabecera, no es un dato sobre esta salida."""
+def test_retraso_medido_lejos_de_cabecera_tambien_cuenta() -> None:
+    """Sustituye a un test que exigia que el entrante estuviera YA en cabecera.
+
+    Aquella regla evitaba presentar un dato remoto como si fuera local, pero a
+    costa de eliminar el aviso justo cuando sirve: un tren a +21 tres paradas
+    antes llegara tarde igual. La proyeccion (llegada prevista + maniobra minima)
+    no depende de donde se haya medido el retraso. Se comprobo en vivo el 21/08.
+    """
     parada = _enlace("20432", "09:05:00", "20431", 0)
-    lejos = _vivo("20431", 21, next_stop="97100")   # Pitis, no la cabecera
+    lejos = _vivo("20431", 21, next_stop="97100")   # Pitis, aun en ruta
     d = next_departures([parada], lejos, DepartureQuery(now_minutes=9*60, service_prefix=SERV))[0]
-    assert d.inbound_delay_minutes is None
+    assert d.inbound_delay_minutes == 21
 
 
 def test_maniobra_cero_avisa_justo_en_el_umbral() -> None:
@@ -331,3 +343,60 @@ def test_tren_localizado_no_se_marca_sin_confirmar() -> None:
     vivos[f"{SERV}20432C4b"] = LiveTrain(f"{SERV}20432C4b", 60, "3", "17005")
     d = next_departures([parada], vivos, DepartureQuery(now_minutes=9*60+2, service_prefix=SERV))[0]
     assert d.unconfirmed is False
+
+
+# --- caso real del 21/08: Colmenar 16:12 decia "En hora" -----------------------
+
+
+def test_entrante_retrasado_en_ruta_si_avisa() -> None:
+    """El tren del 16:12 de Colmenar iba +16 con tres paradas por delante.
+
+    Programado: llega a cabecera 16:04, maniobra 8 min, sale 16:12.
+    Real: +16, luego llega 16:20 y no puede salir a las 16:12.
+    La regla anterior exigia que el entrante estuviera YA en la cabecera y
+    silenciaba justo el caso para el que existe el aviso.
+    """
+    parada = ScheduledStop(f"{SERV}20478C4b", "16:12:00", "C4b", "Parla", False,
+                           f"{SERV}20481C4b", 8, True, "17005")
+    vivos = {f"{SERV}20481C4b": LiveTrain(f"{SERV}20481C4b", 16 * 60, None, "17001")}
+    d = next_departures([parada], vivos,
+                        DepartureQuery(now_minutes=16*60+11, service_prefix=SERV))[0]
+    assert d.inbound_delay_minutes == 16
+    assert d.at_risk is True
+
+
+def test_retraso_absorbido_por_maniobra_larga_sigue_sin_avisar() -> None:
+    """+6 con 20 min de maniobra: llega de sobra. No se avisa."""
+    parada = ScheduledStop(f"{SERV}20478C4b", "16:12:00", "C4b", "Parla", False,
+                           f"{SERV}20481C4b", 20, True, "17005")
+    vivos = {f"{SERV}20481C4b": LiveTrain(f"{SERV}20481C4b", 6 * 60, None, "17001")}
+    d = next_departures([parada], vivos,
+                        DepartureQuery(now_minutes=16*60, service_prefix=SERV))[0]
+    assert d.inbound_delay_minutes is None
+
+
+def test_cero_de_marcador_no_se_presenta_como_en_hora() -> None:
+    """El feed publica delay=0 para viajes que aun no han salido.
+
+    Con el enlace en riesgo, decir "En hora" deja a alguien tranquilo en el anden
+    mientras su tren esta a dieciseis minutos. Es el fallo que se vio en vivo.
+    """
+    parada = ScheduledStop(f"{SERV}20478C4b", "16:12:00", "C4b", "Parla", False,
+                           f"{SERV}20481C4b", 8, True, "17005")
+    vivos = {
+        f"{SERV}20481C4b": LiveTrain(f"{SERV}20481C4b", 16 * 60, None, "17001"),
+        f"{SERV}20478C4b": LiveTrain(f"{SERV}20478C4b", 0, "1", "17005"),
+    }
+    d = next_departures([parada], vivos,
+                        DepartureQuery(now_minutes=16*60+11, service_prefix=SERV))[0]
+    assert d.delay_minutes == 0
+    assert d.inbound_delay_minutes == 16, "el 0 del feed no silencia el enlace"
+    assert d.shows_on_time is False, "NO se puede decir 'en hora'"
+
+
+def test_cero_real_sin_enlace_en_riesgo_si_es_en_hora() -> None:
+    parada = ScheduledStop(f"{SERV}20478C4b", "16:12:00", "C4b", "Parla", False, None, None, True, "17005")
+    vivos = {f"{SERV}20478C4b": LiveTrain(f"{SERV}20478C4b", 0, "1", "17005")}
+    d = next_departures([parada], vivos,
+                        DepartureQuery(now_minutes=16*60+11, service_prefix=SERV))[0]
+    assert d.shows_on_time is True

@@ -90,8 +90,9 @@ def format_departures(station: Station, salidas: list[dict[str, Any]], destinos:
             hora += f" <s>{d['t']}</s>"
         retraso = (
             "sin datos en vivo" if d.get("delay") is None
-            else "en hora" if d["delay"] <= 0
-            else f"+{d['delay']} min"
+            else "en hora" if d.get("on_time")
+            else f"+{d['delay']} min" if d["delay"] > 0
+            else "sin confirmar"
         )
         anden = f"Andén <b>{d['platform']}</b>" if d.get("platform") else "Andén —"
         lineas.append(

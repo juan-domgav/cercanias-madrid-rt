@@ -198,7 +198,13 @@ function renderTrains() {
   } else {
     box.innerHTML = chips + salidas.map(d => {
       const cls = d.delay == null ? "" : d.delay > 3 ? "late" : "ontime";
-      const etiqueta = d.delay == null ? "sin datos en vivo" : d.delay <= 0 ? "en hora" : `+${d.delay} min`;
+      // "en hora" solo si se puede afirmar. Un delay=0 del feed en un viaje que
+      // aun no ha salido es un marcador, no una lectura (visto en vivo el 21/08:
+      // Colmenar 16:12 decia "En hora" con su tren a 16 minutos).
+      const etiqueta = d.delay == null ? "sin datos en vivo"
+                     : d.on_time ? "en hora"
+                     : d.delay > 0 ? `+${d.delay} min`
+                     : "sin confirmar";
       // El anden es el dato mas accionable: dice donde ponerse. Solo existe en el
       // feed en vivo (A.6); si el tren no esta localizado se dice, no se inventa.
       const anden = d.platform

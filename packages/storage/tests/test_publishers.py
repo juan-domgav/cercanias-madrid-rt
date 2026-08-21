@@ -67,6 +67,17 @@ def test_s3_publica_con_cache_control() -> None:
     assert guardado["ContentType"] == "application/json"
 
 
+def test_s3_permite_cache_control_por_objeto() -> None:
+    fake = _FakeS3()
+    S3SnapshotPublisher("mi-bucket", client=fake).publish(
+        "horarios/1031V.json",
+        b"{}",
+        content_type="application/json",
+        cache_control="public, max-age=3600",
+    )
+    assert fake.objects["horarios/1031V.json"]["CacheControl"] == "public, max-age=3600"
+
+
 def test_s3_devuelve_none_si_no_existe() -> None:
     """Arranque en frio: no hay ultimo bueno conocido todavia, y no es un error."""
     assert S3SnapshotPublisher("b", client=_FakeS3()).read("no-existe.json") is None

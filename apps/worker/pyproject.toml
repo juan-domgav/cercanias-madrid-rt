@@ -21,6 +21,7 @@ ideadif-explore = "cercanias_worker.ideadif_explore:main"
 mvp = "cercanias_worker.mvp:main"
 telegram-test = "cercanias_worker.telegram_test:main"
 cloud-tick = "cercanias_worker.cloud_tick:main"
+regenerate-schedules = "cercanias_worker.regenerate_schedules:main"
 
 [build-system]
 requires = ["hatchling"]

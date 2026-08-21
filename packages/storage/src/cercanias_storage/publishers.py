@@ -39,7 +39,14 @@ class LocalSnapshotPublisher:
     def __init__(self, base_dir: Path) -> None:
         self._base = base_dir
 
-    def publish(self, key: str, payload: bytes, *, content_type: str) -> str:
+    def publish(
+        self,
+        key: str,
+        payload: bytes,
+        *,
+        content_type: str,
+        cache_control: str = DEFAULT_CACHE_CONTROL,
+    ) -> str:
         target = self._base / key
         target.parent.mkdir(parents=True, exist_ok=True)
         # Escritura atómica: rename dentro del mismo sistema de ficheros.
@@ -67,13 +74,20 @@ class S3SnapshotPublisher:
         self._client = client
         self._bucket = bucket
 
-    def publish(self, key: str, payload: bytes, *, content_type: str) -> str:
+    def publish(
+        self,
+        key: str,
+        payload: bytes,
+        *,
+        content_type: str,
+        cache_control: str = DEFAULT_CACHE_CONTROL,
+    ) -> str:
         self._client.put_object(
             Bucket=self._bucket,
             Key=key,
             Body=payload,
             ContentType=content_type,
-            CacheControl=DEFAULT_CACHE_CONTROL,
+            CacheControl=cache_control,
         )
         return f"s3://{self._bucket}/{key}"
 
@@ -101,9 +115,16 @@ class GcsSnapshotPublisher:
         self._bucket = client.bucket(bucket)
         self._bucket_name = bucket
 
-    def publish(self, key: str, payload: bytes, *, content_type: str) -> str:
+    def publish(
+        self,
+        key: str,
+        payload: bytes,
+        *,
+        content_type: str,
+        cache_control: str = DEFAULT_CACHE_CONTROL,
+    ) -> str:
         blob = self._bucket.blob(key)
-        blob.cache_control = DEFAULT_CACHE_CONTROL
+        blob.cache_control = cache_control
         blob.upload_from_string(payload, content_type=content_type)
         return f"gs://{self._bucket_name}/{key}"
 

@@ -281,6 +281,7 @@ def _build_boards(snapshot: dict[str, Any], publisher: Any) -> dict[str, Any]:
                     # con retraso, pero la hora prevista no se toca.
                     "inbound_delay": d.inbound_delay_minutes,
                     "unconfirmed": d.unconfirmed,
+                    "on_time": d.shows_on_time,
                 }
                 for d in salidas
             ],

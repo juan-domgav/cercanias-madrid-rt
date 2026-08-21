@@ -16,7 +16,7 @@ SHELL := /bin/bash
 export UV_NO_SYNC := 1
 
 .PHONY: help install unhide feedback analizar lint format typecheck test test-cov \
-        check-feed-freshness discover-data ideadif-explore ci clean
+        check-feed-freshness discover-data ideadif-explore regenerate-schedules ci clean
 
 unhide:
 	@find .venv -name "_editable_impl_*.pth" -exec chflags nohidden {} \; 2>/dev/null || true
@@ -31,6 +31,7 @@ help:
 	@echo "  make check-feed-freshness  - E2: mide el desfase real del feed (Anexo A.8)"
 	@echo "  make discover-data         - E7: informe de cobertura de estaciones y nucleos"
 	@echo "  make ideadif-explore       - E6: GetCapabilities WMS/WFS de IDEADIF"
+	@echo "  make regenerate-schedules  - descarga GTFS y publica horarios por día"
 	@echo "  make mvp                   - bucle MVP end-to-end (snapshot + salud + Telegram)"
 	@echo "  make telegram-test         - comprueba las credenciales de Telegram"
 	@echo "  make feedback              - lee los avisos enviados por el bot"
@@ -81,6 +82,9 @@ discover-data: unhide
 
 ideadif-explore: unhide
 	uv run ideadif-explore
+
+regenerate-schedules: unhide
+	uv run regenerate-schedules
 
 # MVP ejecutable: sondea, evalua invariantes, publica snapshot y notifica.
 # Sin TELEGRAM_BOT_TOKEN funciona en dry-run.
