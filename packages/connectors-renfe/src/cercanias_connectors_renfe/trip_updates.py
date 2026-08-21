@@ -21,7 +21,7 @@ El rango observado de retrasos fue de -120 s a +12 180 s (3 h 23 min).
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
@@ -61,6 +61,14 @@ class TripUpdatesResult:
     with_delay: int
     delays: tuple[TripDelay, ...]
     skipped_malformed: int
+    #: Viajes con ``scheduleRelationship = CANCELED``. El feed SI publica las
+    #: supresiones; durante bastante tiempo se dio por hecho que no y se
+    #: construyeron rodeos para adivinarlas.
+    cancelled_trips: frozenset[str] = frozenset()
+    #: Paradas que un viaje NO va a efectuar (``SKIPPED``), por viaje. Es la
+    #: senal de un tren que se queda corto: si la cabecera de destino aparece
+    #: aqui, el tren no llega hasta alli aunque el horario diga lo contrario.
+    skipped_stops: dict[str, frozenset[str]] = field(default_factory=dict)
 
     @property
     def delay_coverage(self) -> float:
@@ -193,6 +201,8 @@ def parse_trip_updates(payload: dict[str, Any], *, nucleo_prefixes: tuple[str, .
     matched = 0
     skipped = 0
     delays: list[TripDelay] = []
+    cancelados: set[str] = set()
+    omitidas: dict[str, frozenset[str]] = {}
 
     for entity in entities:
         trip_id = _entity_trip_id(entity)
@@ -204,6 +214,18 @@ def parse_trip_updates(payload: dict[str, Any], *, nucleo_prefixes: tuple[str, .
 
         matched += 1
         trip_update = entity["tripUpdate"]
+
+        if (trip_update.get("trip") or {}).get("scheduleRelationship") == "CANCELED":
+            cancelados.add(trip_id)
+        saltadas = {
+            s["stopId"]
+            for s in (trip_update.get("stopTimeUpdate") or [])
+            if isinstance(s, dict)
+            and s.get("scheduleRelationship") == "SKIPPED"
+            and isinstance(s.get("stopId"), str)
+        }
+        if saltadas:
+            omitidas[trip_id] = frozenset(saltadas)
         delay, malformed = _delay_for_trip(trip_update, trip_id)
         skipped += malformed
         if delay is not None:
@@ -215,4 +237,6 @@ def parse_trip_updates(payload: dict[str, Any], *, nucleo_prefixes: tuple[str, .
         with_delay=len(delays),
         delays=tuple(delays),
         skipped_malformed=skipped,
+        cancelled_trips=frozenset(cancelados),
+        skipped_stops=omitidas,
     )

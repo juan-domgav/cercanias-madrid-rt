@@ -135,3 +135,54 @@ def test_delay_no_entero_se_ignora() -> None:
     }
     result = parse_trip_updates(payload, nucleo_prefixes=("1010",))
     assert result.with_delay == 0, "un delay string no debe colarse como entero"
+
+
+# --- supresiones y paradas omitidas -------------------------------------------
+# El feed SI publica estas dos cosas. Durante un tiempo se asumio que no y se
+# construyeron rodeos para adivinarlas; estos tests fijan lo contrario.
+
+
+def test_detecta_viajes_suprimidos() -> None:
+    payload = {"entity": [
+        {"id": "a", "tripUpdate": {"trip": {"tripId": "1010V1C1", "scheduleRelationship": "CANCELED"}}},
+        {"id": "b", "tripUpdate": {"trip": {"tripId": "1010V2C1", "scheduleRelationship": "SCHEDULED"}}},
+    ]}
+    r = parse_trip_updates(payload, nucleo_prefixes=("1010",))
+    assert r.cancelled_trips == frozenset({"1010V1C1"})
+
+
+def test_detecta_paradas_omitidas() -> None:
+    """Un tren que se queda corto marca SKIPPED las paradas que no hara.
+
+    Si la estacion de destino aparece ahi, el tren no llega hasta alli por mucho
+    que lo diga el horario.
+    """
+    payload = {"entity": [{"id": "a", "tripUpdate": {
+        "trip": {"tripId": "1010V1C4b"},
+        "stopTimeUpdate": [
+            {"stopId": "17004", "arrival": {"delay": 120}},
+            {"stopId": "17005", "scheduleRelationship": "SKIPPED"},
+        ],
+    }}]}
+    r = parse_trip_updates(payload, nucleo_prefixes=("1010",))
+    assert r.skipped_stops["1010V1C4b"] == frozenset({"17005"})
+    assert r.delays[0].delay_seconds == 120, "el retraso de la parada que si hace sigue leyendose"
+
+
+def test_el_fixture_real_YA_traia_una_supresion() -> None:
+    """Prueba de que el feed publica supresiones desde siempre.
+
+    Esta captura es del 31/07 y lleva meses en el repositorio. Contiene
+    3010V36112C3 marcado CANCELED. Durante bastante tiempo se afirmo que las
+    supresiones no se podian conocer y se construyeron rodeos para adivinarlas,
+    con el dato delante.
+    """
+    r = parse_trip_updates(_sin_madrid(), nucleo_prefixes=("3010",))
+    assert "3010V36112C3" in r.cancelled_trips
+
+
+def test_un_viaje_suprimido_no_aporta_retraso_utilizable() -> None:
+    """Un tren suprimido no "va con retraso": no va."""
+    r = parse_trip_updates(_sin_madrid(), nucleo_prefixes=("3010",))
+    for d in r.delays:
+        assert d.trip_id not in r.cancelled_trips

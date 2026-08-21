@@ -215,7 +215,12 @@ def _load_day_schedule(publisher: Any, service: str) -> dict[str, list[Scheduled
     }
 
 
-def _build_boards(snapshot: dict[str, Any], publisher: Any) -> dict[str, Any]:
+def _build_boards(
+    snapshot: dict[str, Any],
+    publisher: Any,
+    cancelled: frozenset[str] = frozenset(),
+    skipped: dict[str, frozenset[str]] | None = None,
+) -> dict[str, Any]:
     """Precalcula el tablon de salidas de cada estacion.
 
     Se hace AQUI, en Python probado, y no en el JavaScript de la pagina: tener la
@@ -226,7 +231,9 @@ def _build_boards(snapshot: dict[str, Any], publisher: Any) -> dict[str, Any]:
     vehiculos = snapshot.get("vehicles", [])
     live = {
         v["trip_id"]: LiveTrain(
-            v["trip_id"], v.get("delay_seconds"), v.get("platform"), v.get("next_stop_id")
+            v["trip_id"], v.get("delay_seconds"), v.get("platform"), v.get("next_stop_id"),
+            cancelled=v["trip_id"] in cancelled,
+            skips_stops=bool((skipped or {}).get(v["trip_id"])),
         )
         for v in vehiculos
         if v.get("trip_id")
@@ -282,6 +289,9 @@ def _build_boards(snapshot: dict[str, Any], publisher: Any) -> dict[str, Any]:
                     "inbound_delay": d.inbound_delay_minutes,
                     "unconfirmed": d.unconfirmed,
                     "on_time": d.shows_on_time,
+                    "cancelled": d.cancelled,
+                    "inbound_cancelled": d.inbound_cancelled,
+                    "shortened": d.shortened,
                 }
                 for d in salidas
             ],
@@ -419,7 +429,8 @@ def main() -> int:
     )
     print(f"snapshot publicado en {ref} ({len(salida.get('vehicles', []))} trenes)")
 
-    boards = _build_boards(salida, publisher)
+    # Supresiones y recorridos acortados vienen del feed (CANCELED / SKIPPED).
+    boards = _build_boards(salida, publisher, ultimo.cancelled_trips, ultimo.skipped_stops)
     publisher.publish(
         BOARDS_KEY,
         json.dumps(boards, ensure_ascii=False, separators=(",", ":")).encode("utf-8"),

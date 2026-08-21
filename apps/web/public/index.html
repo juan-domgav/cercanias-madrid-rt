@@ -201,7 +201,8 @@ function renderTrains() {
       // "en hora" solo si se puede afirmar. Un delay=0 del feed en un viaje que
       // aun no ha salido es un marcador, no una lectura (visto en vivo el 21/08:
       // Colmenar 16:12 decia "En hora" con su tren a 16 minutos).
-      const etiqueta = d.delay == null ? "sin datos en vivo"
+      const etiqueta = d.cancelled ? "SUPRIMIDO"
+                     : d.delay == null ? "sin datos en vivo"
                      : d.on_time ? "en hora"
                      : d.delay > 0 ? `+${d.delay} min`
                      : "sin confirmar";
@@ -222,6 +223,13 @@ function renderTrains() {
         </div>
         ${d.inbound_delay ? `<div class="riesgo">⚠️ El tren que hace este servicio
           viene con <strong>+${d.inbound_delay} min</strong>. Es probable que salga tarde.</div>` : ""}
+        ${d.cancelled ? `<div class="riesgo">🚫 <strong>Tren suprimido.</strong>
+          Renfe ha cancelado este servicio.</div>` : ""}
+        ${d.inbound_cancelled ? `<div class="riesgo">🚫 El tren que debía hacer este
+          servicio está <strong>suprimido</strong>. Es probable que no salga.</div>` : ""}
+        ${d.shortened ? `<div class="riesgo">✂️ Este tren <strong>no efectúa todas sus
+          paradas</strong>. Puede que no llegue a ${d.dest || "su destino"}: confírmalo
+          antes de subir.</div>` : ""}
         ${d.unconfirmed ? `<div class="riesgo">❓ Sin confirmar: no localizamos este tren
           ni el que debería traerlo. La hora es la del horario, no hay dato en vivo
           que la respalde.</div>` : ""}

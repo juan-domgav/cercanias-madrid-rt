@@ -400,3 +400,42 @@ def test_cero_real_sin_enlace_en_riesgo_si_es_en_hora() -> None:
     d = next_departures([parada], vivos,
                         DepartureQuery(now_minutes=16*60+11, service_prefix=SERV))[0]
     assert d.shows_on_time is True
+
+
+# --- supresiones y recorridos acortados ---------------------------------------
+# El feed publica CANCELED y SKIPPED. Antes se adivinaban.
+
+
+def test_servicio_suprimido_se_marca_como_tal() -> None:
+    parada = _enlace("20432", "09:05:00", "20431", 8)
+    vivos = {f"{SERV}20432C4b": LiveTrain(f"{SERV}20432C4b", 0, "3", "17005", cancelled=True)}
+    d = next_departures([parada], vivos, DepartureQuery(now_minutes=9*60, service_prefix=SERV))[0]
+    assert d.cancelled is True
+    assert d.shows_on_time is False, "un tren suprimido nunca esta 'en hora'"
+
+
+def test_entrante_suprimido_es_mas_grave_que_un_retraso() -> None:
+    """Si el tren que debia formar el servicio esta suprimido, no va a salir."""
+    parada = _enlace("20432", "09:05:00", "20431", 8)
+    vivos = {f"{SERV}20431C4b": LiveTrain(f"{SERV}20431C4b", 0, None, "17005", cancelled=True)}
+    d = next_departures([parada], vivos, DepartureQuery(now_minutes=9*60+3, service_prefix=SERV))[0]
+    assert d.inbound_cancelled is True
+    assert d.unconfirmed is False, "no es incertidumbre: es un dato publicado"
+    assert d.shows_on_time is False
+
+
+def test_recorrido_acortado_se_senala() -> None:
+    """Caso de Tres Cantos: el tren termina antes de su destino anunciado."""
+    parada = _enlace("20432", "09:05:00", "20431", 8)
+    vivos = {f"{SERV}20432C4b": LiveTrain(f"{SERV}20432C4b", 120, "3", "17004", skips_stops=True)}
+    d = next_departures([parada], vivos, DepartureQuery(now_minutes=9*60, service_prefix=SERV))[0]
+    assert d.shortened is True
+    assert d.delay_minutes == 2, "sigue habiendo retraso utilizable"
+
+
+def test_tren_normal_no_hereda_ninguna_de_las_marcas() -> None:
+    parada = _enlace("20432", "09:05:00", "20431", 8)
+    vivos = {f"{SERV}20432C4b": LiveTrain(f"{SERV}20432C4b", 0, "3", "17005")}
+    d = next_departures([parada], vivos, DepartureQuery(now_minutes=9*60, service_prefix=SERV))[0]
+    assert (d.cancelled, d.inbound_cancelled, d.shortened) == (False, False, False)
+    assert d.shows_on_time is True

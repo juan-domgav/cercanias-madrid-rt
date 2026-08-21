@@ -89,7 +89,8 @@ def format_departures(station: Station, salidas: list[dict[str, Any]], destinos:
         if d.get("delay"):
             hora += f" <s>{d['t']}</s>"
         retraso = (
-            "sin datos en vivo" if d.get("delay") is None
+            "SUPRIMIDO" if d.get("cancelled")
+            else "sin datos en vivo" if d.get("delay") is None
             else "en hora" if d.get("on_time")
             else f"+{d['delay']} min" if d["delay"] > 0
             else "sin confirmar"
@@ -103,6 +104,10 @@ def format_departures(station: Station, salidas: list[dict[str, Any]], destinos:
             lineas.append(
                 f"   ⚠️ el tren que hace este servicio viene con +{d['inbound_delay']} min"
             )
+        elif d.get("inbound_cancelled"):
+            lineas.append("   🚫 el tren que debia hacer este servicio esta SUPRIMIDO")
+        elif d.get("shortened"):
+            lineas.append("   ✂️ no efectua todas sus paradas: puede no llegar al destino")
         elif d.get("unconfirmed"):
             lineas.append("   ❓ sin confirmar: no localizamos este tren ni el que deberia traerlo")
     lineas.append("\n<i>Andén y retraso vienen del feed en vivo; si el tren aún no "

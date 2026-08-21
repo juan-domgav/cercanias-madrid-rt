@@ -119,6 +119,11 @@ class CycleResult:
     madrid_delays: int
     with_bearing: int
     incidents: tuple[LineIncident, ...]
+    #: Supresiones y recorridos acortados publicados por el feed (CANCELED /
+    #: SKIPPED). Viajan en el resultado para que quien construye los tablones no
+    #: tenga que volver a leer el feed.
+    cancelled_trips: frozenset[str]
+    skipped_stops: dict[str, frozenset[str]]
     published: bool
     note: str
 
@@ -228,6 +233,8 @@ def run_cycle(
         madrid_delays=delays.with_delay,
         with_bearing=sum(1 for o in result.observations if o.bearing_degrees is not None),
         incidents=incidents,
+        cancelled_trips=delays.cancelled_trips,
+        skipped_stops=dict(delays.skipped_stops),
         published=published,
         note=note,
     )

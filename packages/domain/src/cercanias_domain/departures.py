@@ -101,6 +101,12 @@ class LiveTrain:
     #: estaciones y cuarenta minutos de la cabecera. Sin esto, se presentaba un
     #: dato sobre Pitis como si fuera un dato sobre El Escorial.
     next_stop_id: str | None = None
+    #: ``scheduleRelationship = CANCELED``. El feed SÍ publica las supresiones.
+    cancelled: bool = False
+    #: Paradas marcadas ``SKIPPED``: el tren no las efectuará. Es la señal de un
+    #: recorrido acortado —un tren que da la vuelta antes de su destino— que el
+    #: horario estático no puede expresar.
+    skips_stops: bool = False
 
 
 @dataclass(frozen=True)
@@ -120,10 +126,19 @@ class Departure:
     #: servicio se suprime. Decir "viene con +25" es honesto; decir "sale a las
     #: 09:30" cuando en realidad no se sabe, no lo es.
     inbound_delay_minutes: int | None = None
-    #: La hora se echa encima y no hay ni rastro del tren ni de su enlace. No
-    #: afirma que esté suprimido —sin un feed de supresiones eso no se puede
-    #: saber— pero sí que no hay nada que respalde esa hora.
+    #: La hora se echa encima y no hay ni rastro del tren ni de su enlace. NO
+    #: significa suprimido: para eso está :attr:`cancelled`, que sí es un dato
+    #: publicado por el feed.
     unconfirmed: bool = False
+    #: El propio servicio está suprimido (``CANCELED``). No es una sospecha.
+    cancelled: bool = False
+    #: El tren que debía formar este servicio está suprimido. Salvo que Renfe
+    #: cubra con otro material, este tren no va a salir.
+    inbound_cancelled: bool = False
+    #: El tren no efectuará todas sus paradas: puede no llegar al destino que
+    #: anuncia el horario. Observado en Tres Cantos, donde un tren terminó su
+    #: recorrido sin continuar a Colmenar.
+    shortened: bool = False
 
     @property
     def at_risk(self) -> bool:
@@ -139,7 +154,13 @@ class Departure:
         como "en hora" es la peor forma de equivocarse: alguien se queda en el
         andén tranquilo mientras su tren está a dieciséis minutos.
         """
-        return self.delay_minutes is not None and self.delay_minutes <= 0 and not self.at_risk
+        return (
+            self.delay_minutes is not None
+            and self.delay_minutes <= 0
+            and not self.at_risk
+            and not self.cancelled
+            and not self.inbound_cancelled
+        )
 
     @property
     def on_time(self) -> bool:
@@ -281,6 +302,10 @@ def next_departures(
         # el tren aparece con su retraso, ese dato manda y el del enlace sobra.
         retraso_enlace = _inbound_warning(stop, live, tren)
 
+        entrante_vivo = live.get(stop.inbound_trip_id) if stop.inbound_trip_id else None
+        suprimido = bool(tren and tren.cancelled)
+        entrante_suprimido = bool(stop.is_origin and entrante_vivo and entrante_vivo.cancelled)
+
         # Un tren que termina su recorrido desaparece del feed con normalidad: es
         # el caso NORMAL de una maniobra, no una señal de supresión. Por eso la
         # ausencia del entrante no genera aviso. Lo que sí se puede afirmar es que
@@ -288,6 +313,7 @@ def next_departures(
         sin_respaldo = (
             tren is None
             and retraso_enlace is None
+            and not entrante_suprimido
             and programada - now_minutes <= UNCONFIRMED_LEAD_MINUTES
         )
 
@@ -304,6 +330,9 @@ def next_departures(
                 located=tren is not None,
                 inbound_delay_minutes=retraso_enlace,
                 unconfirmed=sin_respaldo,
+                cancelled=suprimido,
+                inbound_cancelled=entrante_suprimido,
+                shortened=bool(tren and tren.skips_stops),
             )
         )
 
