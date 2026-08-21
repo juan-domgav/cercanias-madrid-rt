@@ -70,6 +70,13 @@ ARCHIVE_ENABLED = os.environ.get("ARCHIVE_ENABLED", "1") == "1"
 #: Cuota minima de vehiculos para considerar que un segundo dia de servicio esta
 #: realmente en circulacion y no es ruido de material aparcado.
 SECOND_SERVICE_MIN_SHARE = 0.15
+
+#: Antiguedad a partir de la cual un snapshot conservado SI merece avisar al
+#: usuario. El nucleo desaparece del feed en ~5 % de los sondeos (ADR-011), asi
+#: que marcar "datos no actualizados" en cuanto falla una pasada llena la app de
+#: avisos sobre datos de hace 80 segundos, que son perfectamente utiles. El aviso
+#: tiene que significar "esto ya no sirve", no "ha fallado un sondeo".
+STALE_WARNING_SECONDS = float(os.environ.get("STALE_WARNING_SECONDS", "240"))
 BOARDS_KEY = os.environ.get("BOARDS_KEY", "boards.json")
 #: Los horarios viven en el bucket, un fichero por dia de servicio
 #: (``horarios/1030J.json``). Estaban empaquetados en la imagen y caducaron sin
@@ -101,6 +108,44 @@ class _MemoryStore(SnapshotStore):
 
     def _write(self, payload: dict[str, object]) -> None:
         self.latest = dict(payload)
+
+
+def _snapshot_a_publicar(
+    actual: dict[str, Any], previo: dict[str, Any] | None
+) -> dict[str, Any]:
+    """Decide que snapshot se sirve y si hay que avisar de que esta viejo.
+
+    ADR-011: mejor servir datos de hace un minuto, etiquetados, que un mapa
+    vacio; un mapa vacio no parece un fallo, parece que no hay trenes. Pero el
+    aviso solo se pone cuando los datos conservados ya NO sirven: con
+    desapariciones en el ~5 % de los sondeos, avisar por cada fallo llena la app
+    de advertencias sobre datos de 80 segundos y se acaba ignorando el aviso.
+    """
+    if actual.get("vehicles") or not previo:
+        return actual
+    salida = dict(previo)
+    salida["stale_since"] = actual.get("generated_at")
+    edad = _snapshot_age_seconds(salida)
+    if edad is None or edad >= STALE_WARNING_SECONDS:
+        salida["degraded"] = True
+        salida["reason"] = f"sin datos nuevos del nucleo desde hace {int(edad or 0) // 60} min"
+        print(f"PASADA VACIA: snapshot conservado y MARCADO viejo ({edad or -1:.0f}s)")
+    else:
+        salida.pop("degraded", None)
+        salida.pop("reason", None)
+        print(f"pasada vacia: se conserva el anterior ({edad:.0f}s), aun vigente")
+    return salida
+
+
+def _snapshot_age_seconds(snapshot: dict[str, Any]) -> float | None:
+    """Antiguedad real de los datos que se van a servir."""
+    marca = snapshot.get("generated_at")
+    if not isinstance(marca, str):
+        return None
+    try:
+        return (datetime.now(tz=UTC) - datetime.fromisoformat(marca)).total_seconds()
+    except ValueError:
+        return None
 
 
 def _read_previous_snapshot(publisher: Any) -> dict[str, Any] | None:
@@ -364,15 +409,7 @@ def main() -> int:
         print("ninguna pasada produjo snapshot", file=sys.stderr)
         return EXIT_NO_DATA
 
-    salida = store.latest
-    if not salida.get("vehicles") and previo:
-        # ADR-011: mejor servir datos de hace un minuto, etiquetados, que un mapa
-        # vacio. Un mapa vacio no parece un fallo, parece que no hay trenes.
-        salida = dict(previo)
-        salida["degraded"] = True
-        salida["stale_since"] = store.latest.get("generated_at")
-        salida["reason"] = "el feed no publico el nucleo en esta pasada; se conserva el anterior"
-        print("PASADA VACIA: se conserva el snapshot anterior")
+    salida = _snapshot_a_publicar(store.latest, previo)
 
     ref = publisher.publish(
         SNAPSHOT_KEY,
