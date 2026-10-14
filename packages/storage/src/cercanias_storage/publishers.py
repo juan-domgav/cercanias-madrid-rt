@@ -60,6 +60,13 @@ class LocalSnapshotPublisher:
         target = self._base / key
         return target.read_bytes() if target.exists() else None
 
+    def list_keys(self, prefix: str) -> list[str]:
+        """Claves bajo ``prefix``, relativas a la base (como en un bucket)."""
+        base = self._base / prefix
+        if not base.is_dir():
+            return []
+        return [str(p.relative_to(self._base)) for p in base.rglob("*") if p.is_file()]
+
 
 class S3SnapshotPublisher:
     """Publica en S3. La atomicidad la da el propio PUT de S3."""
@@ -134,6 +141,10 @@ class GcsSnapshotPublisher:
             return None
         data: bytes = blob.download_as_bytes()
         return data
+
+    def list_keys(self, prefix: str) -> list[str]:
+        """Nombres de objeto bajo ``prefix``; una sola llamada de listado."""
+        return [blob.name for blob in self._bucket.list_blobs(prefix=prefix)]
 
 
 def publisher_from_env() -> Any:

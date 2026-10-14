@@ -1,7 +1,7 @@
 # Estado del proyecto y traspaso
 
 Documento de continuidad. Se escribe para que otra sesión pueda seguir sin
-reconstruir el contexto. **Última actualización: 2026-08-21.**
+reconstruir el contexto. **Última actualización: 2026-10-14.**
 
 ## Modo de trabajo
 
@@ -27,6 +27,7 @@ tras CDN, más un bot de Telegram.
 | Bot | `@Cercanias_Madrid_RT_Bot` · canal `@cercanias_madrid_rt` |
 | API | `https://cercanias-api-549278575802.europe-southwest1.run.app` |
 | Ingesta | Cloud Run job `cercanias-ingesta`, cada minuto |
+| Horarios | Cloud Run job `cercanias-horarios`, cada noche a las 05:17 (Madrid) |
 | Proyecto | `cercanias-en-hora` (GCP) · buckets `…-web` (público) y `…-privado` |
 
 Detalle operativo en `docs/DESPLIEGUE.md`.
@@ -71,20 +72,23 @@ Todo esto está **medido**, no supuesto. Cada uno costó una avería o una revis
 
 ## Estado actual
 
-- 266 tests, cobertura 97,13 %. `make ci` verde.
-- Horarios cubren **1031V..1060S** (30 días deslizantes desde hoy).
+- 276 tests, cobertura 97,13 %. `make ci` verde.
+- Horarios: los regenera cada noche `cercanias-horarios` (Scheduler
+  `cercanias-horarios-nightly`). El GTFS de Renfe trae ~30 días por delante.
+  **Incidente:** los subidos a mano en agosto caducaron hacia el 29/08 y los
+  tablones estuvieron vacíos hasta el 14/10 sin que ningún job fallara.
 - Archivo histórico: >5.700 pasadas desde el 20/08, en el bucket privado, con
   regla de borrado a 45 días. `make analizar` lo resume.
 - Feedback del bot: bucket **privado**, `make feedback`.
 
 ## Trabajo pendiente, por prioridad
 
-1. **Automatizar la regeneración de horarios.** `regenerate_schedules.py` ya
-   existe (lo escribió codex, revisado y corregido: le faltaba limpiar las
-   cabeceras y era demasiado estricto emparejando). **Falta programarlo** en
-   Cloud Scheduler, dentro del hueco sin servicio (~01:30–05:00). Sin esto, los
-   horarios caducan el 1060S y la app se queda sin trenes otra vez.
-2. **Invariante de cobertura** que avise ANTES de caducar, no después. Encargo
+1. ~~Automatizar la regeneración de horarios~~ — hecho el 14/10 (ver
+   `docs/DESPLIEGUE.md`). **Falta** crear la política de alerta sobre
+   `severity>=ERROR` en Cloud Monitoring.
+2. **Invariante de cobertura** que avise ANTES de caducar, no después. Parcial:
+   `boards.json` ya expone `health.schedule_days_left` y `regenerate-schedules`
+   falla con menos de 25 días; falta alertar con `schedule_days_left < 5`. Encargo
    preparado para grok en `brief-grok-guardia.md`. El aviso actual sólo salta el
    día que ya no hay horario.
 3. **Verificar supresiones con datos de Madrid.** `CANCELED`/`SKIPPED` ya se
