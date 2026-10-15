@@ -1,4 +1,4 @@
-"""Servicio Cloud Run: webhook Telegram → Grok Bot (+ /reply opcional)."""
+"""Servicio Cloud Run: webhook Telegram → email ops Grok (+ webhook opcional, /reply)."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from app.allowlist import (
 from app.auth import reply_authorized, telegram_webhook_authorized
 from app.config import Settings, load_settings
 from app.grok_forward import build_grok_payload, forward_to_grok
+from app.ops_email import build_ops_body, build_ops_subject, send_ops_email
 from app.telegram_api import send_message
 
 logging.basicConfig(
@@ -25,7 +26,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("telegram_bridge")
 
-app = FastAPI(title="telegram-bridge", version="0.1.0")
+app = FastAPI(title="telegram-bridge", version="0.2.0")
 
 
 def get_settings() -> Settings:
@@ -40,6 +41,38 @@ class ReplyBody(BaseModel):
 @app.get("/healthz")
 async def healthz() -> dict[str, str]:
     return {"status": "ok"}
+
+
+def _queue_ops_notify(
+    background_tasks: BackgroundTasks,
+    settings: Settings,
+    payload: dict[str, Any],
+) -> None:
+    """Email a la inbox Grok (primario) + webhook de rutina si está configurado."""
+    background_tasks.add_task(
+        send_ops_email,
+        to_address=settings.ops_email_to,
+        subject=build_ops_subject(payload.get("text")),
+        body=build_ops_body(
+            chat_id=int(payload["chat_id"]),
+            text=payload.get("text"),
+            from_user=payload.get("from"),
+            update_id=payload.get("update_id"),
+        ),
+        smtp_host=settings.smtp_host,
+        smtp_port=settings.smtp_port,
+        smtp_user=settings.smtp_user,
+        smtp_password=settings.smtp_password,
+        smtp_from=settings.smtp_from,
+    )
+    if settings.grok_webhook_url and settings.grok_webhook_key:
+        background_tasks.add_task(
+            forward_to_grok,
+            url=settings.grok_webhook_url,
+            key=settings.grok_webhook_key,
+            payload=payload,
+            timeout_seconds=settings.grok_forward_timeout_seconds,
+        )
 
 
 @app.post("/telegram/webhook")
@@ -77,13 +110,7 @@ async def telegram_webhook(
         from_user=extract_from_user(update),
         update_id=update.get("update_id"),
     )
-    background_tasks.add_task(
-        forward_to_grok,
-        url=settings.grok_webhook_url,
-        key=settings.grok_webhook_key,
-        payload=payload,
-        timeout_seconds=settings.grok_forward_timeout_seconds,
-    )
+    _queue_ops_notify(background_tasks, settings, payload)
     return {"status": "accepted"}
 
 

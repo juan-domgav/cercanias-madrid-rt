@@ -1,4 +1,4 @@
-"""Reenvío fire-and-forget al webhook de una rutina Grok Bot."""
+"""Reenvío fire-and-forget al webhook de una rutina Grok Bot (opcional)."""
 
 from __future__ import annotations
 
@@ -33,12 +33,17 @@ async def forward_to_grok(
     payload: dict[str, Any],
     timeout_seconds: float,
 ) -> None:
-    """POST al webhook de Grok. Authorization: Bearer (docs de Routines).
+    """POST al webhook de Grok si GROK_WEBHOOK_URL y GROK_WEBHOOK_KEY están definidos.
 
-    Timeout corto a propósito: Telegram ya recibió 200; un fallo aquí solo se loguea.
+    Authorization: Bearer (docs de Routines). Timeout corto a propósito: Telegram
+    ya recibió 200; un fallo aquí solo se loguea. El camino principal es email
+    (OPS_EMAIL_TO + SMTP_*); este webhook es opcional.
     """
     if not url or not key:
-        logger.warning("GROK_WEBHOOK_URL o GROK_WEBHOOK_KEY ausentes; no se reenvía")
+        logger.info(
+            "GROK_WEBHOOK_URL/KEY no configurados; se omite reenvío webhook "
+            "(usar email ops si SMTP_* está listo)"
+        )
         return
 
     headers = {

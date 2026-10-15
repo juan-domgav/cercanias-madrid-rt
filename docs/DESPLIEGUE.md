@@ -64,9 +64,11 @@ publicado.
 ### Puente ops Telegram ↔ Grok Bot
 
 Servicio Cloud Run aparte (`services/telegram-bridge/`, región
-`europe-southwest1`) que recibe DMs del bot, filtra por `ALLOWED_CHAT_IDS` y
-reenvía al webhook de una rutina Grok Bot. El endpoint `POST /reply` permite
-devolver texto a Telegram más adelante. Detalle de despliegue y `setWebhook`:
+`europe-southwest1`) que recibe DMs del bot, filtra por `ALLOWED_CHAT_IDS`
+(ops de Juan: `5830900654`) y **despierta a Grok por email** a
+`cercanias-ops@mail.grokbot.com` (SMTP con `SMTP_*`). El webhook de rutina
+Grok (`GROK_WEBHOOK_URL` / `GROK_WEBHOOK_KEY`) es **opcional** — no hace falta
+la UI de webhook/key. `POST /reply` devuelve texto a Telegram. Detalle:
 `services/telegram-bridge/README.md`. Runbook: `docs/runbooks/telegram-bridge.md`.
 
 ```bash
@@ -74,8 +76,8 @@ devolver texto a Telegram más adelante. Detalle de despliegue y `setWebhook`:
 gcloud run deploy telegram-bridge \
   --project cercanias-en-hora --region europe-southwest1 \
   --source=services/telegram-bridge --allow-unauthenticated \
-  --set-env-vars="ALLOWED_CHAT_IDS=<CHAT_ID>,GROK_WEBHOOK_URL=<GROK_WEBHOOK_URL>" \
-  --set-secrets="TELEGRAM_BOT_TOKEN=telegram-bridge-bot-token:latest,TELEGRAM_WEBHOOK_SECRET=telegram-bridge-webhook-secret:latest,GROK_WEBHOOK_KEY=telegram-bridge-grok-key:latest"
+  --set-env-vars="ALLOWED_CHAT_IDS=5830900654,OPS_EMAIL_TO=cercanias-ops@mail.grokbot.com,SMTP_HOST=<SMTP_HOST>,SMTP_PORT=587,SMTP_USER=<SMTP_USER>,SMTP_FROM=<SMTP_FROM>" \
+  --set-secrets="TELEGRAM_BOT_TOKEN=telegram-bridge-bot-token:latest,TELEGRAM_WEBHOOK_SECRET=telegram-bridge-webhook-secret:latest,SMTP_PASSWORD=telegram-bridge-smtp-password:latest"
 ```
 
 No sustituye las notificaciones del job de ingesta (`telegram-bot-token` /

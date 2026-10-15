@@ -1,4 +1,4 @@
-"""Tests HTTP del webhook y /reply (httpx mockeado; sin red real)."""
+"""Tests HTTP del webhook y /reply (httpx/SMTP mockeados; sin red real)."""
 
 from __future__ import annotations
 
@@ -55,14 +55,19 @@ def test_webhook_ignores_group_unless_allowlisted(client: TestClient) -> None:
     assert r.json()["status"] == "ignored"
 
 
-def test_webhook_accepts_and_forwards(
+def test_webhook_accepts_and_forwards_email_and_webhook(
     client: TestClient, monkeypatch: Any
 ) -> None:
-    called: dict[str, Any] = {}
+    email_called: dict[str, Any] = {}
+    grok_called: dict[str, Any] = {}
+
+    def _fake_email(**kwargs: Any) -> None:
+        email_called.update(kwargs)
 
     async def _fake_forward(**kwargs: Any) -> None:
-        called.update(kwargs)
+        grok_called.update(kwargs)
 
+    monkeypatch.setattr("app.main.send_ops_email", _fake_email)
     monkeypatch.setattr("app.main.forward_to_grok", _fake_forward)
 
     r = client.post(
@@ -79,11 +84,53 @@ def test_webhook_accepts_and_forwards(
     )
     assert r.status_code == 200
     assert r.json()["status"] == "accepted"
-    assert called["payload"]["chat_id"] == 111
-    assert called["payload"]["text"] == "estado"
-    assert called["payload"]["source"] == "telegram"
-    assert called["payload"]["update_id"] == 42
-    assert called["key"] == "test-grok-key"
+    assert email_called["to_address"] == "cercanias-ops@mail.grokbot.com"
+    assert email_called["subject"] == "[telegram-ops] estado"
+    assert "chat_id: 111" in email_called["body"]
+    assert "username: juan" in email_called["body"]
+    assert "update_id: 42" in email_called["body"]
+    assert "estado" in email_called["body"]
+    assert email_called["smtp_host"] == "smtp.example.invalid"
+    assert grok_called["payload"]["chat_id"] == 111
+    assert grok_called["payload"]["text"] == "estado"
+    assert grok_called["payload"]["source"] == "telegram"
+    assert grok_called["payload"]["update_id"] == 42
+    assert grok_called["key"] == "test-grok-key"
+
+
+def test_webhook_email_only_when_no_grok_webhook(
+    client: TestClient, monkeypatch: Any
+) -> None:
+    email_called: dict[str, Any] = {}
+    grok_called = {"n": 0}
+
+    def _fake_email(**kwargs: Any) -> None:
+        email_called.update(kwargs)
+
+    async def _fake_forward(**kwargs: Any) -> None:
+        grok_called["n"] += 1
+
+    monkeypatch.setenv("GROK_WEBHOOK_URL", "")
+    monkeypatch.setenv("GROK_WEBHOOK_KEY", "")
+    monkeypatch.setattr("app.main.send_ops_email", _fake_email)
+    monkeypatch.setattr("app.main.forward_to_grok", _fake_forward)
+
+    r = client.post(
+        "/telegram/webhook",
+        headers={"X-Telegram-Bot-Api-Secret-Token": SECRET},
+        json={
+            "update_id": 7,
+            "message": {
+                "chat": {"id": 111, "type": "private"},
+                "text": "solo email",
+                "from": {"id": 7, "username": "obiguany"},
+            },
+        },
+    )
+    assert r.status_code == 200
+    assert r.json()["status"] == "accepted"
+    assert email_called["subject"] == "[telegram-ops] solo email"
+    assert grok_called["n"] == 0
 
 
 def test_reply_rejects_unknown_chat(client: TestClient) -> None:
