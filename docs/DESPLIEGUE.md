@@ -9,6 +9,8 @@
 | URL | https://storage.googleapis.com/cercanias-madrid-rt-web/index.html |
 | Ingesta | Cloud Run job `cercanias-ingesta` (`europe-southwest1`) |
 | Planificador | Cloud Scheduler `cercanias-tick`, `* * * * *` (`europe-west1`) |
+| Horarios | Cloud Run job `cercanias-horarios` (`europe-southwest1`), misma imagen |
+| Planificador horarios | Cloud Scheduler `cercanias-horarios-nightly`, `17 5 * * *` Europe/Madrid (`europe-west1`) |
 | Presupuesto | 10 EUR con avisos al 50 %, 90 % y 100 % |
 
 ### Por qué el planificador está en otra región
@@ -86,6 +88,73 @@ gcloud storage cp apps/web/index.html gs://cercanias-madrid-rt-web/index.html \
 
 # ingesta
 gcloud run jobs deploy cercanias-ingesta --source . --region europe-southwest1
+```
+
+## Horarios: regeneración nocturna
+
+Los tablones dependen de `horarios/<servicio>.json` en el bucket web, un fichero
+por día de servicio (`1085X`, `1086J`…; el índice rota a diario, ADR-012). El
+GTFS estático de Renfe sólo publica **~30 días por delante**, así que los
+horarios hay que regenerarlos continuamente. En agosto de 2026 se subieron a
+mano una vez, caducaron hacia el 29/08 y los tablones salieron vacíos durante
+semanas sin que el job fallara.
+
+Desde el 14/10/2026 lo hace un job nocturno con la **misma imagen** que la
+ingesta:
+
+```bash
+# job (descarga el GTFS de ssl.renfe.com y publica horarios/*.json)
+gcloud run jobs deploy cercanias-horarios \
+  --image <MISMA_IMAGEN_QUE_cercanias-ingesta> \
+  --region europe-southwest1 --project cercanias-en-hora \
+  --command uv --args run,--frozen,--no-sync,regenerate-schedules \
+  --set-env-vars SNAPSHOT_BUCKET_GCS=cercanias-madrid-rt-web \
+  --memory 1Gi --task-timeout 600s --max-retries 1
+
+# planificador: 05:17 hora de Madrid, tras la actualización de Renfe (~04:08)
+gcloud scheduler jobs create http cercanias-horarios-nightly \
+  --location europe-west1 --project cercanias-en-hora \
+  --schedule "17 5 * * *" --time-zone "Europe/Madrid" \
+  --http-method POST \
+  --uri "https://run.googleapis.com/v2/projects/cercanias-en-hora/locations/europe-southwest1/jobs/cercanias-horarios:run" \
+  --oauth-service-account-email <SA_CON_roles/run.invoker>
+
+# ejecutar a mano / ver resultado
+gcloud run jobs execute cercanias-horarios --region europe-southwest1 --wait
+gcloud run jobs executions list --job cercanias-horarios --region europe-southwest1
+```
+
+La cuenta de servicio del job necesita escribir objetos en el bucket web. La de
+`cercanias-ingesta` necesita además **listar** (`storage.objects.list`) para
+calcular `health.schedule_days_left`; sin ese permiso el campo sale `null` y no
+falla nada.
+
+### Presupuesto de tiempo del tick
+
+Cada invocación hace 3 pasadas con ~20 s entre ellas. Los GET a Renfe usan
+timeout 15 s (posiciones) y 30 s (trip updates). Hay hasta 2 reintentos ante
+5xx y errores de conexión, **pero no ante timeout**: reintentar un timeout
+multiplicaría el coste por pasada y podría superar 300 s (3×(15+30) + sleeps).
+Mantener `--task-timeout` de `cercanias-ingesta` en **≥ 300 s** (600 s da
+margen).
+
+### Señales de fallo
+
+- `regenerate-schedules` termina con **código 2** y una línea `severity=ERROR`
+  si salen menos de `MIN_SERVICE_DAYS` (25) días: publica lo que hay, pero la
+  ejecución queda marcada como fallida.
+- `cloud-tick` escribe líneas JSON `severity=ERROR` con `alert=schedule_missing`
+  o `alert=no_departures`, y `boards.json` lleva un bloque `health`
+  (`schedule_missing`, `schedule_days_left`, `no_departures`). Sigue saliendo con
+  0 a propósito: el snapshot ya se ha publicado y marcar la ejecución como fallida
+  cada minuto sólo añadiría reintentos inútiles; la alerta va por logs.
+
+Alerta recomendada (Cloud Monitoring, política basada en logs):
+
+```
+resource.type="cloud_run_job"
+resource.labels.job_name=("cercanias-ingesta" OR "cercanias-horarios")
+severity>=ERROR
 ```
 
 ## Coste esperado

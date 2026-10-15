@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 import sys
 from collections import defaultdict
 from collections.abc import Iterator
@@ -22,6 +23,12 @@ SCHEDULE_CACHE_CONTROL = "public, max-age=3600"
 MADRID_PREFIX = "10"
 MAX_TURNAROUND_MINUTES = 40
 LINE_VARIANT_MIN_LENGTH = 3
+#: Renfe publica ~30 dias por delante. Menos de esto significa que el GTFS viene
+#: recortado o que el filtro de Madrid ha dejado de casar: hay que enterarse
+#: antes de que los tablones se queden vacios, no despues (los horarios
+#: caducaron sin aviso a finales de agosto de 2026).
+MIN_SERVICE_DAYS = int(os.environ.get("MIN_SERVICE_DAYS", "25"))
+EXIT_TOO_FEW_DAYS = 2
 
 
 @dataclass(frozen=True)
@@ -259,6 +266,23 @@ def main() -> int:
             cache_control=SCHEDULE_CACHE_CONTROL,
         )
     print(f"horarios publicados: {len(schedules)} días de servicio")
+    if len(schedules) < MIN_SERVICE_DAYS:
+        # Se publica igualmente lo que hay (mejor algo que nada), pero el job
+        # termina en error para que Cloud Run lo marque y salte la alerta.
+        print(
+            json.dumps(
+                {
+                    "severity": "ERROR",
+                    "message": f"solo {len(schedules)} días de servicio Madrid en el GTFS "
+                    f"(mínimo {MIN_SERVICE_DAYS})",
+                    "component": "regenerate-schedules",
+                    "services": sorted(schedules),
+                },
+                ensure_ascii=False,
+            ),
+            file=sys.stderr,
+        )
+        return EXIT_TOO_FEW_DAYS
     return 0
 
 

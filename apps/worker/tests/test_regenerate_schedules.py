@@ -110,3 +110,27 @@ def test_main_does_not_create_a_publisher_when_gtfs_is_unavailable(
     )
 
     assert module.main() == 1
+
+
+def test_main_fails_when_too_few_service_days(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    class Outcome:
+        version_dir = tmp_path
+
+    published: list[str] = []
+
+    class Publisher:
+        def publish(self, key: str, *_args: object, **_kwargs: object) -> str:
+            published.append(key)
+            return key
+
+    monkeypatch.setattr(module, "download_gtfs_static", lambda *_a, **_k: Outcome())
+    monkeypatch.setattr(
+        module, "build_schedules", lambda _d: {"1085X": {"service": "1085X", "stations": {}}}
+    )
+    monkeypatch.setattr(module, "publisher_from_env", Publisher)
+
+    assert module.main() == module.EXIT_TOO_FEW_DAYS
+    assert published == ["horarios/1085X.json"]
+    assert '"severity": "ERROR"' in capsys.readouterr().err

@@ -13,6 +13,7 @@ from typing import Any
 
 import httpx
 
+from cercanias_connectors_renfe.http_retry import get_with_retries
 from cercanias_connectors_renfe.raw_feed import (
     FeedParseResult,
     SkippedEntity,
@@ -42,8 +43,7 @@ def fetch_vehicle_positions_payload(
     owns_client = client is None
     http_client = client or httpx.Client(timeout=timeout_seconds)
     try:
-        response = http_client.get(url)
-        response.raise_for_status()
+        response = get_with_retries(http_client, url)
         payload: dict[str, Any] = response.json()
         return payload
     except httpx.HTTPError as exc:

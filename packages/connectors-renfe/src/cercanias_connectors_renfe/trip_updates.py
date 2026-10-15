@@ -26,6 +26,8 @@ from typing import Any
 
 import httpx
 
+from cercanias_connectors_renfe.http_retry import get_with_retries
+
 DEFAULT_TRIP_UPDATES_URL = "https://gtfsrt.renfe.com/trip_updates.json"
 DEFAULT_TIMEOUT_SECONDS = 30.0
 
@@ -93,8 +95,7 @@ def fetch_trip_updates_payload(
     owns_client = client is None
     http_client = client or httpx.Client(timeout=timeout_seconds)
     try:
-        response = http_client.get(url)
-        response.raise_for_status()
+        response = get_with_retries(http_client, url)
         if len(response.content) > MAX_RESPONSE_BYTES:
             raise TripUpdatesFetchError(
                 f"{url} devolvio {len(response.content)} bytes, por encima del tope de {MAX_RESPONSE_BYTES}"

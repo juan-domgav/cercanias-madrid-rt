@@ -90,6 +90,80 @@ PASSES_PER_INVOCATION = int(os.environ.get("PASSES_PER_INVOCATION", "3"))
 SECONDS_BETWEEN_PASSES = float(os.environ.get("SECONDS_BETWEEN_PASSES", "20"))
 
 EXIT_NO_DATA = 4
+#: Un id de servicio es nucleo (2) + indice de dia (2) + letra: ``1085X``.
+SERVICE_INDEX_END = 4
+
+
+def _log(severity: str, message: str, **fields: Any) -> None:
+    """Linea JSON que Cloud Logging interpreta como entrada estructurada.
+
+    ``severity`` es el campo que Cloud Logging lee para el nivel, asi que una
+    alerta basada en logs puede filtrar ``severity>=ERROR`` sin parsear texto.
+    """
+    entry = {"severity": severity, "message": message, "component": "cloud-tick", **fields}
+    print(json.dumps(entry, ensure_ascii=False, default=str), file=sys.stderr, flush=True)
+
+
+def _safe_publish(publisher: Any, key: str, payload: bytes, **kwargs: Any) -> str | None:
+    """Publica sin que un fallo de almacenamiento tumbe el resto del tick."""
+    try:
+        ref: str = publisher.publish(key, payload, **kwargs)
+        return ref
+    except Exception as exc:
+        _log("ERROR", f"no se pudo publicar {key}", key=key, error=repr(exc))
+        return None
+
+
+#: Letras del dia en el tripId de Renfe (L=lunes ... D=domingo). El indice numerico
+#: envuelve 99→01 saltando 00; la letra avanza con el calendario (ADR-012).
+_SERVICE_DAY_LETTERS = "LMXJVSD"
+_MAX_SERVICE_INDEX = 99
+
+
+def _next_service_id(service: str) -> str | None:
+    """Siguiente id de servicio Madrid: indice +1 (99→01) y letra del dia siguiente."""
+    if len(service) < SERVICE_INDEX_END + 1:
+        return None
+    index_text, letter = service[2:4], service[4]
+    if not index_text.isdigit() or letter not in _SERVICE_DAY_LETTERS:
+        return None
+    next_index = 1 if int(index_text) >= _MAX_SERVICE_INDEX else int(index_text) + 1
+    next_letter = _SERVICE_DAY_LETTERS[
+        (_SERVICE_DAY_LETTERS.index(letter) + 1) % len(_SERVICE_DAY_LETTERS)
+    ]
+    return f"{service[:2]}{next_index:02d}{next_letter}"
+
+
+def _schedule_days_left(publisher: Any, service: str) -> int | None:
+    """Dias de horario por delante del servicio en curso, si es barato saberlo.
+
+    Solo se calcula si el publicador sabe listar claves (``list_keys``). Se
+    camina la cadena de ids COMPLETOS (numero + letra): contar solo el entero
+    con modulo falla en la envoltura 1099→1001 y confunde ficheros viejos con
+    la misma cifra y otra letra (``1010V`` junto a ``1010S``). Ver RB-004.
+    """
+    lister = getattr(publisher, "list_keys", None)
+    if lister is None or _next_service_id(service) is None:
+        return None
+    try:
+        keys = lister(f"{SCHEDULES_PREFIX}/")
+    except Exception:
+        return None
+    presentes = {
+        key.rsplit("/", 1)[-1].removesuffix(".json")
+        for key in keys
+        if key.rsplit("/", 1)[-1].endswith(".json")
+    }
+    if service not in presentes:
+        return 0
+    dias = 0
+    actual = service
+    while True:
+        siguiente = _next_service_id(actual)
+        if siguiente is None or siguiente not in presentes:
+            return dias
+        dias += 1
+        actual = siguiente
 
 
 class _MemoryStore(SnapshotStore):
@@ -201,7 +275,14 @@ def _load_day_schedule(publisher: Any, service: str) -> dict[str, list[Scheduled
     raw = publisher.read(f"{SCHEDULES_PREFIX}/{service}.json")
     if not raw:
         return {}
-    datos = json.loads(raw)
+    try:
+        datos = json.loads(raw)
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        _log("ERROR", f"horario {service} ilegible", service=service, error=repr(exc))
+        return {}
+    if not isinstance(datos, dict):
+        _log("ERROR", f"horario {service} con forma inesperada", service=service)
+        return {}
     return {
         stop_id: [
             ScheduledStop(
@@ -301,23 +382,30 @@ def _build_boards(
     # tablones salen vacios SIN error: es el mismo fallo silencioso de siempre, y
     # hay que gritarlo antes de que llegue al anden.
     con_salidas = sum(1 for e in estaciones.values() if e["departures"])
-    if servicio and not dia:
-        print(
+    schedule_missing = bool(servicio) and not dia
+    if schedule_missing:
+        _log(
+            "ERROR",
             f"AVISO GRAVE: no existe horarios/{servicio}.json. El dia de servicio en "
-            "circulacion no esta cubierto y la app se queda SIN TRENES. Regenerar y "
-            "subir los horarios (ver docs/DESPLIEGUE.md).",
-            file=sys.stderr,
+            "circulacion no esta cubierto y la app se queda SIN TRENES. Revisar el job "
+            "cercanias-horarios (ver docs/DESPLIEGUE.md).",
+            alert="schedule_missing", service=servicio,
         )
-    elif servicio and con_salidas == 0 and estaciones:
-        print(
-            f"AVISO GRAVE: servicio {servicio} sin ninguna salida en {len(estaciones)} "
-            "estaciones.",
-            file=sys.stderr,
+    elif servicio and con_salidas == 0:
+        _log(
+            "ERROR",
+            f"AVISO GRAVE: servicio {servicio} sin ninguna salida en {len(estaciones)} estaciones.",
+            alert="no_departures", service=servicio, stations=len(estaciones),
         )
     return {
         "generated_at": ahora.isoformat(),
         "service": servicio,
         "stations_with_departures": con_salidas,
+        "health": {
+            "schedule_missing": schedule_missing,
+            "schedule_days_left": _schedule_days_left(publisher, servicio) if servicio else None,
+            "no_departures": bool(servicio) and con_salidas == 0,
+        },
         "stations": estaciones,
     }
 
@@ -384,6 +472,32 @@ def _build_notifier() -> TelegramNotifier:
         return TelegramNotifier(token=None, chat_id=None, options=TelegramOptions(dry_run=True))
 
 
+def _publish_boards(
+    publisher: Any,
+    salida: dict[str, Any],
+    cancelled: frozenset[str],
+    skipped: dict[str, frozenset[str]],
+) -> None:
+    """Construye y publica los tablones; nunca lanza.
+
+    Un fallo aqui (horario corrupto, bug, GCS caido) no debe saltarse los avisos
+    de Telegram que vienen despues en ``main``.
+    """
+    try:
+        boards = _build_boards(salida, publisher, cancelled, skipped)
+    except Exception as exc:
+        _log("ERROR", "fallo construyendo los tablones", error=repr(exc))
+    else:
+        if _safe_publish(
+            publisher,
+            BOARDS_KEY,
+            json.dumps(boards, ensure_ascii=False, separators=(",", ":")).encode("utf-8"),
+            content_type="application/json",
+        ):
+            print(f"tablones publicados: {len(boards['stations'])} estaciones "
+                  f"(servicio {boards['service']})")
+
+
 def main() -> int:
     config = WorkerConfig()
     publisher = publisher_from_env()
@@ -422,21 +536,16 @@ def main() -> int:
 
     salida = _snapshot_a_publicar(store.latest, previo)
 
-    ref = publisher.publish(
+    ref = _safe_publish(
+        publisher,
         SNAPSHOT_KEY,
         json.dumps(salida, ensure_ascii=False).encode("utf-8"),
         content_type="application/json",
     )
-    print(f"snapshot publicado en {ref} ({len(salida.get('vehicles', []))} trenes)")
+    if ref:
+        print(f"snapshot publicado en {ref} ({len(salida.get('vehicles', []))} trenes)")
 
-    # Supresiones y recorridos acortados vienen del feed (CANCELED / SKIPPED).
-    boards = _build_boards(salida, publisher, ultimo.cancelled_trips, ultimo.skipped_stops)
-    publisher.publish(
-        BOARDS_KEY,
-        json.dumps(boards, ensure_ascii=False, separators=(",", ":")).encode("utf-8"),
-        content_type="application/json",
-    )
-    print(f"tablones publicados: {len(boards['stations'])} estaciones (servicio {boards['service']})")
+    _publish_boards(publisher, salida, ultimo.cancelled_trips, ultimo.skipped_stops)
     if ARCHIVE_ENABLED:
         print(f"pasadas archivadas: {archivadas}")
 
@@ -448,7 +557,10 @@ def main() -> int:
             outcome = notifier.send(format_incident_message(tuple(nuevas)))
             for inc in nuevas:
                 cooldown.record(inc, ahora)
-            _save_cooldown(estado, cooldown)
+            try:
+                _save_cooldown(estado, cooldown)
+            except Exception as exc:
+                _log("ERROR", "no se pudo guardar el enfriamiento", error=repr(exc))
             print(f"Telegram: {outcome.detail} ({len(nuevas)} lineas)")
         except TelegramSendError as exc:
             # Un fallo de notificación no debe invalidar el snapshot ya
