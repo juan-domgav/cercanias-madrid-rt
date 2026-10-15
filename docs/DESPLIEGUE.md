@@ -129,6 +129,15 @@ La cuenta de servicio del job necesita escribir objetos en el bucket web. La de
 calcular `health.schedule_days_left`; sin ese permiso el campo sale `null` y no
 falla nada.
 
+### Presupuesto de tiempo del tick
+
+Cada invocación hace 3 pasadas con ~20 s entre ellas. Los GET a Renfe usan
+timeout 15 s (posiciones) y 30 s (trip updates). Hay hasta 2 reintentos ante
+5xx y errores de conexión, **pero no ante timeout**: reintentar un timeout
+multiplicaría el coste por pasada y podría superar 300 s (3×(15+30) + sleeps).
+Mantener `--task-timeout` de `cercanias-ingesta` en **≥ 300 s** (600 s da
+margen).
+
 ### Señales de fallo
 
 - `regenerate-schedules` termina con **código 2** y una línea `severity=ERROR`

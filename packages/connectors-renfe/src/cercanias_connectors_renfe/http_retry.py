@@ -1,9 +1,10 @@
 """GET con reintentos cortos para los feeds GTFS-RT de Renfe.
 
-Un fallo transitorio (conexion cortada, 5xx, timeout) no debe perder la pasada
-entera: se reintenta pocas veces y con espera corta, porque la invocacion tiene
-un presupuesto de tiempo fijo (3 pasadas en ~1 min). Los 4xx no se reintentan:
-no se arreglan solos.
+Un fallo transitorio (conexion cortada, 5xx) no debe perder la pasada entera:
+se reintenta pocas veces y con espera corta. Los 4xx no se reintentan: no se
+arreglan solos. Tampoco se reintenta un ``TimeoutException``: el presupuesto de
+tiempo de la invocacion (3 pasadas + sleeps) no aguanta triplicar un timeout
+de 15-30 s; reintentar ahi es la forma mas rapida de tumbar el job entero.
 """
 
 from __future__ import annotations
@@ -34,6 +35,10 @@ def get_with_retries(
             response = client.get(url)
             response.raise_for_status()
             return response
+        except httpx.TimeoutException:
+            # Ya hemos consumido timeout_seconds: reintentar multiplica el coste
+            # por el numero de pasadas del tick (ver docs/runbooks / DESPLIEGUE).
+            raise
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code < FIRST_SERVER_ERROR or attempt >= retries:
                 raise

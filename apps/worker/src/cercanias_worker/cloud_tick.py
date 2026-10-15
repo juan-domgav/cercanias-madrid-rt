@@ -114,34 +114,56 @@ def _safe_publish(publisher: Any, key: str, payload: bytes, **kwargs: Any) -> st
         return None
 
 
+#: Letras del dia en el tripId de Renfe (L=lunes ... D=domingo). El indice numerico
+#: envuelve 99→01 saltando 00; la letra avanza con el calendario (ADR-012).
+_SERVICE_DAY_LETTERS = "LMXJVSD"
+_MAX_SERVICE_INDEX = 99
+
+
+def _next_service_id(service: str) -> str | None:
+    """Siguiente id de servicio Madrid: indice +1 (99→01) y letra del dia siguiente."""
+    if len(service) < SERVICE_INDEX_END + 1:
+        return None
+    index_text, letter = service[2:4], service[4]
+    if not index_text.isdigit() or letter not in _SERVICE_DAY_LETTERS:
+        return None
+    next_index = 1 if int(index_text) >= _MAX_SERVICE_INDEX else int(index_text) + 1
+    next_letter = _SERVICE_DAY_LETTERS[
+        (_SERVICE_DAY_LETTERS.index(letter) + 1) % len(_SERVICE_DAY_LETTERS)
+    ]
+    return f"{service[:2]}{next_index:02d}{next_letter}"
+
+
 def _schedule_days_left(publisher: Any, service: str) -> int | None:
     """Dias de horario por delante del servicio en curso, si es barato saberlo.
 
-    Solo se calcula si el publicador sabe listar claves (``list_keys``); los
-    indices de servicio rotan con el calendario (ADR-012), asi que se cuenta
-    cuantos ficheros ``horarios/10NN?.json`` hay con indice posterior al actual,
-    con vuelta de 99 a 01.
+    Solo se calcula si el publicador sabe listar claves (``list_keys``). Se
+    camina la cadena de ids COMPLETOS (numero + letra): contar solo el entero
+    con modulo falla en la envoltura 1099→1001 y confunde ficheros viejos con
+    la misma cifra y otra letra (``1010V`` junto a ``1010S``). Ver RB-004.
     """
     lister = getattr(publisher, "list_keys", None)
-    if lister is None or len(service) < SERVICE_INDEX_END or not service[2:4].isdigit():
+    if lister is None or _next_service_id(service) is None:
         return None
     try:
         keys = lister(f"{SCHEDULES_PREFIX}/")
     except Exception:
         return None
-    actual = int(service[2:4])
-    adelante = set()
-    for key in keys:
-        nombre = key.rsplit("/", 1)[-1].removesuffix(".json")
-        if len(nombre) >= SERVICE_INDEX_END and nombre[:2] == service[:2] and nombre[2:4].isdigit():
-            distancia = (int(nombre[2:4]) - actual) % 99
-            adelante.add(distancia)
-    if 0 not in adelante:
+    presentes = {
+        key.rsplit("/", 1)[-1].removesuffix(".json")
+        for key in keys
+        if key.rsplit("/", 1)[-1].endswith(".json")
+    }
+    if service not in presentes:
         return 0
     dias = 0
-    while dias + 1 in adelante:
+    actual = service
+    while True:
+        siguiente = _next_service_id(actual)
+        if siguiente is None or siguiente not in presentes:
+            return dias
         dias += 1
-    return dias
+        actual = siguiente
 
 
 class _MemoryStore(SnapshotStore):

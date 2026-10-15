@@ -69,3 +69,16 @@ def test_safe_publish_swallows_storage_errors(capsys: pytest.CaptureFixture[str]
     entry = json.loads(capsys.readouterr().err.strip())
     assert entry["severity"] == "ERROR"
     assert entry["key"] == "boards.json"
+
+
+def test_days_left_ignores_leftover_same_number_different_letter(tmp_path: Path) -> None:
+    # Cadena real 1008J→1009V→1010S; el 1010V de un ciclo anterior no alarga ni rompe.
+    for service in ("1008J", "1009V", "1010S", "1010V", "1011D"):
+        _write(tmp_path, f"horarios/{service}.json", {"service": service, "stations": {}})
+    publisher = LocalSnapshotPublisher(tmp_path)
+    assert cloud_tick._schedule_days_left(publisher, "1008J") == 3
+
+
+def test_next_service_id_wraps_99_to_01_with_letter() -> None:
+    assert cloud_tick._next_service_id("1099X") == "1001J"
+    assert cloud_tick._next_service_id("1001J") == "1002V"

@@ -1,0 +1,13 @@
+# Runbooks operativos
+
+Índice sintoma → fichero. Cada runbook es ejecutable: comprobaciones, arreglo,
+verificación y rollback. Los jobs viven en el proyecto `cercanias-en-hora`.
+
+| Sintoma | Runbook |
+|---|---|
+| `boards.json` con 0 estaciones/salidas y `snapshot.json` sano | [RB-001](RB-001-empty-boards-missing-horarios.md) |
+| Snapshot viejo (>5 min) o `degraded: true` | [RB-002](RB-002-stale-snapshot.md) |
+| Job nocturno `cercanias-horarios` fallido o <25 días | [RB-003](RB-003-nightly-horarios-failed.md) |
+| `health.schedule_days_left` bajo en falso al cruzar 1099→1001 | [RB-004](RB-004-wraparound-days-left.md) |
+
+Detalle de despliegue: [`docs/DESPLIEGUE.md`](../DESPLIEGUE.md).

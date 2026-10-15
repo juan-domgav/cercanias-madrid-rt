@@ -46,3 +46,10 @@ def test_does_not_retry_4xx() -> None:
     with pytest.raises(httpx.HTTPStatusError):
         get_with_retries(client, "https://x/feed", sleep=lambda _s: None)
     assert len(calls) == 1
+
+
+def test_does_not_retry_timeout() -> None:
+    client, calls = _client([httpx.ReadTimeout("lento"), 200])
+    with pytest.raises(httpx.ReadTimeout):
+        get_with_retries(client, "https://x/feed", sleep=lambda _s: None)
+    assert len(calls) == 1
