@@ -61,6 +61,26 @@ snapshot y registra lo que habría enviado. Los lectores importan más que los
 suscriptores, así que un fallo de notificación nunca invalida el snapshot ya
 publicado.
 
+### Puente ops Telegram ↔ Grok Bot
+
+Servicio Cloud Run aparte (`services/telegram-bridge/`, región
+`europe-southwest1`) que recibe DMs del bot, filtra por `ALLOWED_CHAT_IDS` y
+reenvía al webhook de una rutina Grok Bot. El endpoint `POST /reply` permite
+devolver texto a Telegram más adelante. Detalle de despliegue y `setWebhook`:
+`services/telegram-bridge/README.md`. Runbook: `docs/runbooks/telegram-bridge.md`.
+
+```bash
+# desplegar (placeholders; secretos en Secret Manager, nunca en el repo)
+gcloud run deploy telegram-bridge \
+  --project cercanias-en-hora --region europe-southwest1 \
+  --source=services/telegram-bridge --allow-unauthenticated \
+  --set-env-vars="ALLOWED_CHAT_IDS=<CHAT_ID>,GROK_WEBHOOK_URL=<GROK_WEBHOOK_URL>" \
+  --set-secrets="TELEGRAM_BOT_TOKEN=telegram-bridge-bot-token:latest,TELEGRAM_WEBHOOK_SECRET=telegram-bridge-webhook-secret:latest,GROK_WEBHOOK_KEY=telegram-bridge-grok-key:latest"
+```
+
+No sustituye las notificaciones del job de ingesta (`telegram-bot-token` /
+`TELEGRAM_CHAT_ID`); es un canal de operación persona↔Grok.
+
 ## Operación
 
 ```bash
