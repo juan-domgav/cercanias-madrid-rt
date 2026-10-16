@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any, Protocol
@@ -32,6 +33,11 @@ COMPONENT = "telegram-ops"
 OFFSET_KEY = "ops/telegram-offset.json"
 INBOX_KEY = "ops/inbox.json"
 INBOX_MAX_ITEMS = 20
+INBOX_MAX_CHARS = 1000
+HTTP_TIMEOUT_S = 10.0
+#: Presupuesto de la pasada: el job tiene --task-timeout 60s; lo que no quepa
+#: se queda para el minuto siguiente (el offset ya se guarda por update).
+RUN_BUDGET_S = 35.0
 DEFAULT_ALLOWED_CHAT_IDS = "5830900654"
 SCHEDULES_PREFIX = "horarios"
 ACK_UNKNOWN = "Recibido, lo paso a Cercanías Ops"
@@ -106,7 +112,7 @@ class TelegramApi:
     def _call(self, method: str, payload: dict[str, Any]) -> Any:
         url = f"https://api.telegram.org/bot{self._token}/{method}"
         try:
-            response = self._client.post(url, json=payload, timeout=20)
+            response = self._client.post(url, json=payload, timeout=HTTP_TIMEOUT_S)
             data = response.json()
         except Exception as exc:
             raise RuntimeError(redact(f"{method}: {type(exc).__name__}: {exc}", self._token)) from None
@@ -162,7 +168,9 @@ def append_inbox(store: Store, item: dict[str, Any]) -> None:
     lista = [i for i in items if isinstance(i, dict)] if isinstance(items, list) else []
     if any(i.get("update_id") == item["update_id"] for i in lista):
         return
-    lista.append({"ts": item["ts"], "update_id": item["update_id"], "text": item["text"]})
+    lista.append(
+        {"ts": item["ts"], "update_id": item["update_id"], "text": str(item["text"])[:INBOX_MAX_CHARS]}
+    )
     payload = {"items": lista[-INBOX_MAX_ITEMS:]}
     store.publish(
         INBOX_KEY,
@@ -241,29 +249,50 @@ def reply_for(command: str, web: Any, now: datetime) -> str:
     return AYUDA
 
 
-def poll_once(
+def poll_once(  # noqa: PLR0913 - dependencias inyectables para los tests
     api: TelegramApi,
     private: Store,
     web: Any,
     allowed: set[int],
+    *,
     now: Callable[[], datetime] = lambda: datetime.now(tz=UTC),
+    agotado: Callable[[], bool] | None = None,
 ) -> int:
-    """Procesa los updates pendientes. Devuelve cuántos se procesaron."""
+    """Procesa los updates pendientes. Devuelve cuántos se procesaron.
+
+    Semántica "como mucho una vez": el offset se guarda ANTES de responder a
+    cada update, así un fallo o un timeout a mitad de lote nunca repite
+    respuestas (a cambio, un mensaje puede quedarse sin contestar).
+    """
+    if agotado is None:
+        limite = time.monotonic() + RUN_BUDGET_S
+        agotado = lambda: time.monotonic() > limite  # noqa: E731
     offset = load_offset(private)
     updates = api.get_updates(offset)
     if not updates:
         log("INFO", "sin mensajes", offset=offset)
         return 0
-    ultimo = offset
-    for update in sorted(updates, key=lambda u: int(u.get("update_id", 0))):
-        update_id = int(update.get("update_id", 0))
-        ultimo = update_id + 1 if ultimo is None else max(ultimo, update_id + 1)
-        message = update.get("message") or {}
-        chat_id = (message.get("chat") or {}).get("id")
-        text = message.get("text")
-        if chat_id not in allowed:
+    validos = [u for u in updates if isinstance(u.get("update_id"), int)]
+    procesados = 0
+    for update in sorted(validos, key=lambda u: int(u["update_id"])):
+        if agotado():
+            log("WARNING", "presupuesto agotado, el resto queda para la siguiente pasada")
+            break
+        update_id = int(update["update_id"])
+        if offset is not None and update_id < offset:
+            continue
+        offset = update_id + 1
+        save_offset(private, offset)
+        procesados += 1
+        message = update.get("message")
+        if not isinstance(message, dict):
+            continue
+        chat = message.get("chat")
+        chat_id = chat.get("id") if isinstance(chat, dict) else None
+        if not isinstance(chat_id, int) or isinstance(chat_id, bool) or chat_id not in allowed:
             log("WARNING", "chat no permitido, se ignora", update_id=update_id, chat_id=chat_id)
             continue
+        text = message.get("text")
         if not isinstance(text, str) or not text.strip():
             continue
         command = parse_command(text)
@@ -276,9 +305,7 @@ def poll_once(
             log("INFO", "mensaje procesado", update_id=update_id, command=command or "inbox")
         except Exception as exc:
             log("ERROR", "fallo procesando mensaje", update_id=update_id, error=str(exc))
-    if ultimo is not None and ultimo != offset:
-        save_offset(private, ultimo)
-    return len(updates)
+    return procesados
 
 
 def main() -> int:

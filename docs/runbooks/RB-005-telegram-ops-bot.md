@@ -18,7 +18,11 @@ comandos con guion y nada destructivo.
   registra (los errores se limpian del token antes de loguear).
 - Solo responde a `ALLOWED_CHAT_IDS` (por defecto `5830900654`). Otros chats se
   ignoran (log `WARNING` con su chat_id) y solo avanza el offset.
-- Offset: `gs://cercanias-madrid-rt-privado/ops/telegram-offset.json`.
+- Offset: `gs://cercanias-madrid-rt-privado/ops/telegram-offset.json`. Se guarda
+  **antes** de responder a cada update (como mucho una vez): un fallo a mitad de
+  lote nunca repite respuestas, a cambio puede dejar un mensaje sin contestar.
+  Cada pasada se corta a los ~35 s y deja el resto para el minuto siguiente.
+- Texto del buzón truncado a 1000 caracteres.
 - Buzón: `gs://cercanias-madrid-rt-web/ops/inbox.json`, últimos 20 mensajes.
 
 ### Privacidad del buzón (decisión consciente)

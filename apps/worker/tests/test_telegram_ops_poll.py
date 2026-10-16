@@ -169,3 +169,60 @@ def test_error_de_api_no_filtra_el_token(capsys: pytest.CaptureFixture[str]) -> 
 def test_main_sin_token(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("TELEGRAM_OPS_BOT_TOKEN", raising=False)
     assert bot.main() == 2
+
+
+class _BoomOnSecondSend(FakeTelegram):
+    def handler(self, request: httpx.Request) -> httpx.Response:
+        method = request.url.path.rsplit("/", 1)[-1]
+        if method == "sendMessage" and len(self.sent()) >= 1:
+            raise SystemExit("crash simulado a mitad de lote")
+        return super().handler(request)
+
+
+def test_crash_a_mitad_de_lote_no_duplica_respuestas(tmp_path: Path) -> None:
+    updates = [_msg(10, "estado"), _msg(11, "ayuda"), _msg(12, "horarios")]
+    fake = _BoomOnSecondSend(updates)
+    private = LocalSnapshotPublisher(tmp_path / "privado")
+    web = LocalSnapshotPublisher(tmp_path / "web")
+    client = httpx.Client(transport=httpx.MockTransport(fake.handler))
+    with pytest.raises(SystemExit):
+        bot.poll_once(bot.TelegramApi(TOKEN, client), private, web, {ALLOWED}, now=lambda: NOW)
+    # El offset ya apunta tras el update 11: la siguiente pasada no repite 10 ni 11.
+    assert bot.load_offset(private) == 12
+
+
+def test_presupuesto_agotado_deja_el_resto(tmp_path: Path) -> None:
+    fake = FakeTelegram([_msg(1, "ayuda"), _msg(2, "ayuda")])
+    private = LocalSnapshotPublisher(tmp_path / "privado")
+    web = LocalSnapshotPublisher(tmp_path / "web")
+    client = httpx.Client(transport=httpx.MockTransport(fake.handler))
+    ticks = iter([False, True])
+    bot.poll_once(
+        bot.TelegramApi(TOKEN, client),
+        private,
+        web,
+        {ALLOWED},
+        now=lambda: NOW,
+        agotado=lambda: next(ticks),
+    )
+    assert len(fake.sent()) == 1
+    assert bot.load_offset(private) == 2
+
+
+def test_updates_malformados_no_tumban_la_pasada(tmp_path: Path) -> None:
+    updates: list[dict[str, Any]] = [
+        {"update_id": "x"},
+        {"update_id": 5, "message": None},
+        {"update_id": 6, "message": {"chat": None, "text": "estado"}},
+        {"update_id": 7, "message": {"chat": {"id": {"a": 1}}, "text": "estado"}},
+        {"update_id": 8, "message": {"chat": {"id": str(ALLOWED)}, "text": "estado"}},
+    ]
+    fake, private, _ = _run(tmp_path, updates)
+    assert fake.sent() == []
+    assert bot.load_offset(private) == 9
+
+
+def test_buzon_trunca_texto_largo(tmp_path: Path) -> None:
+    _, _, web = _run(tmp_path, [_msg(3, "x" * 50_000)])
+    data = json.loads(web.read(bot.INBOX_KEY))
+    assert len(data["items"][0]["text"]) == bot.INBOX_MAX_CHARS
