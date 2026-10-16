@@ -157,6 +157,55 @@ resource.labels.job_name=("cercanias-ingesta" OR "cercanias-horarios")
 severity>=ERROR
 ```
 
+## Bot de operaciones por Telegram
+
+Job `cercanias-telegram-ops` (misma imagen) que cada minuto lee los mensajes del
+bot de ops y responde con comandos de guion (`estado`, `horarios`, `regenerar`,
+`ayuda`). Detalle, privacidad del buzón y fallos: [RB-005](runbooks/RB-005-telegram-ops-bot.md).
+
+> **Privacidad:** los mensajes no reconocidos se guardan en
+> `gs://cercanias-madrid-rt-web/ops/inbox.json`, bucket **público**, porque
+> Wall-E lo lee sin credenciales. Solo `ts`, `update_id` y `text` (sin chat_id ni
+> nombre), últimos 20. El texto lo puede leer cualquiera.
+
+```bash
+# 1. secreto (desde una shell con la variable; el token no va al repo)
+printf '%s' "$TELEGRAM_OPS_BOT_TOKEN" | gcloud secrets create telegram-ops-bot-token \
+  --project cercanias-en-hora --data-file=- --replication-policy=automatic
+gcloud secrets add-iam-policy-binding telegram-ops-bot-token --project cercanias-en-hora \
+  --member serviceAccount:549278575802-compute@developer.gserviceaccount.com \
+  --role roles/secretmanager.secretAccessor
+
+# 2. getUpdates no funciona con webhook activo (HTTP 409): quitarlo una vez
+curl -s "https://api.telegram.org/bot$TELEGRAM_OPS_BOT_TOKEN/deleteWebhook"
+
+# 3. job
+gcloud run jobs deploy cercanias-telegram-ops \
+  --image <MISMA_IMAGEN_QUE_cercanias-ingesta> \
+  --region europe-southwest1 --project cercanias-en-hora \
+  --service-account 549278575802-compute@developer.gserviceaccount.com \
+  --command uv --args run,--frozen,--no-sync,telegram-ops-poll \
+  --set-secrets "TELEGRAM_OPS_BOT_TOKEN=telegram-ops-bot-token:latest" \
+  --set-env-vars "ALLOWED_CHAT_IDS=5830900654,SNAPSHOT_BUCKET_GCS=cercanias-madrid-rt-web,PRIVATE_BUCKET=cercanias-madrid-rt-privado" \
+  --memory 512Mi --task-timeout 60s --max-retries 0
+
+# 4. planificador cada minuto
+gcloud scheduler jobs create http cercanias-telegram-ops-tick \
+  --location europe-west1 --project cercanias-en-hora \
+  --schedule "* * * * *" --time-zone "Europe/Madrid" \
+  --http-method POST \
+  --uri "https://run.googleapis.com/v2/projects/cercanias-en-hora/locations/europe-southwest1/jobs/cercanias-telegram-ops:run" \
+  --oauth-service-account-email 549278575802-compute@developer.gserviceaccount.com
+
+# probar a mano
+gcloud run jobs execute cercanias-telegram-ops --region europe-southwest1 --wait
+```
+
+La SA necesita leer y escribir objetos en ambos buckets y listar
+`horarios/` en el web (igual que la ingesta), y `roles/run.invoker` para el
+planificador. `--max-retries 0`: un reintento duplicaría respuestas; el minuto
+siguiente ya recoge lo pendiente.
+
 ## Coste esperado
 
 Todo escala a cero salvo el almacenamiento, que son unos pocos cientos de KB.

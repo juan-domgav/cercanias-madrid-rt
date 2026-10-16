@@ -22,6 +22,7 @@ mvp = "cercanias_worker.mvp:main"
 telegram-test = "cercanias_worker.telegram_test:main"
 cloud-tick = "cercanias_worker.cloud_tick:main"
 regenerate-schedules = "cercanias_worker.regenerate_schedules:main"
+telegram-ops-poll = "cercanias_worker.telegram_ops_poll:main"
 
 [build-system]
 requires = ["hatchling"]
