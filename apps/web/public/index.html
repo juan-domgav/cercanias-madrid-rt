@@ -60,6 +60,7 @@
   .meta { color: var(--muted); font-size: .85rem; margin-top: .3rem; }
   .banner { border-radius: .6rem; padding: .7rem .85rem; margin: .75rem 0; font-size: .9rem; }
   .banner.warn { background: #fef3c7; color: #92400e; }
+  .banner.info { background: var(--card); color: var(--muted); border: 1px solid var(--line); }
   @media (prefers-color-scheme: dark) { .banner.warn { background: #3a2c07; color: #fcd34d; } }
   footer { margin-top: 2rem; color: var(--muted); font-size: .75rem; border-top: 1px solid var(--line); padding-top: 1rem; }
   .empty { color: var(--muted); padding: 1.5rem 0; text-align: center; }
@@ -158,10 +159,29 @@ function renderUpdated() {
   const age = Math.round((Date.now() - t.getTime()) / 1000);
   const hhmm = t.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
   $("updated").textContent = `${snapshot.vehicles.length} trenes · actualizado ${hhmm} (hace ${age}s)`;
-  // ADR-011: el nucleo desaparece del feed a ratos. Si se sirve el ultimo bueno
-  // conocido hay que decirlo, no fingir que es actual.
-  $("banner").innerHTML = snapshot.degraded
-    ? `<div class="banner warn">⚠️ Datos no actualizados. ${snapshot.reason || ""}</div>` : "";
+  renderBanner();
+}
+
+// ADR-011: el nucleo desaparece del feed a ratos. Si se sirve el ultimo bueno
+// conocido hay que decirlo, no fingir que es actual. Pero con datos de hace un
+// minuto basta un aviso tranquilo con la edad; el fuerte, solo si ya son viejos.
+// snapshot.reason es texto interno del worker: no se ensena.
+const VIEJO_S = 10 * 60;
+function renderBanner() {
+  if (!snapshot?.degraded) { $("banner").innerHTML = ""; return; }
+  const t = new Date(snapshot.generated_at);
+  const age = Math.max(0, Math.round((Date.now() - t.getTime()) / 1000));
+  // Sin trenes no se conserva nada bueno ("sin snapshot bueno previo"): la
+  // edad de un snapshot vacio no dice nada util.
+  if (!snapshot.vehicles?.length || isNaN(age)) {
+    $("banner").innerHTML = `<div class="banner warn">⚠️ Ahora mismo no hay datos en tiempo real de Renfe.</div>`;
+  } else if (age > VIEJO_S) {
+    const hhmm = t.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
+    $("banner").innerHTML = `<div class="banner warn">⚠️ Datos no actualizados desde las ${hhmm}.</div>`;
+  } else {
+    const hace = age < 60 ? `${age} s` : `${Math.floor(age / 60)} min`;
+    $("banner").innerHTML = `<div class="banner info">Renfe no ha enviado datos nuevos; mostrando los de hace ${hace}.</div>`;
+  }
 }
 
 function renderChips(list) {
@@ -347,6 +367,7 @@ async function refrescar() {
   renderTrains();
   if (!errorCarga) renderUpdated();
   else {
+    renderBanner();  // la edad del aviso sigue creciendo aunque falle la carga
     // Con datos de una carga anterior en pantalla, decir de cuando son.
     const hhmm = snapshot ? new Date(snapshot.generated_at)
       .toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }) : null;
