@@ -117,9 +117,16 @@
 const SNAPSHOT_URL = "./snapshot.json";
 const STATIONS_URL = "./estaciones.json";
 const BOARDS_URL   = "./boards.json";
+// En el movil una descarga puede quedarse colgada sin fallar nunca: sin tope,
+// la pagina se quedaba en "Cargando…" para siempre.
+const FETCH_TIMEOUT_MS = 15000;
+const MSG_ERROR_CARGA = "No se pudieron cargar los horarios. Reintentando…";
 
 let stations = [], snapshot = null, boards = null, selected = null;
 let sentidoFiltro = null, currentChips = [];
+// cargando evita refrescos solapados; errorCarga distingue "aun no ha llegado"
+// de "ha fallado" mientras boards siga sin cargar.
+let cargando = false, errorCarga = false;
 
 const tg = window.Telegram?.WebApp;
 const enTelegram = Boolean(tg?.initData !== undefined && tg?.platform && tg.platform !== "unknown");
@@ -179,7 +186,15 @@ function selectStation(station) {
 function renderTrains() {
   const box = $("trains");
   if (!selected) { box.innerHTML = `<div class="empty">Elige una estación para ver sus trenes.</div>`; return; }
-  const est = boards?.stations?.[selected.stop_id];
+  // Sin boards todavia no se sabe si hay horario: decir "No tengo horario" aqui
+  // era falso (caso real 20/10 08:15, Colmenar Viejo con la carga en curso).
+  if (!boards) {
+    box.innerHTML = errorCarga
+      ? `<div class="banner warn">${MSG_ERROR_CARGA}</div>`
+      : `<div class="empty">Cargando horarios…</div>`;
+    return;
+  }
+  const est = boards.stations?.[selected.stop_id];
   if (!est) {
     box.innerHTML = `<div class="banner warn">No tengo horario para ${selected.name}.</div>`;
     return;
@@ -242,6 +257,11 @@ function renderTrains() {
 }
 
 function onPosition(pos) {
+  if (!stations.length) {
+    $("geo-msg").innerHTML = `<div class="banner warn">Aún no se ha cargado la lista de
+      estaciones. Inténtalo de nuevo en unos segundos.</div>`;
+    return;
+  }
   $("geo-msg").innerHTML = "";
   const { latitude, longitude, accuracy } = pos.coords;
   currentChips = stations
@@ -280,30 +300,57 @@ function locate() {
   }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 });
 }
 
-async function refrescar() {
-  const [s, b] = await Promise.all([
-    fetch(SNAPSHOT_URL, { cache: "no-store" }).then(r => r.json()),
-    fetch(BOARDS_URL,   { cache: "no-store" }).then(r => r.json()),
-  ]);
-  snapshot = s; boards = b;
-  renderUpdated(); renderTrains();
+// fetch con tope de tiempo. El tope cubre tambien la lectura del cuerpo, que es
+// donde se cuelga una descarga lenta. Un HTTP de error tambien es un fallo.
+function fetchJSON(url, opciones = {}) {
+  const ctrl = window.AbortController ? new AbortController() : null;
+  let timer;
+  const tope = new Promise((_, reject) => {
+    timer = setTimeout(() => { ctrl?.abort(); reject(new Error("tiempo agotado")); }, FETCH_TIMEOUT_MS);
+  });
+  const peticion = fetch(url, { ...opciones, signal: ctrl?.signal })
+    .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); });
+  return Promise.race([peticion, tope]).finally(() => clearTimeout(timer));
 }
 
-async function boot() {
+async function cargarEstaciones() {
+  const raw = await fetchJSON(STATIONS_URL);
+  const lista = (raw.stations || raw)
+    .map(s => ({ stop_id: s.renfe_stop_id || s.stop_id, name: s.name, latitude: s.latitude, longitude: s.longitude }))
+    .filter(s => s.latitude && s.longitude);
+  lista.slice().sort((a, b) => a.name.localeCompare(b.name, "es")).forEach(s => {
+    const o = document.createElement("option");
+    o.value = s.stop_id; o.textContent = s.name;
+    $("picker").appendChild(o);
+  });
+  stations = lista;
+}
+
+// Nunca lanza: un fallo se muestra y el intervalo de 30 s reintenta. Si ya hay
+// datos de una carga anterior se siguen mostrando; la cabecera avisa del fallo.
+async function refrescar() {
+  if (cargando) return;  // la anterior sigue en curso: no solapar
+  cargando = true;
   try {
-    const raw = await fetch(STATIONS_URL).then(r => r.json());
-    stations = (raw.stations || raw)
-      .map(s => ({ stop_id: s.renfe_stop_id || s.stop_id, name: s.name, latitude: s.latitude, longitude: s.longitude }))
-      .filter(s => s.latitude && s.longitude);
-    stations.slice().sort((a, b) => a.name.localeCompare(b.name, "es")).forEach(s => {
-      const o = document.createElement("option");
-      o.value = s.stop_id; o.textContent = s.name;
-      $("picker").appendChild(o);
-    });
-    await refrescar();
+    if (!stations.length) await cargarEstaciones();
+    const [s, b] = await Promise.all([
+      fetchJSON(SNAPSHOT_URL, { cache: "no-store" }),
+      fetchJSON(BOARDS_URL,   { cache: "no-store" }),
+    ]);
+    snapshot = s; boards = b; errorCarga = false;
   } catch (e) {
-    $("updated").textContent = "No se pudieron cargar los datos.";
-    $("trains").innerHTML = `<div class="banner warn">Error al cargar: ${e.message}</div>`;
+    console.warn("Error al cargar datos:", e);
+    errorCarga = true;
+  } finally {
+    cargando = false;
+  }
+  renderTrains();
+  if (!errorCarga) renderUpdated();
+  else {
+    // Con datos de una carga anterior en pantalla, decir de cuando son.
+    const hhmm = snapshot ? new Date(snapshot.generated_at)
+      .toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }) : null;
+    $("updated").textContent = MSG_ERROR_CARGA + (hhmm ? ` Datos de las ${hhmm}.` : "");
   }
 }
 
@@ -319,7 +366,7 @@ $("picker").onchange = (e) => {
   if (s) { currentChips = []; renderChips([]); selectStation(s); }
 };
 
-boot();
+refrescar().catch(() => {});
 setInterval(() => refrescar().catch(() => {}), 30000);
 </script>
 </body>
