@@ -41,7 +41,7 @@ que el coste no crece con el número de usuarios (C-7).
 |---|---|---|
 | `snapshot.json` | 30 s | Se regenera cada minuto; 30 s permite cachear sin servir datos de dos generaciones |
 | `estaciones.json` | 1 h | Cambia unas pocas veces al año |
-| `index.html` | 5 min | Permite corregir la app sin esperar un día |
+| `index.html` | 60 s | Permite corregir la app sin esperar un día |
 
 ## Telegram en la nube
 
@@ -84,7 +84,7 @@ gcloud scheduler jobs pause cercanias-tick --location europe-west1
 ```bash
 # app web / catálogo
 gcloud storage cp apps/web/index.html gs://cercanias-madrid-rt-web/index.html \
-  --cache-control="public, max-age=300"
+  --cache-control="public, max-age=60" --content-type="text/html"
 
 # ingesta
 gcloud run jobs deploy cercanias-ingesta --source . --region europe-southwest1
