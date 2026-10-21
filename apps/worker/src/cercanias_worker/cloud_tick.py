@@ -35,8 +35,8 @@ from cercanias_domain.departures import (
     DepartureQuery,
     LiveTrain,
     ScheduledStop,
+    board_departures,
     destinations_available,
-    next_departures,
     now_in_operating_day,
 )
 from cercanias_domain.incidents import AlertCooldown, AlertPolicy, format_incident_message
@@ -90,6 +90,8 @@ PASSES_PER_INVOCATION = int(os.environ.get("PASSES_PER_INVOCATION", "3"))
 SECONDS_BETWEEN_PASSES = float(os.environ.get("SECONDS_BETWEEN_PASSES", "20"))
 
 EXIT_NO_DATA = 4
+#: Anexo A.2: viajes especiales, sin dia de servicio ni horario estatico.
+SPECIAL_TRIP_PREFIX = "SPECIAL_"
 #: Un id de servicio es nucleo (2) + indice de dia (2) + letra: ``1085X``.
 SERVICE_INDEX_END = 4
 
@@ -315,13 +317,19 @@ def _build_boards(
             v["trip_id"], v.get("delay_seconds"), v.get("platform"), v.get("next_stop_id"),
             cancelled=v["trip_id"] in cancelled,
             skips_stops=bool((skipped or {}).get(v["trip_id"])),
+            status=v.get("status"),
         )
         for v in vehiculos
         if v.get("trip_id")
     }
     conteo: dict[str, int] = {}
     for v in vehiculos:
-        p = (v.get("trip_id") or "")[:5]
+        tid = v.get("trip_id") or ""
+        # Los especiales no llevan dia de servicio: su "prefijo" seria "SPECI",
+        # que no es un horario y solo diluiria la cuota del segundo dia.
+        if tid.startswith(SPECIAL_TRIP_PREFIX):
+            continue
+        p = tid[:5]
         if p:
             conteo[p] = conteo.get(p, 0) + 1
     servicio = max(conteo, key=lambda k: conteo[k]) if conteo else ""
@@ -346,17 +354,27 @@ def _build_boards(
     if len(candidatos) > 1:
         print(f"transicion de jornada: se cargan {candidatos}")
 
-    for stop_id, horario in sorted(dia.items()):
-        if not horario:
+    # Los especiales (SPECIAL_10_*) no estan en el horario: su parada actual o
+    # proxima tiene tablon aunque el horario del dia no la incluya. Ver RB-006.
+    paradas_especiales = {
+        t.next_stop_id for t in live.values()
+        if t.next_stop_id and t.trip_id.startswith(SPECIAL_TRIP_PREFIX)
+    }
+    for stop_id in sorted(set(dia) | paradas_especiales):
+        horario = dia.get(stop_id, [])
+        if not horario and stop_id not in paradas_especiales:
             continue
-        salidas = next_departures(
-            horario, live, DepartureQuery(now_minutes=minutos, service_prefix=servicio, limit=10)
+        salidas = board_departures(
+            horario, live,
+            DepartureQuery(now_minutes=minutos, service_prefix=servicio, limit=10),
+            stop_id,
         )
         estaciones[stop_id] = {
             "destinations": list(destinations_available(horario, service_prefix=servicio)),
             "departures": [
                 {
-                    "t": d.scheduled_hhmm,
+                    # Un especial no tiene hora de horario: null, no una inventada.
+                    "t": None if d.special else d.scheduled_hhmm,
                     "eta": d.expected_hhmm,
                     "route": d.route,
                     "dest": d.destination,
@@ -373,6 +391,8 @@ def _build_boards(
                     "cancelled": d.cancelled,
                     "inbound_cancelled": d.inbound_cancelled,
                     "shortened": d.shortened,
+                    "special": d.special,
+                    "status": d.status,
                 }
                 for d in salidas
             ],
