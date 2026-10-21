@@ -23,7 +23,6 @@ Reglas que no son evidentes y que costaron descubrir:
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 
 from cercanias_domain.trip_id import parse_trip_id
@@ -156,6 +155,9 @@ class Departure:
     special: bool = False
     #: ``currentStatus`` del feed, sólo para especiales (ver :class:`LiveTrain`).
     status: str | None = None
+    #: Especial en una estación que para su línea es sólo cabecera: puede estar
+    #: llegando al final de su recorrido, no saliendo.
+    at_terminus: bool = False
 
     @property
     def at_risk(self) -> bool:
@@ -228,19 +230,6 @@ def train_number(trip_id: str) -> str:
         elif digits:
             break
     return digits or trip_id
-
-
-_RE_BRANCH_UPPER = re.compile(r"^(?P<base>C\d{1,2})(?P<branch>[AB])$")
-
-
-def canonical_route(route_raw: str) -> str:
-    """``"C4B"`` -> ``"C4b"``. El feed escribe el ramal de los especiales en
-    mayúscula, el horario en minúscula; sin igualarlos el tablón mezcla
-    ``C4b`` y ``C4B`` como si fueran líneas distintas."""
-    match = _RE_BRANCH_UPPER.match(route_raw)
-    if match:
-        return match.group("base") + match.group("branch").lower()
-    return route_raw
 
 
 @dataclass(frozen=True)
@@ -377,8 +366,31 @@ def next_departures(
     return tuple(salidas[:limit])
 
 
+def _route_groups_ending_here(scheduled: list[ScheduledStop]) -> frozenset[str]:
+    """Familias de línea para las que esta estación es SÓLO cabecera.
+
+    Cabecera = ningún viaje programado de esa familia pasa de largo: todos
+    empiezan o terminan aquí (Colmenar Viejo para el C4). Un especial cuya
+    parada es una cabecera puede estar LLEGANDO al final de su recorrido; el
+    feed no permite distinguirlo de uno que va a salir. Una estación de paso con
+    algún viaje acortado (Tres Cantos) no cuenta: allí el C4 también pasa.
+    """
+    cabecera: set[str] = set()
+    de_paso: set[str] = set()
+    for stop in scheduled:
+        parsed = parse_trip_id(stop.trip_id)
+        grupo = parsed.route_group if parsed else stop.route
+        (cabecera if stop.terminates_here or stop.is_origin else de_paso).add(grupo)
+    return frozenset(cabecera - de_paso)
+
+
 def live_special_departures(
-    live: dict[str, LiveTrain], stop_id: str, now_minutes: int
+    live: dict[str, LiveTrain],
+    stop_id: str,
+    now_minutes: int,
+    *,
+    observed_minutes: int | None = None,
+    scheduled: list[ScheduledStop] | None = None,
 ) -> tuple[Departure, ...]:
     """Trenes especiales (``SPECIAL_10_*``) cuya parada actual o próxima es ``stop_id``.
 
@@ -387,10 +399,18 @@ def live_special_departures(
     encontrarlos nunca. Aquí se parte del feed: el tren está localizado, así que
     es ``located`` y jamás ``unconfirmed``.
 
-    Sin horario no hay hora programada ni retraso: la hora es la de ahora y el
-    retraso queda en ``None`` (no se inventa un "en hora"). El destino tampoco se
-    conoce: el feed no lo trae y el sentido no se puede afirmar sin topología.
+    Sin horario no hay hora programada ni retraso: la hora es la de la
+    OBSERVACIÓN (``observed_minutes``, por defecto ``now_minutes``) y el retraso
+    queda en ``None`` (no se inventa un "en hora"). Así un snapshot conservado no
+    rejuvenece al especial en cada reconstrucción. El destino no se conoce: el
+    feed no lo trae y el sentido no se puede afirmar sin topología.
+
+    Si ``scheduled`` indica que la estación es sólo cabecera para la familia del
+    especial, se marca ``at_terminus``: puede ser una llegada, y se dice en vez
+    de presentarla como salida segura (ni se oculta: también puede salir).
     """
+    visto = now_minutes if observed_minutes is None else observed_minutes
+    finales = _route_groups_ending_here(scheduled) if scheduled else frozenset()
     salidas: list[Departure] = []
     for tren in live.values():
         if tren.next_stop_id != stop_id:
@@ -400,20 +420,21 @@ def live_special_departures(
             continue
         salidas.append(
             Departure(
-                scheduled_hhmm=format_minutes(now_minutes),
-                expected_hhmm=format_minutes(now_minutes),
-                route=canonical_route(parsed.route_raw),
+                scheduled_hhmm=format_minutes(visto),
+                expected_hhmm=format_minutes(visto),
+                route=parsed.route_canonical,
                 destination=None,
                 train_number=parsed.train_number,
                 delay_minutes=None,
                 platform=tren.platform,
-                minutes_until=0,
+                minutes_until=visto - now_minutes,
                 located=True,
                 unconfirmed=False,
                 cancelled=tren.cancelled,
                 shortened=tren.skips_stops,
                 special=True,
                 status=tren.status,
+                at_terminus=parsed.route_group in finales,
             )
         )
     salidas.sort(key=lambda d: d.train_number)
@@ -425,15 +446,31 @@ def board_departures(
     live: dict[str, LiveTrain],
     query: DepartureQuery,
     stop_id: str,
+    *,
+    specials_observed_minutes: int | None = None,
 ) -> tuple[Departure, ...]:
     """Tablón completo de una estación: horario casado con el feed + especiales.
 
     Sin especiales en la estación devuelve exactamente :func:`next_departures`.
-    Con ellos, los especiales se conservan siempre (están en el andén o llegando:
-    es el dato más inmediato del tablón) y el resto del cupo lo llena el horario.
+    Con ellos, los especiales tienen prioridad (están en el andén o llegando: es
+    el dato más inmediato del tablón) y el resto del cupo lo llena el horario;
+    nunca se pasa de ``query.limit``.
+
+    Con ``query.destination`` no se incluye ningún especial: su destino es
+    desconocido y el dominio no afirma que vaya hacia donde se ha pedido. (La web
+    decide aparte mostrarlos en cualquier sentido, etiquetados.)
+
+    El tren programado al que un especial sustituye, si lo hay, sigue saliendo
+    aparte (normalmente ``unconfirmed``): el feed no los relaciona y no hay forma
+    segura de deduplicarlos. Ver RB-006.
     """
     programadas = next_departures(scheduled, live, query)
-    especiales = live_special_departures(live, stop_id, query.now_minutes)
+    if query.destination:
+        return programadas
+    especiales = live_special_departures(
+        live, stop_id, query.now_minutes,
+        observed_minutes=specials_observed_minutes, scheduled=scheduled,
+    )[: query.limit]
     if not especiales:
         return programadas
     hueco = max(query.limit - len(especiales), 0)

@@ -40,6 +40,7 @@ from cercanias_domain.departures import (
     now_in_operating_day,
 )
 from cercanias_domain.incidents import AlertCooldown, AlertPolicy, format_incident_message
+from cercanias_domain.trip_id import parse_trip_id
 from cercanias_notifiers_telegram.telegram_notifier import (
     TelegramConfigError,
     TelegramNotifier,
@@ -298,6 +299,60 @@ def _load_day_schedule(publisher: Any, service: str) -> dict[str, list[Scheduled
     }
 
 
+def _specials_observed_at(snapshot: dict[str, Any], ahora: datetime) -> datetime | None:
+    """Momento de la observacion si los especiales del snapshot siguen vigentes.
+
+    Un especial no tiene horario: lo unico que lo sostiene es haberlo visto. Si
+    el snapshot es uno CONSERVADO (pasada vacia, ADR-011) o es mas viejo que
+    ``STALE_WARNING_SECONDS``, mostrarlo seria un fantasma: un tren "en el anden"
+    a las 23:59 porque se le vio a las 08:41. Los programados no tienen ese
+    problema: su hora sale del horario y caducan solos. ``None`` = no mostrar.
+    """
+    if snapshot.get("degraded"):
+        return None
+    marca = snapshot.get("generated_at")
+    if not isinstance(marca, str):
+        return None
+    try:
+        visto = datetime.fromisoformat(marca)
+    except ValueError:
+        return None
+    if visto.tzinfo is None:
+        return None
+    if abs((ahora - visto).total_seconds()) >= STALE_WARNING_SECONDS:
+        return None
+    return visto.astimezone(MADRID_TZ)
+
+
+def _is_special(trip_id: str) -> bool:
+    parsed = parse_trip_id(trip_id)
+    return parsed is not None and parsed.is_special
+
+
+def _service_days(vehiculos: list[dict[str, Any]]) -> tuple[str, list[str]]:
+    """Dia de servicio mayoritario y dias cuyo horario hay que cargar."""
+    conteo: dict[str, int] = {}
+    for v in vehiculos:
+        tid = v.get("trip_id") or ""
+        # Los especiales no llevan dia de servicio: su "prefijo" seria "SPECI",
+        # que no es un horario. Con muchos especiales se elegia "SPECI" como dia
+        # y los tablones salian sin horario (RB-006).
+        if tid.startswith(SPECIAL_TRIP_PREFIX):
+            continue
+        p = tid[:5]
+        if p:
+            conteo[p] = conteo.get(p, 0) + 1
+    servicio = max(conteo, key=lambda k: conteo[k]) if conteo else ""
+
+    # En la transicion de jornada pueden convivir dos dias de servicio: trenes de
+    # madrugada del dia anterior y material ya publicado para el siguiente. Elegir
+    # solo el mayoritario hacia desaparecer la otra mitad del tablon sin avisar.
+    total = sum(conteo.values()) or 1
+    candidatos = [p for p, n in sorted(conteo.items(), key=lambda kv: -kv[1])[:2]
+                  if n / total >= SECOND_SERVICE_MIN_SHARE]
+    return servicio, candidatos
+
+
 def _build_boards(
     snapshot: dict[str, Any],
     publisher: Any,
@@ -322,30 +377,22 @@ def _build_boards(
         for v in vehiculos
         if v.get("trip_id")
     }
-    conteo: dict[str, int] = {}
-    for v in vehiculos:
-        tid = v.get("trip_id") or ""
-        # Los especiales no llevan dia de servicio: su "prefijo" seria "SPECI",
-        # que no es un horario y solo diluiria la cuota del segundo dia.
-        if tid.startswith(SPECIAL_TRIP_PREFIX):
-            continue
-        p = tid[:5]
-        if p:
-            conteo[p] = conteo.get(p, 0) + 1
-    servicio = max(conteo, key=lambda k: conteo[k]) if conteo else ""
-
-    # En la transicion de jornada pueden convivir dos dias de servicio: trenes de
-    # madrugada del dia anterior y material ya publicado para el siguiente. Elegir
-    # solo el mayoritario hacia desaparecer la otra mitad del tablon sin avisar.
-    total = sum(conteo.values()) or 1
-    candidatos = [p for p, n in sorted(conteo.items(), key=lambda kv: -kv[1])[:2]
-                  if n / total >= SECOND_SERVICE_MIN_SHARE]
+    servicio, candidatos = _service_days(vehiculos)
 
     ahora = datetime.now(tz=MADRID_TZ)
     # Coordenada de jornada de servicio, no reloj de pared: a las 00:36 hay que
     # comparar contra un horario que llama "24:36" a ese mismo tren.
     minutos = now_in_operating_day(ahora.hour, ahora.minute)
     estaciones: dict[str, Any] = {}
+
+    # Especiales: solo si el snapshot es fresco, y con la hora en que se vieron.
+    visto = _specials_observed_at(snapshot, ahora)
+    if visto is None:
+        live_tablon = {k: t for k, t in live.items() if not _is_special(k)}
+        minuto_visto = None
+    else:
+        live_tablon = live
+        minuto_visto = now_in_operating_day(visto.hour, visto.minute)
 
     dia: dict[str, list[ScheduledStop]] = {}
     for cand in candidatos:
@@ -357,17 +404,18 @@ def _build_boards(
     # Los especiales (SPECIAL_10_*) no estan en el horario: su parada actual o
     # proxima tiene tablon aunque el horario del dia no la incluya. Ver RB-006.
     paradas_especiales = {
-        t.next_stop_id for t in live.values()
-        if t.next_stop_id and t.trip_id.startswith(SPECIAL_TRIP_PREFIX)
+        t.next_stop_id for t in live_tablon.values()
+        if t.next_stop_id and _is_special(t.trip_id)
     }
     for stop_id in sorted(set(dia) | paradas_especiales):
         horario = dia.get(stop_id, [])
         if not horario and stop_id not in paradas_especiales:
             continue
         salidas = board_departures(
-            horario, live,
+            horario, live_tablon,
             DepartureQuery(now_minutes=minutos, service_prefix=servicio, limit=10),
             stop_id,
+            specials_observed_minutes=minuto_visto,
         )
         estaciones[stop_id] = {
             "destinations": list(destinations_available(horario, service_prefix=servicio)),
@@ -393,6 +441,7 @@ def _build_boards(
                     "shortened": d.shortened,
                     "special": d.special,
                     "status": d.status,
+                    "at_terminus": d.at_terminus,
                 }
                 for d in salidas
             ],
@@ -401,8 +450,27 @@ def _build_boards(
     # avanza a diario). Cuando el servicio en circulacion cae fuera del lote, los
     # tablones salen vacios SIN error: es el mismo fallo silencioso de siempre, y
     # hay que gritarlo antes de que llegue al anden.
-    con_salidas = sum(1 for e in estaciones.values() if e["departures"])
+    #
+    # La salud cuenta SOLO salidas del horario. Un especial no demuestra que haya
+    # horario: con horarios/<dia>.json ausente, un unico especial ponia
+    # stations_with_departures a 1 y no_departures a False, y RB-001 no saltaba.
+    con_salidas = sum(
+        1 for e in estaciones.values() if any(not d["special"] for d in e["departures"])
+    )
+    especiales_en_tablon = sum(
+        1 for e in estaciones.values() for d in e["departures"] if d["special"]
+    )
     schedule_missing = bool(servicio) and not dia
+    # Sin ningun viaje con dia de servicio (p. ej. solo circulan especiales) no
+    # hay horario que cargar y las otras alertas callan: se grita aparte.
+    service_unknown = not servicio and any(v.get("trip_id") for v in vehiculos)
+    if service_unknown:
+        _log(
+            "ERROR",
+            "AVISO GRAVE: hay trenes en el feed pero ninguno con dia de servicio "
+            "(solo especiales o ids desconocidos). Los tablones salen sin horario.",
+            alert="service_unknown_with_vehicles", vehicles=len(vehiculos),
+        )
     if schedule_missing:
         _log(
             "ERROR",
@@ -420,11 +488,15 @@ def _build_boards(
     return {
         "generated_at": ahora.isoformat(),
         "service": servicio,
+        #: Estaciones con al menos una salida DEL HORARIO (los especiales no cuentan).
         "stations_with_departures": con_salidas,
+        "specials_on_boards": especiales_en_tablon,
         "health": {
             "schedule_missing": schedule_missing,
             "schedule_days_left": _schedule_days_left(publisher, servicio) if servicio else None,
             "no_departures": bool(servicio) and con_salidas == 0,
+            "service_unknown_with_vehicles": service_unknown,
+            "specials_hidden_stale": visto is None and any(_is_special(k) for k in live),
         },
         "stations": estaciones,
     }

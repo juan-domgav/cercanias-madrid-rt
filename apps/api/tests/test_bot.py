@@ -108,3 +108,50 @@ def test_texto_muy_largo_se_recorta() -> None:
 def test_update_sin_mensaje_se_ignora() -> None:
     assert _run({"channel_post": {"text": "hola"}}).reply is None
     assert _run({}).reply is None
+
+
+# --- Trenes especiales (RB-006) -----------------------------------------------
+
+UNIVERSIDAD = Station("17009", "Universidad Cantoblanco", 40.5437, -3.7003)
+ESPECIAL = {"t": None, "eta": "08:41", "route": "C4b", "dest": None, "train": "91887",
+            "delay": None, "platform": "1", "in": 0, "live": True, "unconfirmed": False,
+            "on_time": False, "special": True, "status": "STOPPED_AT", "at_terminus": False}
+
+
+def _proximos_especial(**cambios: object) -> str:
+    d = {**ESPECIAL, **cambios}
+    boards = {"stations": {"17009": {"destinations": [], "departures": [d]}}}
+    r = handle_update(_msg("/proximos Universidad Cantoblanco"),
+                      BotContext(stations=[UNIVERSIDAD], boards=boards))
+    assert r.reply is not None
+    return r.reply.text
+
+
+def test_especial_parado_se_pinta_como_en_la_web() -> None:
+    t = _proximos_especial()
+    assert "tren especial" in t
+    assert "en el andén" in t
+    assert "Andén <b>1</b>" in t, "el anden se conserva"
+    assert "C4b tren 91887" in t
+    assert "sin datos en vivo" not in t, "esta localizado"
+    assert "<b>08:41</b>" not in t, "sin hora de salida inventada"
+    assert "→ ?" not in t
+
+
+def test_especial_en_camino_dice_llegando() -> None:
+    t = _proximos_especial(status="IN_TRANSIT_TO")
+    assert "llegando" in t
+    assert "en el andén" not in t
+
+
+def test_especial_sin_anden_no_lo_inventa() -> None:
+    assert "Andén —" in _proximos_especial(platform=None)
+
+
+def test_especial_en_cabecera_avisa_de_posible_llegada() -> None:
+    assert "final de línea" in _proximos_especial(at_terminus=True)
+    assert "final de línea" not in _proximos_especial()
+
+
+def test_especial_suprimido() -> None:
+    assert "SUPRIMIDO" in _proximos_especial(cancelled=True)

@@ -1,7 +1,7 @@
 {
   "_fixture_meta": {
     "source": "gs://cercanias-madrid-rt-web/horarios/1092X.json (21/10/2026)",
-    "note": "Subconjunto C4 08:30-09:10 en 17000/17001/17009. No contiene ningun tren 918xx: los SPECIAL_10_* no estan en el GTFS estatico."
+    "note": "Subconjunto C4 08:30-09:10 en 17000/17001/17009 y Colmenar Viejo 17005 (cabecera: todo C4 empieza o termina). No contiene ningun tren 918xx: los SPECIAL_10_* no estan en el GTFS estatico. 18002 no esta incluida a proposito."
   },
   "service": "1092X",
   "stations": {
@@ -409,6 +409,78 @@
         "terminates": false,
         "from": "1092X20231C4a",
         "slack": 4
+      }
+    ],
+    "17005": [
+      {
+        "trip": "1092X20428C4b",
+        "t": "08:33:00",
+        "seq": 1,
+        "dest": "Parla",
+        "route": "C4b",
+        "terminates": false,
+        "from": "1092X20427C4b",
+        "slack": 4
+      },
+      {
+        "trip": "1092X20429C4b",
+        "t": "08:42:00",
+        "seq": 15,
+        "dest": "Colmenar Viejo",
+        "route": "C4b",
+        "terminates": true,
+        "from": "1092X20218C4a",
+        "slack": 12
+      },
+      {
+        "trip": "1092X20430C4b",
+        "t": "08:43:00",
+        "seq": 1,
+        "dest": "Parla",
+        "route": "C4b",
+        "terminates": false,
+        "from": "1092X20429C4b",
+        "slack": 1
+      },
+      {
+        "trip": "1092X20431C4b",
+        "t": "08:54:00",
+        "seq": 15,
+        "dest": "Colmenar Viejo",
+        "route": "C4b",
+        "terminates": true,
+        "from": "1092X20222C4a",
+        "slack": 0
+      },
+      {
+        "trip": "1092X20432C4b",
+        "t": "08:55:00",
+        "seq": 1,
+        "dest": "Parla",
+        "route": "C4b",
+        "terminates": false,
+        "from": "1092X20431C4b",
+        "slack": 1
+      },
+      {
+        "trip": "1092X20433C4b",
+        "t": "09:04:00",
+        "seq": 15,
+        "dest": "Colmenar Viejo",
+        "route": "C4b",
+        "terminates": true,
+        "from": "1092X20220C4a",
+        "slack": 21
+      },
+      {
+        "trip": "1092X20434C4b",
+        "t": "09:05:00",
+        "seq": 1,
+        "dest": "Parla",
+        "route": "C4b",
+        "terminates": false,
+        "from": "1092X20433C4b",
+        "slack": 1
       }
     ]
   }
