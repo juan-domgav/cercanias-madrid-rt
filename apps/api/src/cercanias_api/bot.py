@@ -115,6 +115,9 @@ def format_departures(station: Station, salidas: list[dict[str, Any]], destinos:
             "SUPRIMIDO" if d.get("cancelled")
             else (f"≈ +{d['estimated_delay']} min (estimado)" if d.get("estimated_delay")
                   else "≈ en hora (estimado)") if estimado
+            # RB-007: fuera de la ventana de publicacion no es una anomalia.
+            else "programado · Renfe aún no lo publica"
+            if d.get("realtime_status") == "not_published"
             else "sin datos en vivo" if d.get("delay") is None
             else "en hora" if d.get("on_time")
             else f"+{d['delay']} min" if d["delay"] > 0

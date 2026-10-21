@@ -32,6 +32,9 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from cercanias_domain.departures import (
+    PUBLISH_WINDOW_MINUTES as DEFAULT_PUBLISH_WINDOW_MINUTES,
+)
+from cercanias_domain.departures import (
     DepartureQuery,
     LiveTrain,
     ScheduledStop,
@@ -87,6 +90,11 @@ BOARDS_KEY = os.environ.get("BOARDS_KEY", "boards.json")
 #: llega no es el que sale. La tabla completa esta en RB-007. Se sobreescribe con
 #: la variable de entorno (lista separada por comas; vacia = estimar en todas).
 DEFAULT_INBOUND_ESTIMATE_EXCLUDED_ROUTES = "C2,C3,C4,C5,C7,C8,C9,C10"
+#: Ventana de publicacion de Renfe (RB-007): un viaje sin datos cuya salida de
+#: ORIGEN esta a mas de esto se muestra como "Renfe aun no lo publica".
+PUBLISH_WINDOW_MINUTES = int(
+    os.environ.get("PUBLISH_WINDOW_MINUTES", str(DEFAULT_PUBLISH_WINDOW_MINUTES))
+)
 INBOUND_ESTIMATE_EXCLUDED_ROUTES = frozenset(
     r.strip()
     for r in os.environ.get(
@@ -301,6 +309,12 @@ def _load_day_schedule(publisher: Any, service: str) -> dict[str, list[Scheduled
     if not isinstance(datos, dict):
         _log("ERROR", f"horario {service} con forma inesperada", service=service)
         return {}
+    estaciones = datos.get("stations") or {}
+    # Salida de cada viaje en su origen (seq 1): la ventana de publicacion de
+    # Renfe se mide desde ahi, no desde la estacion del tablon.
+    origenes = {
+        d["trip"]: d["t"] for paradas in estaciones.values() for d in paradas if d.get("seq") == 1
+    }
     return {
         stop_id: [
             ScheduledStop(
@@ -308,10 +322,11 @@ def _load_day_schedule(publisher: Any, service: str) -> dict[str, list[Scheduled
                 bool(d.get("terminates")), d.get("from"), d.get("slack"),
                 d.get("seq") == 1, stop_id,
                 inbound_ambiguous=bool(d.get("amb")),
+                origin_departure_hhmmss=origenes.get(d["trip"]),
             )
             for d in paradas
         ]
-        for stop_id, paradas in (datos.get("stations") or {}).items()
+        for stop_id, paradas in estaciones.items()
     }
 
 
@@ -440,6 +455,9 @@ def _build_boards(
                 # Estimar desde el entrante SOLO con datos frescos (RB-007).
                 estimate_from_inbound=fresco,
                 estimate_excluded_routes=INBOUND_ESTIMATE_EXCLUDED_ROUTES,
+                # Sin snapshot fresco no sabemos que hay en el feed: no se
+                # afirma "no publicado".
+                publish_window_minutes=PUBLISH_WINDOW_MINUTES if fresco else None,
             ),
             stop_id,
             specials_observed_minutes=minuto_visto,
@@ -460,6 +478,8 @@ def _build_boards(
                     # "live", "inbound_estimate" o null.
                     "estimated_delay": d.estimated_delay_minutes,
                     "delay_source": d.delay_source,
+                    # live > inbound_estimate > not_published > no_data (RB-007).
+                    "realtime_status": d.realtime_status,
                     "platform": d.platform,
                     "in": d.minutes_until,
                     "live": d.located,
@@ -494,6 +514,15 @@ def _build_boards(
     estimadas = sum(
         1 for e in estaciones.values() for d in e["departures"]
         if d["delay_source"] == "inbound_estimate"
+    )
+    no_publicadas = sum(
+        1 for e in estaciones.values() for d in e["departures"]
+        if d["realtime_status"] == "not_published"
+    )
+    # Dentro de la ventana y sin rastro: la anomalia de verdad (para el vigia).
+    ausentes_en_ventana = sum(
+        1 for e in estaciones.values() for d in e["departures"]
+        if fresco and not d["special"] and d["realtime_status"] == "no_data"
     )
     especiales_en_tablon = sum(
         1 for e in estaciones.values() for d in e["departures"] if d["special"]
@@ -537,6 +566,8 @@ def _build_boards(
             "specials_hidden_stale": visto is None and any(_is_special(k) for k in live),
             "departures_estimated_from_inbound": estimadas,
             "inbound_estimates_disabled_stale": not fresco,
+            "departures_not_published": no_publicadas,
+            "departures_missing_in_window": ausentes_en_ventana,
         },
         "stations": estaciones,
     }

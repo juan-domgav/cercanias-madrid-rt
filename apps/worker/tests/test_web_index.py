@@ -19,3 +19,9 @@ def test_la_web_pinta_el_estimado_como_estimado() -> None:
     assert 'd.delay_source === "inbound_estimate"' in html
     assert "(estimado)" in html
     assert ".delay.estimated" in html
+
+
+def test_la_web_distingue_no_publicado() -> None:
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    assert 'd.realtime_status === "not_published"' in html
+    assert "programado · Renfe aún no lo publica" in html

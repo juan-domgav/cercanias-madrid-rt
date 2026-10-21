@@ -31,6 +31,22 @@ Si el viaje aún no está en el feed pero su **enlace entrante** sí, se estima:
   PR #7), con el entrante suprimido o sin retraso publicado, sin maniobra
   conocida, con enlace ambiguo (`amb: true`) ni en líneas excluidas.
 
+### Etiqueta «Renfe aún no lo publica» (`realtime_status`)
+Cada salida lleva `realtime_status`, por orden de precedencia:
+`live` (está en el feed) > `inbound_estimate` (C1 por defecto) >
+`not_published` > `no_data`.
+
+- `not_published`: sin dato ni estimado y su salida de **origen** (`seq 1`,
+  no la hora en esta estación) a **más** de `PUBLISH_WINDOW_MINUTES` (30 por
+  defecto; variable de `cercanias-ingesta`). A 30 min exactos ya es `no_data`.
+  Web y bot: «programado · Renfe aún no lo publica», en estilo neutro.
+- `no_data` dentro de la ventana es la anomalía de verdad: «sin datos en vivo».
+- Con el snapshot `degraded` o viejo no se afirma `not_published` (todo
+  queda `no_data`, como antes).
+- Salud: `health.departures_not_published` y
+  `health.departures_missing_in_window` (salidas `no_data` con snapshot
+  fresco; 0 con snapshot viejo). Esta última es la señal útil para el vigía.
+
 ### Emparejamiento (`regenerate_schedules._link_turnarounds`)
 1. `block_id` del GTFS **cuando agrupa ≥2 viajes**. Renfe lo rellena con el
    número de tren (1207 bloques el 21/10), pero 84 bloques sí encadenan viajes:
@@ -68,8 +84,8 @@ con entrante y saliente observados. Criterio para estimar: ≥90 % con n ≥ 30.
 material en cabecera: con el entrante +15, la vuelta suele salir en hora con
 otra unidad. Por eso el valor por defecto de
 `INBOUND_ESTIMATE_EXCLUDED_ROUTES` es `C2,C3,C4,C5,C7,C8,C9,C10`, y en C4b
-seguirá saliendo «sin datos en vivo» hasta ~30 min antes de la salida de
-cabecera. Probado aparte: elegir la llegada MÁS ANTIGUA (FIFO) sube el total a
+se mostrará «programado · Renfe aún no lo publica» hasta ~30 min antes de
+la salida de cabecera. Probado aparte: elegir la llegada MÁS ANTIGUA (FIFO) sube el total a
 67 % (C5 89 %, C4b 58 %): no basta, queda como línea de trabajo.
 
 ## Comprobaciones
@@ -80,6 +96,9 @@ cabecera. Probado aparte: elegir la llegada MÁS ANTIGUA (FIFO) sube el total a
 3. `boards.json` → `health.departures_estimated_from_inbound` (salidas, no trenes)
    y `health.inbound_estimates_disabled_stale`.
 4. `horarios/<día>.json` → la parada: `from`, `slack`, `amb`.
+5. `realtime_status` de la salida y `health.departures_missing_in_window`. Un
+   valor alto y sostenido con snapshot fresco = Renfe ha cambiado su ventana:
+   medirla de nuevo con el archivo y ajustar `PUBLISH_WINDOW_MINUTES`.
 
 ## Arreglo / ajuste
 - Activar o quitar líneas: variable `INBOUND_ESTIMATE_EXCLUDED_ROUTES` del Cloud Run job

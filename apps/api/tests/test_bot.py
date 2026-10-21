@@ -175,3 +175,22 @@ def test_salida_estimada_desde_el_entrante_se_marca_como_estimada() -> None:
     assert "<b>≈ 16:12</b> <s>16:03</s>" in t
     assert "· sin datos en vivo" not in t, "no es 'sin datos' si hay estimado"
     assert "+9 min ·" not in t.replace("≈ +9 min (estimado)", ""), "nunca como retraso en vivo"
+
+
+def test_viaje_no_publicado_no_dice_sin_datos() -> None:
+    boards = {"stations": {"17004": {"destinations": ["Parla"], "departures": [
+        {"t": "16:18", "eta": "16:18", "route": "C4b", "dest": "Parla", "train": "20478",
+         "delay": None, "platform": None, "in": 52, "live": False,
+         "realtime_status": "not_published"},
+        {"t": "15:40", "eta": "15:40", "route": "C4b", "dest": "Parla", "train": "20476",
+         "delay": None, "platform": None, "in": 14, "live": False,
+         "realtime_status": "no_data"},
+    ]}}}
+    r = _run(_msg("/proximos Tres Cantos"), boards)
+    assert r.reply is not None
+    lineas = r.reply.text.split("\n")
+    l20478 = next(x for x in lineas if "20478" in x)
+    l20476 = next(x for x in lineas if "20476" in x)
+    assert "programado · Renfe aún no lo publica" in l20478
+    assert "sin datos en vivo" not in l20478
+    assert "sin datos en vivo" in l20476, "dentro de la ventana, faltar SI es anomalia"

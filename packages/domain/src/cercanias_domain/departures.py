@@ -72,6 +72,19 @@ INBOUND_WARNING_FLOOR_MINUTES = 3
 DELAY_SOURCE_LIVE = "live"
 DELAY_SOURCE_INBOUND_ESTIMATE = "inbound_estimate"
 
+#: Renfe publica cada viaje en GTFS-RT unos 30 min antes de su salida de
+#: CABECERA (archivo del 21/10/2026, n=850: p10 29, mediana 30, p90 30 min).
+#: Un viaje sin datos cuya salida de origen queda a MAS de esto no es una
+#: anomalia: "Renfe aun no lo publica". Dentro de la ventana, faltar si lo es.
+#: Configurable en la ingesta con ``PUBLISH_WINDOW_MINUTES``. Ver RB-007.
+PUBLISH_WINDOW_MINUTES = 30
+
+#: ``Departure.realtime_status``, por orden de precedencia.
+REALTIME_LIVE = "live"
+REALTIME_INBOUND_ESTIMATE = "inbound_estimate"
+REALTIME_NOT_PUBLISHED = "not_published"
+REALTIME_NO_DATA = "no_data"
+
 
 @dataclass(frozen=True)
 class ScheduledStop:
@@ -106,6 +119,9 @@ class ScheduledStop:
     #: El enlace se eligió entre candidatos casi empatados: no se sabe qué tren
     #: físico hará el servicio, así que NO se estima nada desde el entrante.
     inbound_ambiguous: bool = False
+    #: Hora de salida del viaje en su ORIGEN (``seq == 1``). La ventana de
+    #: publicacion de Renfe se mide desde ahi, no desde esta estacion.
+    origin_departure_hhmmss: str | None = None
 
 
 @dataclass(frozen=True)
@@ -174,6 +190,9 @@ class Departure:
     #: está en el feed (RB-007). Ya incluido en ``expected_hhmm``. No es un dato
     #: en vivo: ``delay_minutes`` sigue en ``None`` y ``located`` en ``False``.
     estimated_delay_minutes: int | None = None
+    #: Sin dato en vivo ni estimado, y su salida de origen esta a mas de
+    #: ``PUBLISH_WINDOW_MINUTES``: Renfe aun no lo publica. No es una anomalia.
+    not_published: bool = False
 
     @property
     def delay_source(self) -> str | None:
@@ -183,6 +202,17 @@ class Departure:
         if self.estimated_delay_minutes is not None:
             return DELAY_SOURCE_INBOUND_ESTIMATE
         return None
+
+    @property
+    def realtime_status(self) -> str:
+        """``live`` > ``inbound_estimate`` > ``not_published`` > ``no_data``."""
+        if self.located:
+            return REALTIME_LIVE
+        if self.estimated_delay_minutes is not None:
+            return REALTIME_INBOUND_ESTIMATE
+        if self.not_published:
+            return REALTIME_NOT_PUBLISHED
+        return REALTIME_NO_DATA
 
     @property
     def at_risk(self) -> bool:
@@ -276,6 +306,9 @@ class DepartureQuery:
     #: Familias de línea (``C4``, ``C8``…) en las que no se estima porque el
     #: emparejamiento no está validado. Configuración, no código (RB-007).
     estimate_excluded_routes: frozenset[str] = frozenset()
+    #: Ventana de publicacion de Renfe. ``None`` = no afirmar "no publicado"
+    #: (snapshot viejo o degradado: no sabemos que hay en el feed).
+    publish_window_minutes: int | None = None
 
 
 def estimate_from_inbound(inbound_delay_minutes: int, scheduled_layover_minutes: int) -> int:
@@ -414,6 +447,14 @@ def next_departures(
         # el caso NORMAL de una maniobra, no una señal de supresión. Por eso la
         # ausencia del entrante no genera aviso. Lo que sí se puede afirmar es que
         # no hay nada que respalde esta hora.
+        origen = stop.origin_departure_hhmmss
+        no_publicado = (
+            tren is None
+            and estimado is None
+            and query.publish_window_minutes is not None
+            and origen is not None
+            and parse_hhmm_to_minutes(origen) - now_minutes > query.publish_window_minutes
+        )
         sin_respaldo = (
             tren is None
             and retraso_enlace is None
@@ -439,6 +480,7 @@ def next_departures(
                 inbound_cancelled=entrante_suprimido,
                 shortened=bool(tren and tren.skips_stops),
                 estimated_delay_minutes=estimado,
+                not_published=no_publicado,
             )
         )
 

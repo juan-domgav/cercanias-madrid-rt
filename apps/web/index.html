@@ -236,6 +236,9 @@ function renderTrains() {
       // RB-007: retraso ESTIMADO desde el tren que llega a cabecera. Nunca con el
       // estilo de un dato en vivo: "≈" y "(estimado)", sin color de puntualidad.
       const estimado = d.delay_source === "inbound_estimate";
+      // Renfe publica cada viaje ~30 min antes de salir de cabecera: antes de eso
+      // no es una anomalia, y se dice en tono neutro (RB-007).
+      const noPublicado = d.realtime_status === "not_published";
       const cls = estimado ? "estimated" : d.delay == null ? "" : d.delay > 3 ? "late" : "ontime";
       // "en hora" solo si se puede afirmar. Un delay=0 del feed en un viaje que
       // aun no ha salido es un marcador, no una lectura (visto en vivo el 21/08:
@@ -246,6 +249,7 @@ function renderTrains() {
                      : d.special ? "tren especial"
                      : estimado ? (d.estimated_delay > 0 ? `≈ +${d.estimated_delay} min (estimado)`
                                                          : "≈ en hora (estimado)")
+                     : noPublicado ? "programado · Renfe aún no lo publica"
                      : d.delay == null ? "sin datos en vivo"
                      : d.on_time ? "en hora"
                      : d.delay > 0 ? `+${d.delay} min`
@@ -264,7 +268,7 @@ function renderTrains() {
         <div class="meta" style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
           ${anden}<span>${d.special ? (d.status === "STOPPED_AT" ? "en el andén" : "llegando")
             : d.in <= 0 ? "saliendo" : `en ${d.in} min`}</span>
-          ${d.live ? "" : '<span style="opacity:.7">· aún no localizado</span>'}
+          ${d.live || noPublicado ? "" : '<span style="opacity:.7">· aún no localizado</span>'}
         </div>
         ${estimado ? `<div class="meta" style="opacity:.8">≈ Estimado a partir del tren que
           llega a cabecera para dar la vuelta. Renfe aún no publica este viaje en vivo.</div>` : ""}

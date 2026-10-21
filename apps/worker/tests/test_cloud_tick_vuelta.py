@@ -144,3 +144,44 @@ def test_linea_excluida_por_defecto_no_estima(monkeypatch: pytest.MonkeyPatch, t
     )
     boards = _boards(monkeypatch, tmp_path, _snapshot(delay_min=20))
     assert _tren(boards, COLMENAR, "20476")["delay_source"] is None
+
+
+# --- "Renfe aun no lo publica" (realtime_status) -------------------------------
+
+
+def _solo_c4_excluida(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cloud_tick, "INBOUND_ESTIMATE_EXCLUDED_ROUTES", frozenset({"C4"}))
+
+
+def test_caso_juan_vuelta_no_publicada(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """15:26:30: 20476 sale de Colmenar a las 15:57 (31 min). En Tres Cantos
+    (16:03) se muestra como no publicado, medido desde el ORIGEN."""
+    _solo_c4_excluida(monkeypatch)
+    boards = _boards(monkeypatch, tmp_path, _snapshot(delay_min=6))
+    d = _tren(boards, TRES_CANTOS, "20476")
+    assert d["realtime_status"] == "not_published"
+    assert d["delay_source"] is None
+    assert _tren(boards, TRES_CANTOS, "20479")["realtime_status"] == "live"
+    assert boards["health"]["departures_not_published"] >= 2
+    assert boards["health"]["departures_missing_in_window"] == 0
+
+
+def test_ventana_configurable(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _solo_c4_excluida(monkeypatch)
+    monkeypatch.setattr(cloud_tick, "PUBLISH_WINDOW_MINUTES", 31)
+    boards = _boards(monkeypatch, tmp_path, _snapshot(delay_min=6))
+    assert _tren(boards, TRES_CANTOS, "20476")["realtime_status"] == "no_data"
+    assert boards["health"]["departures_missing_in_window"] >= 1
+
+
+def test_estimado_manda_sobre_no_publicado(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    boards = _boards(monkeypatch, tmp_path, _snapshot(delay_min=20))
+    assert _tren(boards, TRES_CANTOS, "20476")["realtime_status"] == "inbound_estimate"
+
+
+def test_snapshot_degradado_no_afirma_no_publicado(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _solo_c4_excluida(monkeypatch)
+    boards = _boards(monkeypatch, tmp_path, _snapshot(delay_min=6, degraded=True))
+    assert _tren(boards, TRES_CANTOS, "20476")["realtime_status"] == "no_data"
+    assert boards["health"]["departures_not_published"] == 0
+    assert boards["health"]["departures_missing_in_window"] == 0, "sin datos frescos no hay anomalia"
