@@ -106,11 +106,15 @@ def format_departures(station: Station, salidas: list[dict[str, Any]], destinos:
         if d.get("special"):
             lineas.append(_format_special(d))
             continue
-        hora = f"<b>{d['eta']}</b>"
-        if d.get("delay"):
+        # RB-007: retraso ESTIMADO desde el entrante; nunca como dato en vivo.
+        estimado = d.get("delay_source") == "inbound_estimate"
+        hora = f"<b>{'≈ ' if estimado else ''}{d['eta']}</b>"
+        if d.get("delay") or (estimado and d.get("estimated_delay")):
             hora += f" <s>{d['t']}</s>"
         retraso = (
             "SUPRIMIDO" if d.get("cancelled")
+            else (f"≈ +{d['estimated_delay']} min (estimado)" if d.get("estimated_delay")
+                  else "≈ en hora (estimado)") if estimado
             else "sin datos en vivo" if d.get("delay") is None
             else "en hora" if d.get("on_time")
             else f"+{d['delay']} min" if d["delay"] > 0
@@ -129,6 +133,8 @@ def format_departures(station: Station, salidas: list[dict[str, Any]], destinos:
             lineas.append("   🚫 el tren que debia hacer este servicio esta SUPRIMIDO")
         elif d.get("shortened"):
             lineas.append("   ✂️ no efectua todas sus paradas: puede no llegar al destino")
+        elif estimado:
+            lineas.append("   ≈ estimado por el tren que llega a cabecera; aún sin datos en vivo")
         elif d.get("unconfirmed"):
             lineas.append("   ❓ sin confirmar: no localizamos este tren ni el que deberia traerlo")
     lineas.append("\n<i>Andén y retraso vienen del feed en vivo; si el tren aún no "

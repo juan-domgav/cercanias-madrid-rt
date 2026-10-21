@@ -57,6 +57,7 @@
   .route { font-weight: 700; font-size: 1.05rem; }
   .delay { font-weight: 600; }
   .delay.late { color: var(--late); } .delay.ontime { color: var(--ok); }
+  .delay.estimated { color: var(--muted); font-style: italic; }
   .meta { color: var(--muted); font-size: .85rem; margin-top: .3rem; }
   .banner { border-radius: .6rem; padding: .7rem .85rem; margin: .75rem 0; font-size: .9rem; }
   .banner.warn { background: #fef3c7; color: #92400e; }
@@ -232,7 +233,10 @@ function renderTrains() {
     box.innerHTML = chips + `<div class="empty">No hay salidas programadas en las próximas 2 h.</div>`;
   } else {
     box.innerHTML = chips + salidas.map(d => {
-      const cls = d.delay == null ? "" : d.delay > 3 ? "late" : "ontime";
+      // RB-007: retraso ESTIMADO desde el tren que llega a cabecera. Nunca con el
+      // estilo de un dato en vivo: "≈" y "(estimado)", sin color de puntualidad.
+      const estimado = d.delay_source === "inbound_estimate";
+      const cls = estimado ? "estimated" : d.delay == null ? "" : d.delay > 3 ? "late" : "ontime";
       // "en hora" solo si se puede afirmar. Un delay=0 del feed en un viaje que
       // aun no ha salido es un marcador, no una lectura (visto en vivo el 21/08:
       // Colmenar 16:12 decia "En hora" con su tren a 16 minutos).
@@ -240,6 +244,8 @@ function renderTrains() {
       // que mostrar. Esta localizado: decir "sin datos en vivo" seria falso.
       const etiqueta = d.cancelled ? "SUPRIMIDO"
                      : d.special ? "tren especial"
+                     : estimado ? (d.estimated_delay > 0 ? `≈ +${d.estimated_delay} min (estimado)`
+                                                         : "≈ en hora (estimado)")
                      : d.delay == null ? "sin datos en vivo"
                      : d.on_time ? "en hora"
                      : d.delay > 0 ? `+${d.delay} min`
@@ -251,7 +257,7 @@ function renderTrains() {
         : `<span class="plat plat-unknown">Andén —</span>`;
       return `<div class="train">
         <div class="top">
-          <span class="route">${d.eta}${d.delay ? ` <s style="opacity:.6">${d.t}</s>` : ""}
+          <span class="route">${estimado ? "≈ " : ""}${d.eta}${d.delay || d.estimated_delay ? ` <s style="opacity:.6">${d.t}</s>` : ""}
             <span style="font-weight:400;color:var(--muted)">· ${d.route} tren ${d.train}</span></span>
           <span class="delay ${cls}">${etiqueta}</span></div>
         <div class="meta" style="font-size:1rem;color:var(--fg)"><strong>→ ${d.dest || "destino desconocido"}</strong></div>
@@ -260,6 +266,8 @@ function renderTrains() {
             : d.in <= 0 ? "saliendo" : `en ${d.in} min`}</span>
           ${d.live ? "" : '<span style="opacity:.7">· aún no localizado</span>'}
         </div>
+        ${estimado ? `<div class="meta" style="opacity:.8">≈ Estimado a partir del tren que
+          llega a cabecera para dar la vuelta. Renfe aún no publica este viaje en vivo.</div>` : ""}
         ${d.inbound_delay ? `<div class="riesgo">⚠️ El tren que hace este servicio
           viene con <strong>+${d.inbound_delay} min</strong>. Es probable que salga tarde.</div>` : ""}
         ${d.cancelled ? `<div class="riesgo">🚫 <strong>Tren suprimido.</strong>

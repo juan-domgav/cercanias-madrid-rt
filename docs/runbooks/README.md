@@ -11,5 +11,6 @@ verificación y rollback. Los jobs viven en el proyecto `cercanias-en-hora`.
 | `health.schedule_days_left` bajo en falso al cruzar 1099→1001 | [RB-004](RB-004-wraparound-days-left.md) |
 | El bot de ops de Telegram no responde o responde en bucle | [RB-005](RB-005-telegram-ops-bot.md) |
 | Tren `SPECIAL_10_*` en `snapshot.json` pero ausente de `boards.json` | [RB-006](RB-006-special-trains-missing.md) |
+| Un sentido «sin datos en vivo» con el tren que llega a cabecera localizado | [RB-007](RB-007-return-trip-no-live-data.md) |
 
 Detalle de despliegue: [`docs/DESPLIEGUE.md`](../DESPLIEGUE.md).

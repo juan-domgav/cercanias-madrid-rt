@@ -79,6 +79,21 @@ SECOND_SERVICE_MIN_SHARE = 0.15
 #: tiene que significar "esto ya no sirve", no "ha fallado un sondeo".
 STALE_WARNING_SECONDS = float(os.environ.get("STALE_WARNING_SECONDS", "240"))
 BOARDS_KEY = os.environ.get("BOARDS_KEY", "boards.json")
+#: Familias de linea en las que NO se estima la salida desde el enlace entrante
+#: (RB-007). Por defecto, todas las que NO superan la validacion contra el
+#: archivo del 21/10/2026 (retraso real de la vuelta a +-3 min del estimado en
+#: >= 90 % de n >= 30 enlaces observados). Solo C1 la supera (91 %, n=74); C4
+#: (C4a 36 %, C4b 47 %) no: alli Renfe cambia material en cabecera y el tren que
+#: llega no es el que sale. La tabla completa esta en RB-007. Se sobreescribe con
+#: la variable de entorno (lista separada por comas; vacia = estimar en todas).
+DEFAULT_INBOUND_ESTIMATE_EXCLUDED_ROUTES = "C2,C3,C4,C5,C7,C8,C9,C10"
+INBOUND_ESTIMATE_EXCLUDED_ROUTES = frozenset(
+    r.strip()
+    for r in os.environ.get(
+        "INBOUND_ESTIMATE_EXCLUDED_ROUTES", DEFAULT_INBOUND_ESTIMATE_EXCLUDED_ROUTES
+    ).split(",")
+    if r.strip()
+)
 #: Los horarios viven en el bucket, un fichero por dia de servicio
 #: (``horarios/1030J.json``). Estaban empaquetados en la imagen y caducaron sin
 #: que nadie lo viera: cada regeneracion exigia reconstruir el contenedor, asi
@@ -292,11 +307,17 @@ def _load_day_schedule(publisher: Any, service: str) -> dict[str, list[Scheduled
                 d["trip"], d["t"], d.get("route", ""), d.get("dest"),
                 bool(d.get("terminates")), d.get("from"), d.get("slack"),
                 d.get("seq") == 1, stop_id,
+                inbound_ambiguous=bool(d.get("amb")),
             )
             for d in paradas
         ]
         for stop_id, paradas in (datos.get("stations") or {}).items()
     }
+
+
+def _snapshot_is_fresh(snapshot: dict[str, Any], ahora: datetime) -> bool:
+    """¿Sirve el snapshot para proyectar? Mismo guard que los especiales (PR #7)."""
+    return _specials_observed_at(snapshot, ahora) is not None
 
 
 def _specials_observed_at(snapshot: dict[str, Any], ahora: datetime) -> datetime | None:
@@ -387,6 +408,7 @@ def _build_boards(
 
     # Especiales: solo si el snapshot es fresco, y con la hora en que se vieron.
     visto = _specials_observed_at(snapshot, ahora)
+    fresco = _snapshot_is_fresh(snapshot, ahora)
     if visto is None:
         live_tablon = {k: t for k, t in live.items() if not _is_special(k)}
         minuto_visto = None
@@ -413,7 +435,12 @@ def _build_boards(
             continue
         salidas = board_departures(
             horario, live_tablon,
-            DepartureQuery(now_minutes=minutos, service_prefix=servicio, limit=10),
+            DepartureQuery(
+                now_minutes=minutos, service_prefix=servicio, limit=10,
+                # Estimar desde el entrante SOLO con datos frescos (RB-007).
+                estimate_from_inbound=fresco,
+                estimate_excluded_routes=INBOUND_ESTIMATE_EXCLUDED_ROUTES,
+            ),
             stop_id,
             specials_observed_minutes=minuto_visto,
         )
@@ -428,6 +455,11 @@ def _build_boards(
                     "dest": d.destination,
                     "train": d.train_number,
                     "delay": d.delay_minutes,
+                    # RB-007: retraso ESTIMADO desde el entrante, ya incluido en
+                    # "eta". "delay_source" dice de donde sale el retraso:
+                    # "live", "inbound_estimate" o null.
+                    "estimated_delay": d.estimated_delay_minutes,
+                    "delay_source": d.delay_source,
                     "platform": d.platform,
                     "in": d.minutes_until,
                     "live": d.located,
@@ -456,6 +488,12 @@ def _build_boards(
     # stations_with_departures a 1 y no_departures a False, y RB-001 no saltaba.
     con_salidas = sum(
         1 for e in estaciones.values() if any(not d["special"] for d in e["departures"])
+    )
+    # Cuenta salidas (no trenes): un mismo viaje estimado aparece en varias
+    # estaciones de su recorrido.
+    estimadas = sum(
+        1 for e in estaciones.values() for d in e["departures"]
+        if d["delay_source"] == "inbound_estimate"
     )
     especiales_en_tablon = sum(
         1 for e in estaciones.values() for d in e["departures"] if d["special"]
@@ -497,6 +535,8 @@ def _build_boards(
             "no_departures": bool(servicio) and con_salidas == 0,
             "service_unknown_with_vehicles": service_unknown,
             "specials_hidden_stale": visto is None and any(_is_special(k) for k in live),
+            "departures_estimated_from_inbound": estimadas,
+            "inbound_estimates_disabled_stale": not fresco,
         },
         "stations": estaciones,
     }
