@@ -134,3 +134,90 @@ def test_main_fails_when_too_few_service_days(
     assert module.main() == module.EXIT_TOO_FEW_DAYS
     assert published == ["horarios/1085X.json"]
     assert '"severity": "ERROR"' in capsys.readouterr().err
+
+
+# --- RB-007: block_id, interlineado y ambiguedad -------------------------------
+
+
+def test_block_id_compartido_manda_sobre_la_inferencia() -> None:
+    """Si el GTFS agrupa viajes en un mismo block_id, ese es el enlace aunque haya
+    otra llegada mas cercana a la salida."""
+    llegada_bloque = _trip("1092XB-in", "C1", ("B", "07:30:00"), ("A", "08:00:00"))
+    llegada_bloque.block_id = "BLK1"
+    otra = _trip("1092XO-in", "C1", ("B", "07:35:00"), ("A", "08:06:00"))
+    salida = _trip("1092XB-out", "C1", ("A", "08:10:00"), ("B", "08:40:00"))
+    salida.block_id = "BLK1"
+    enlaces = module._link_turnarounds([llegada_bloque, otra, salida])
+    assert enlaces["1092XB-out"] == module.Turnaround("1092XB-in", 10)
+
+
+def test_block_id_de_un_solo_viaje_no_cuenta() -> None:
+    """El GTFS de Renfe trae block_id = numero de tren (uno por viaje): no dice
+    nada del material y se ignora."""
+    llegada = _trip("1092XC1-in", "C1", ("B", "07:30:00"), ("A", "08:00:00"))
+    llegada.block_id = "1092XC1-in"
+    salida = _trip("1092XC1-out", "C1", ("A", "08:10:00"), ("B", "08:40:00"))
+    salida.block_id = "1092XC1-out"
+    assert module._link_turnarounds([llegada, salida])["1092XC1-out"].inbound_trip_id == "1092XC1-in"
+
+
+def test_interlineado_permitido_en_cabecera_validada() -> None:
+    """Cercedilla (12006): el C8 que llega vuelve como C9."""
+    llegada = _trip("1092X36330C8b", "C8b", ("10203", "08:00:00"), ("12006", "09:00:00"))
+    salida = _trip("1092X36901C9", "C9", ("12006", "09:05:00"), ("12010", "09:40:00"))
+    enlaces = module._link_turnarounds([llegada, salida])
+    assert enlaces["1092X36901C9"] == module.Turnaround("1092X36330C8b", 5)
+
+
+def test_interlineado_no_permitido_en_un_nudo() -> None:
+    """Chamartin (17000) junta C1, C2, C3, C8 y C10: cruzar familias alli es
+    adivinar. Solo se enlaza dentro de la misma familia."""
+    llegada = _trip("1092X1C1", "C1", ("X", "08:00:00"), ("17000", "08:30:00"))
+    salida = _trip("1092X2C3", "C3", ("17000", "08:35:00"), ("Y", "09:00:00"))
+    assert module._link_turnarounds([llegada, salida]) == {}
+
+
+def test_dos_salidas_candidatas_casi_a_la_vez_es_ambiguo() -> None:
+    """Una llegada y dos salidas de la misma familia separadas 1 min: no se sabe
+    cual hace el tren que llega. Se enlaza (para el aviso) pero marcado ambiguo,
+    y el tablon NO estima desde el."""
+    llegada = _trip("1092XC2-in", "C2", ("B", "07:30:00"), ("A", "08:00:00"))
+    sal1 = _trip("1092XC2-o1", "C2", ("A", "08:10:00"), ("B", "08:40:00"))
+    sal2 = _trip("1092XC2-o2", "C2", ("A", "08:11:00"), ("C", "08:45:00"))
+    enlaces = module._link_turnarounds([llegada, sal1, sal2])
+    assert enlaces["1092XC2-o1"].ambiguous is True
+
+
+def test_dos_llegadas_empatadas_es_ambiguo() -> None:
+    a1 = _trip("1092XC2-a1", "C2", ("B", "07:30:00"), ("A", "08:00:00"))
+    a2 = _trip("1092XC2-a2", "C2", ("C", "07:31:00"), ("A", "08:01:00"))
+    sal = _trip("1092XC2-out", "C2", ("A", "08:10:00"), ("B", "08:40:00"))
+    assert module._link_turnarounds([a1, a2, sal])["1092XC2-out"].ambiguous is True
+
+
+def test_enlace_claro_no_es_ambiguo() -> None:
+    llegada = _trip("1092XC4-in", "C4b", ("B", "07:30:00"), ("A", "08:00:00"))
+    salida = _trip("1092XC4-out", "C4b", ("A", "08:14:00"), ("B", "08:40:00"))
+    assert module._link_turnarounds([llegada, salida])["1092XC4-out"].ambiguous is False
+
+
+def test_horario_publica_ambiguedad(tmp_path: Path) -> None:
+    gtfs = tmp_path
+    (gtfs / "routes.txt").write_text("route_id,route_short_name\nR2,C2\n")
+    (gtfs / "stops.txt").write_text("stop_id,stop_name\nA,Alfa\nB,Beta\nC,Gamma\n")
+    (gtfs / "calendar.txt").write_text(
+        "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\n"
+        "1092X,0,0,1,0,0,0,0,20261021,20261021\n")
+    (gtfs / "trips.txt").write_text(
+        "route_id,service_id,trip_id,trip_headsign,wheelchair_accessible,block_id,shape_id\n"
+        "R2,1092X,1092X1C2,,1,1092X1,s\nR2,1092X,1092X2C2,,1,1092X2,s\n"
+        "R2,1092X,1092X3C2,,1,1092X3,s\n")
+    (gtfs / "stop_times.txt").write_text(
+        "trip_id,arrival_time,departure_time,stop_id,stop_sequence\n"
+        "1092X1C2,07:30:00,07:30:00,B,1\n1092X1C2,08:00:00,08:00:00,A,2\n"
+        "1092X2C2,08:10:00,08:10:00,A,1\n1092X2C2,08:40:00,08:40:00,B,2\n"
+        "1092X3C2,08:11:00,08:11:00,A,1\n1092X3C2,08:45:00,08:45:00,C,2\n")
+    dia = module.build_schedules(gtfs)["1092X"]["stations"]
+    salida = next(e for e in dia["A"] if e["trip"] == "1092X2C2")  # type: ignore[index]
+    assert salida["from"] == "1092X1C2"
+    assert salida["amb"] is True

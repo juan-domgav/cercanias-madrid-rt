@@ -239,15 +239,20 @@ def test_parada_intermedia_no_hereda_el_aviso_de_cabecera() -> None:
     assert d.inbound_delay_minutes is None
 
 
-def test_retraso_propio_de_cero_no_silencia_el_aviso() -> None:
-    """Un `delay` de 0 en un viaje que aun no ha salido es un marcador de
-    posicion, no una lectura. Tomarlo por bueno pintaba "en hora" con el tren
-    del enlace a 25 minutos, que es la peor mentira posible en un anden."""
+def test_retraso_propio_de_cero_manda_sobre_el_aviso() -> None:
+    """RB-008 (sustituye a "el 0 propio no silencia el aviso").
+
+    Se suponia que un ``delay`` 0 de un viaje que aun no ha salido era un marcador
+    de posicion. El 22/10/2026 eso pinto "sin confirmar" + "viene con +17" en un
+    20428 que estaba en el anden y salio en hora. Con el viaje en el feed, su dato
+    manda: ningun aviso desde el entrante."""
     parada = _enlace("20432", "09:05:00", "20431", 0)
     vivos = dict(_vivo("20431", 25))
     vivos[f"{SERV}20432C4b"] = LiveTrain(f"{SERV}20432C4b", 0, None, "17005")
     d = next_departures([parada], vivos, DepartureQuery(now_minutes=9*60, service_prefix=SERV))[0]
-    assert d.inbound_delay_minutes == 25, "el 0 propio no debe silenciar el aviso"
+    assert d.inbound_delay_minutes is None
+    assert d.located is True
+    assert d.shows_on_time is True
 
 
 def test_retraso_medido_lejos_de_cabecera_tambien_cuenta() -> None:
@@ -378,12 +383,11 @@ def test_retraso_absorbido_por_maniobra_larga_sigue_sin_avisar() -> None:
     assert d.inbound_delay_minutes is None
 
 
-def test_cero_de_marcador_no_se_presenta_como_en_hora() -> None:
-    """El feed publica delay=0 para viajes que aun no han salido.
+def test_cero_en_vivo_se_presenta_como_en_hora_aunque_el_entrante_vaya_tarde() -> None:
+    """RB-008 (sustituye a "cero de marcador no se presenta como en hora").
 
-    Con el enlace en riesgo, decir "En hora" deja a alguien tranquilo en el anden
-    mientras su tren esta a dieciseis minutos. Es el fallo que se vio en vivo.
-    """
+    Precedencia unica: el dato en vivo del propio viaje gana. El aviso del
+    entrante solo existe mientras el viaje NO esta en el feed."""
     parada = ScheduledStop(f"{SERV}20478C4b", "16:12:00", "C4b", "Parla", False,
                            f"{SERV}20481C4b", 8, True, "17005")
     vivos = {
@@ -393,8 +397,8 @@ def test_cero_de_marcador_no_se_presenta_como_en_hora() -> None:
     d = next_departures([parada], vivos,
                         DepartureQuery(now_minutes=16*60+11, service_prefix=SERV))[0]
     assert d.delay_minutes == 0
-    assert d.inbound_delay_minutes == 16, "el 0 del feed no silencia el enlace"
-    assert d.shows_on_time is False, "NO se puede decir 'en hora'"
+    assert d.inbound_delay_minutes is None, "el dato en vivo manda"
+    assert d.shows_on_time is True
 
 
 def test_cero_real_sin_enlace_en_riesgo_si_es_en_hora() -> None:

@@ -1,0 +1,17 @@
+{
+ "generated_at": "2026-10-21T13:26:00+00:00",
+ "vehicles": [
+  {
+   "trip_id": "1092X20479C4b",
+   "route": "C4b",
+   "lat": 40.54373,
+   "lon": -3.7003317,
+   "platform": "1",
+   "bearing": 347.02213815667227,
+   "next_stop_id": "17004",
+   "status": "IN_TRANSIT_TO",
+   "delay_seconds": 360
+  }
+ ],
+ "incidents": []
+}

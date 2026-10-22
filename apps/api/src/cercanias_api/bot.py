@@ -10,6 +10,7 @@ import unicodedata
 from dataclasses import dataclass, field
 from typing import Any
 
+from cercanias_domain.board_status import DepartureStatus, departure_status
 from cercanias_domain.station_view import Station, nearest_stations
 
 MAX_FEEDBACK_CHARS = 1000
@@ -77,7 +78,7 @@ def find_station(query: str, stations: list[Station]) -> Station | None:
     return min(contiene, key=lambda s: len(s.name)) if contiene else None
 
 
-def _format_special(d: dict[str, Any]) -> str:
+def _format_special(d: dict[str, Any], status: DepartureStatus) -> str:
     """Tren especial (SPECIAL_10_*): sin horario, asi que sin hora de salida.
 
     Mismo criterio que la web: no se pinta una hora como si fuera de horario ni
@@ -85,14 +86,30 @@ def _format_special(d: dict[str, Any]) -> str:
     """
     donde = "en el andén" if d.get("status") == "STOPPED_AT" else "llegando"
     anden = f"Andén <b>{d['platform']}</b>" if d.get("platform") else "Andén —"
-    estado = "SUPRIMIDO" if d.get("cancelled") else "tren especial"
-    texto = (
+    return (
         f"<b>{donde}</b> → {d.get('dest') or 'destino desconocido'}\n"
-        f"   {d.get('route', '')} tren {d.get('train', '')} · {anden} · {estado}"
+        f"   {d.get('route', '')} tren {d.get('train', '')} · {anden} · {status.label}"
     )
-    if d.get("at_terminus"):
-        texto += "\n   🏁 final de línea: puede ser una llegada, no una salida"
-    return texto
+
+
+def format_departure(d: dict[str, Any]) -> str:
+    """Una salida del tablon. Estado y avisos salen de :func:`departure_status`,
+    la MISMA funcion con la que la ingesta rellena ``display`` para la web
+    (RB-008): el bot no tiene su propia cascada de etiquetas."""
+    status = departure_status(d)
+    if d.get("special"):
+        cabecera = _format_special(d, status)
+    else:
+        hora = f"<b>{'≈ ' if status.approximate else ''}{d['eta']}</b>"
+        if status.show_scheduled:
+            hora += f" <s>{d['t']}</s>"
+        anden = f"Andén <b>{d['platform']}</b>" if d.get("platform") else "Andén —"
+        cabecera = (
+            f"{hora} → {d.get('dest') or '?'}\n"
+            f"   {d.get('route', '')} tren {d.get('train', '')} · {anden} · {status.label}"
+        )
+    avisos = [f"   {n.icon} {n.text}" for n in status.notices if n.kind != "special"]
+    return "\n".join([cabecera, *avisos])
 
 
 def format_departures(station: Station, salidas: list[dict[str, Any]], destinos: list[str]) -> str:
@@ -102,35 +119,7 @@ def format_departures(station: Station, salidas: list[dict[str, Any]], destinos:
     if len(destinos) > 1:
         lineas.append(f"<i>Sentidos: {' · '.join(destinos)}</i>")
     lineas.append("")
-    for d in salidas[:6]:
-        if d.get("special"):
-            lineas.append(_format_special(d))
-            continue
-        hora = f"<b>{d['eta']}</b>"
-        if d.get("delay"):
-            hora += f" <s>{d['t']}</s>"
-        retraso = (
-            "SUPRIMIDO" if d.get("cancelled")
-            else "sin datos en vivo" if d.get("delay") is None
-            else "en hora" if d.get("on_time")
-            else f"+{d['delay']} min" if d["delay"] > 0
-            else "sin confirmar"
-        )
-        anden = f"Andén <b>{d['platform']}</b>" if d.get("platform") else "Andén —"
-        lineas.append(
-            f"{hora} → {d.get('dest') or '?'}\n"
-            f"   {d.get('route','')} tren {d.get('train','')} · {anden} · {retraso}"
-        )
-        if d.get("inbound_delay"):
-            lineas.append(
-                f"   ⚠️ el tren que hace este servicio viene con +{d['inbound_delay']} min"
-            )
-        elif d.get("inbound_cancelled"):
-            lineas.append("   🚫 el tren que debia hacer este servicio esta SUPRIMIDO")
-        elif d.get("shortened"):
-            lineas.append("   ✂️ no efectua todas sus paradas: puede no llegar al destino")
-        elif d.get("unconfirmed"):
-            lineas.append("   ❓ sin confirmar: no localizamos este tren ni el que deberia traerlo")
+    lineas.extend(format_departure(d) for d in salidas[:6])
     lineas.append("\n<i>Andén y retraso vienen del feed en vivo; si el tren aún no "
                   "está localizado, no se muestran.</i>")
     return "\n".join(lineas)

@@ -31,6 +31,10 @@ from datetime import UTC, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from cercanias_domain.board_status import contradicts_live, departure_status
+from cercanias_domain.departures import (
+    PUBLISH_WINDOW_MINUTES as DEFAULT_PUBLISH_WINDOW_MINUTES,
+)
 from cercanias_domain.departures import (
     DepartureQuery,
     LiveTrain,
@@ -79,6 +83,26 @@ SECOND_SERVICE_MIN_SHARE = 0.15
 #: tiene que significar "esto ya no sirve", no "ha fallado un sondeo".
 STALE_WARNING_SECONDS = float(os.environ.get("STALE_WARNING_SECONDS", "240"))
 BOARDS_KEY = os.environ.get("BOARDS_KEY", "boards.json")
+#: Familias de linea en las que NO se estima la salida desde el enlace entrante
+#: (RB-007). Por defecto, todas las que NO superan la validacion contra el
+#: archivo del 21/10/2026 (retraso real de la vuelta a +-3 min del estimado en
+#: >= 90 % de n >= 30 enlaces observados). Solo C1 la supera (91 %, n=74); C4
+#: (C4a 36 %, C4b 47 %) no: alli Renfe cambia material en cabecera y el tren que
+#: llega no es el que sale. La tabla completa esta en RB-007. Se sobreescribe con
+#: la variable de entorno (lista separada por comas; vacia = estimar en todas).
+DEFAULT_INBOUND_ESTIMATE_EXCLUDED_ROUTES = "C2,C3,C4,C5,C7,C8,C9,C10"
+#: Ventana de publicacion de Renfe (RB-007): un viaje sin datos cuya salida de
+#: ORIGEN esta a mas de esto se muestra como "Renfe aun no lo publica".
+PUBLISH_WINDOW_MINUTES = int(
+    os.environ.get("PUBLISH_WINDOW_MINUTES", str(DEFAULT_PUBLISH_WINDOW_MINUTES))
+)
+INBOUND_ESTIMATE_EXCLUDED_ROUTES = frozenset(
+    r.strip()
+    for r in os.environ.get(
+        "INBOUND_ESTIMATE_EXCLUDED_ROUTES", DEFAULT_INBOUND_ESTIMATE_EXCLUDED_ROUTES
+    ).split(",")
+    if r.strip()
+)
 #: Los horarios viven en el bucket, un fichero por dia de servicio
 #: (``horarios/1030J.json``). Estaban empaquetados en la imagen y caducaron sin
 #: que nadie lo viera: cada regeneracion exigia reconstruir el contenedor, asi
@@ -286,17 +310,30 @@ def _load_day_schedule(publisher: Any, service: str) -> dict[str, list[Scheduled
     if not isinstance(datos, dict):
         _log("ERROR", f"horario {service} con forma inesperada", service=service)
         return {}
+    estaciones = datos.get("stations") or {}
+    # Salida de cada viaje en su origen (seq 1): la ventana de publicacion de
+    # Renfe se mide desde ahi, no desde la estacion del tablon.
+    origenes = {
+        d["trip"]: d["t"] for paradas in estaciones.values() for d in paradas if d.get("seq") == 1
+    }
     return {
         stop_id: [
             ScheduledStop(
                 d["trip"], d["t"], d.get("route", ""), d.get("dest"),
                 bool(d.get("terminates")), d.get("from"), d.get("slack"),
                 d.get("seq") == 1, stop_id,
+                inbound_ambiguous=bool(d.get("amb")),
+                origin_departure_hhmmss=origenes.get(d["trip"]),
             )
             for d in paradas
         ]
-        for stop_id, paradas in (datos.get("stations") or {}).items()
+        for stop_id, paradas in estaciones.items()
     }
+
+
+def _snapshot_is_fresh(snapshot: dict[str, Any], ahora: datetime) -> bool:
+    """¿Sirve el snapshot para proyectar? Mismo guard que los especiales (PR #7)."""
+    return _specials_observed_at(snapshot, ahora) is not None
 
 
 def _specials_observed_at(snapshot: dict[str, Any], ahora: datetime) -> datetime | None:
@@ -387,6 +424,7 @@ def _build_boards(
 
     # Especiales: solo si el snapshot es fresco, y con la hora en que se vieron.
     visto = _specials_observed_at(snapshot, ahora)
+    fresco = _snapshot_is_fresh(snapshot, ahora)
     if visto is None:
         live_tablon = {k: t for k, t in live.items() if not _is_special(k)}
         minuto_visto = None
@@ -413,7 +451,15 @@ def _build_boards(
             continue
         salidas = board_departures(
             horario, live_tablon,
-            DepartureQuery(now_minutes=minutos, service_prefix=servicio, limit=10),
+            DepartureQuery(
+                now_minutes=minutos, service_prefix=servicio, limit=10,
+                # Estimar desde el entrante SOLO con datos frescos (RB-007).
+                estimate_from_inbound=fresco,
+                estimate_excluded_routes=INBOUND_ESTIMATE_EXCLUDED_ROUTES,
+                # Sin snapshot fresco no sabemos que hay en el feed: no se
+                # afirma "no publicado".
+                publish_window_minutes=PUBLISH_WINDOW_MINUTES if fresco else None,
+            ),
             stop_id,
             specials_observed_minutes=minuto_visto,
         )
@@ -428,6 +474,13 @@ def _build_boards(
                     "dest": d.destination,
                     "train": d.train_number,
                     "delay": d.delay_minutes,
+                    # RB-007: retraso ESTIMADO desde el entrante, ya incluido en
+                    # "eta". "delay_source" dice de donde sale el retraso:
+                    # "live", "inbound_estimate" o null.
+                    "estimated_delay": d.estimated_delay_minutes,
+                    "delay_source": d.delay_source,
+                    # live > inbound_estimate > not_published > no_data (RB-007).
+                    "realtime_status": d.realtime_status,
                     "platform": d.platform,
                     "in": d.minutes_until,
                     "live": d.located,
@@ -446,6 +499,10 @@ def _build_boards(
                 for d in salidas
             ],
         }
+        # RB-008: el estado presentable lo decide UNA funcion (la misma que usa el
+        # bot). La web solo pinta "display"; no recalcula etiquetas ni avisos.
+        for fila in estaciones[stop_id]["departures"]:
+            fila["display"] = departure_status(fila).to_json()
     # Los horarios se generan por lotes de dias (ADR-012: el indice de calendario
     # avanza a diario). Cuando el servicio en circulacion cae fuera del lote, los
     # tablones salen vacios SIN error: es el mismo fallo silencioso de siempre, y
@@ -457,6 +514,32 @@ def _build_boards(
     con_salidas = sum(
         1 for e in estaciones.values() if any(not d["special"] for d in e["departures"])
     )
+    # Cuenta salidas (no trenes): un mismo viaje estimado aparece en varias
+    # estaciones de su recorrido.
+    estimadas = sum(
+        1 for e in estaciones.values() for d in e["departures"]
+        if d["delay_source"] == "inbound_estimate"
+    )
+    no_publicadas = sum(
+        1 for e in estaciones.values() for d in e["departures"]
+        if d["realtime_status"] == "not_published"
+    )
+    # Dentro de la ventana y sin rastro: la anomalia de verdad (para el vigia).
+    ausentes_en_ventana = sum(
+        1 for e in estaciones.values() for d in e["departures"]
+        if fresco and not d["special"] and d["realtime_status"] == "no_data"
+    )
+    # Invariante RB-008: una fila en vivo nunca lleva aviso de entrante ni
+    # "sin confirmar". Tiene que ser 0; si no, el tablon contradice al feed.
+    contradictorias = sum(
+        1 for e in estaciones.values() for d in e["departures"] if contradicts_live(d)
+    )
+    if contradictorias:
+        _log(
+            "ERROR",
+            f"{contradictorias} salidas en vivo con aviso que las contradice (RB-008)",
+            alert="departures_contradicting_live", count=contradictorias,
+        )
     especiales_en_tablon = sum(
         1 for e in estaciones.values() for d in e["departures"] if d["special"]
     )
@@ -497,6 +580,11 @@ def _build_boards(
             "no_departures": bool(servicio) and con_salidas == 0,
             "service_unknown_with_vehicles": service_unknown,
             "specials_hidden_stale": visto is None and any(_is_special(k) for k in live),
+            "departures_estimated_from_inbound": estimadas,
+            "inbound_estimates_disabled_stale": not fresco,
+            "departures_not_published": no_publicadas,
+            "departures_missing_in_window": ausentes_en_ventana,
+            "departures_contradicting_live": contradictorias,
         },
         "stations": estaciones,
     }

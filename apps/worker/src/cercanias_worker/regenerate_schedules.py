@@ -9,6 +9,7 @@ import sys
 from collections import defaultdict
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from itertools import pairwise
 from pathlib import Path
 
 from cercanias_connectors_renfe.gtfs_static_downloader import (
@@ -22,6 +23,18 @@ SCHEDULES_PREFIX = "horarios"
 SCHEDULE_CACHE_CONTROL = "public, max-age=3600"
 MADRID_PREFIX = "10"
 MAX_TURNAROUND_MINUTES = 40
+#: Dos candidatos (llegadas para una salida, o salidas para una llegada) a esta
+#: distancia o menos se consideran empatados: el enlace se publica marcado
+#: ``amb`` y el tablon no estima desde el (RB-007).
+AMBIGUITY_TIE_MINUTES = 2
+#: Cabeceras donde un tren cambia de familia de linea al dar la vuelta, y SOLO
+#: entre esas familias. Fuera de aqui el enlace exige la misma familia: en un
+#: nudo como Chamartin (C1, C2, C3, C8, C10) cruzar familias es adivinar, y el
+#: emparejamiento sin restriccion asignaba alli 280 vueltas C1<->C3<->C2<->C10
+#: que el feed no respalda. Ver docs/runbooks/RB-007 (tabla de validacion).
+INTERLINE_TERMINI: dict[str, frozenset[str]] = {
+    "12006": frozenset({"C8", "C9"}),  # Cercedilla: el C8 vuelve como C9 a Cotos
+}
 LINE_VARIANT_MIN_LENGTH = 3
 #: Renfe publica ~30 dias por delante. Menos de esto significa que el GTFS viene
 #: recortado o que el filtro de Madrid ha dejado de casar: hay que enterarse
@@ -49,6 +62,10 @@ class Trip:
     service_id: str
     route: str
     stops: list[StopTime] = field(default_factory=list)
+    #: ``block_id`` del GTFS. Renfe lo rellena con el propio numero de tren (un
+    #: viaje por bloque), asi que hoy no aporta nada; solo se usa si agrupa
+    #: dos o mas viajes.
+    block_id: str = ""
 
     @property
     def origin(self) -> StopTime:
@@ -63,6 +80,9 @@ class Trip:
 class Turnaround:
     inbound_trip_id: str
     slack_minutes: int
+    #: Habia otro candidato empatado (``AMBIGUITY_TIE_MINUTES``): no se sabe que
+    #: tren fisico hace el servicio.
+    ambiguous: bool = False
 
 
 def _gtfs_rows(path: Path) -> Iterator[dict[str, str]]:
@@ -117,7 +137,7 @@ def _load_madrid_trips(
         if not trip_id.startswith(MADRID_PREFIX) or service_id not in service_ids:
             continue
         route = routes.get(_row_value(row, "route_id"), "")
-        trips[trip_id] = Trip(trip_id, service_id, route)
+        trips[trip_id] = Trip(trip_id, service_id, route, block_id=_row_value(row, "block_id"))
     return trips
 
 
@@ -158,8 +178,43 @@ def _line_family(route: str) -> str:
     return normalized
 
 
+def _compatible(arrival: Trip, departure: Trip) -> bool:
+    """Misma familia de linea, o un interlineado validado en esa cabecera."""
+    fam_in, fam_out = _line_family(arrival.route), _line_family(departure.route)
+    if fam_in == fam_out:
+        return True
+    permitidas = INTERLINE_TERMINI.get(departure.origin.stop_id)
+    return permitidas is not None and {fam_in, fam_out} <= permitidas
+
+
+def _gap(arrival: Trip, departure: Trip) -> int:
+    return _minutes(departure.origin.departure_time) - _minutes(arrival.terminal.arrival_time)
+
+
+def _block_links(trips: list[Trip]) -> dict[str, Turnaround]:
+    """Enlaces declarados por ``block_id`` (solo bloques de dos o mas viajes)."""
+    bloques: dict[str, list[Trip]] = defaultdict(list)
+    for trip in trips:
+        if trip.block_id and trip.stops:
+            bloques[trip.block_id].append(trip)
+    links: dict[str, Turnaround] = {}
+    for viajes in bloques.values():
+        if len(viajes) < 2:  # noqa: PLR2004 - un bloque de un viaje no enlaza nada
+            continue
+        viajes.sort(key=lambda t: _minutes(t.origin.departure_time))
+        for previo, siguiente in pairwise(viajes):
+            if previo.terminal.stop_id == siguiente.origin.stop_id and _gap(previo, siguiente) >= 0:
+                links[siguiente.trip_id] = Turnaround(previo.trip_id, _gap(previo, siguiente))
+    return links
+
+
 def _link_turnarounds(trips: list[Trip]) -> dict[str, Turnaround]:
     """Une llegadas terminales a salidas posteriores sin reutilizar material.
+
+    Primero manda ``block_id`` cuando agrupa viajes de verdad. Para el resto se
+    infiere: misma estacion (fin del entrante = origen del saliente), familia
+    compatible (:func:`_compatible`) y salida entre 0 y
+    ``MAX_TURNAROUND_MINUTES`` despues de la llegada.
 
     Procesar por hora de salida y consumir la llegada elegida hace el
     emparejamiento 1:1 y determinista: la primera salida se queda la llegada y
@@ -172,7 +227,14 @@ def _link_turnarounds(trips: list[Trip]) -> dict[str, Turnaround]:
     consumirá la salida siguiente. Exigir candidata única descartaba la mitad de
     los enlaces reales (47 % de cobertura frente al 90 % alcanzable) y dejaba sin
     aviso a andenes donde el enlace sí era determinable.
+
+    Lo que SI es ambiguo es un empate (``AMBIGUITY_TIE_MINUTES``): dos llegadas
+    a la par para una salida, o dos salidas a la par que podrian llevarse la
+    misma llegada. El enlace se conserva, marcado ``ambiguous``.
     """
+    links = _block_links(trips)
+    used_arrivals: set[str] = {link.inbound_trip_id for link in links.values()}
+
     arrivals_by_station: dict[str, list[Trip]] = defaultdict(list)
     departures: list[Trip] = []
     for trip in trips:
@@ -181,29 +243,42 @@ def _link_turnarounds(trips: list[Trip]) -> dict[str, Turnaround]:
         arrivals_by_station[trip.terminal.stop_id].append(trip)
         departures.append(trip)
 
-    links: dict[str, Turnaround] = {}
-    used_arrivals: set[str] = set()
-    ordered_departures = sorted(
-        departures, key=lambda trip: (_minutes(trip.origin.departure_time), trip.trip_id)
-    )
-    for departure in ordered_departures:
-        departure_time = _minutes(departure.origin.departure_time)
-        candidates = [
+    def candidatos(departure: Trip) -> list[Trip]:
+        return [
             arrival
             for arrival in arrivals_by_station[departure.origin.stop_id]
             if arrival.trip_id not in used_arrivals
             and arrival.trip_id != departure.trip_id
-            and _line_family(arrival.route) == _line_family(departure.route)
-            and 0 <= departure_time - _minutes(arrival.terminal.arrival_time) <= MAX_TURNAROUND_MINUTES
+            and _compatible(arrival, departure)
+            and 0 <= _gap(arrival, departure) <= MAX_TURNAROUND_MINUTES
         ]
+
+    ordered_departures = sorted(
+        departures, key=lambda trip: (_minutes(trip.origin.departure_time), trip.trip_id)
+    )
+    for departure in ordered_departures:
+        if departure.trip_id in links:
+            continue
+        candidates = sorted(candidatos(departure), key=lambda a: _gap(a, departure))
         if not candidates:
             continue
-        inbound = min(
-            candidates, key=lambda a: departure_time - _minutes(a.terminal.arrival_time)
+        inbound = candidates[0]
+        gap = _gap(inbound, departure)
+        empate_llegadas = (
+            len(candidates) > 1 and _gap(candidates[1], departure) - gap <= AMBIGUITY_TIE_MINUTES
+        )
+        empate_salidas = any(
+            otra.trip_id != departure.trip_id
+            and otra.trip_id not in links
+            and otra.origin.stop_id == departure.origin.stop_id
+            and _compatible(inbound, otra)
+            and 0 <= _gap(inbound, otra) <= MAX_TURNAROUND_MINUTES
+            and abs(_gap(inbound, otra) - gap) <= AMBIGUITY_TIE_MINUTES
+            for otra in ordered_departures
         )
         used_arrivals.add(inbound.trip_id)
         links[departure.trip_id] = Turnaround(
-            inbound.trip_id, departure_time - _minutes(inbound.terminal.arrival_time)
+            inbound.trip_id, gap, ambiguous=empate_llegadas or empate_salidas
         )
     return links
 
@@ -240,6 +315,8 @@ def build_schedules(gtfs_dir: Path) -> dict[str, dict[str, object]]:
                         "terminates": stop.sequence == terminal.sequence,
                         "from": link.inbound_trip_id if link else None,
                         "slack": link.slack_minutes if link else None,
+                        # Solo cuando es verdad: no engordar el JSON con falses.
+                        **({"amb": True} if link and link.ambiguous else {}),
                     }
                 )
         for departures in stations.values():

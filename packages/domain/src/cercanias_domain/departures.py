@@ -19,6 +19,11 @@ Reglas que no son evidentes y que costaron descubrir:
   sólo recorre el horario no los ve nunca, aunque estén parados en el andén.
   Se añaden aparte, desde el feed, en su parada actual o próxima
   (:func:`live_special_departures`). Ver RB-006.
+- **Renfe no publica la vuelta hasta poco antes de salir.** Un viaje que empieza
+  en cabecera dando la vuelta a otro tren no aparece en el feed hasta ~30 min
+  antes de su salida (observado el 21/10/2026 en Colmenar Viejo y Parla). Si el
+  entrante sí está localizado, se ESTIMA la salida (:func:`estimate_from_inbound`)
+  y se etiqueta como estimada, nunca como dato en vivo. Ver RB-007.
 """
 
 from __future__ import annotations
@@ -63,6 +68,23 @@ UNCONFIRMED_LEAD_MINUTES = 5
 #: que sí la cambian.
 INBOUND_WARNING_FLOOR_MINUTES = 3
 
+#: Origen del retraso mostrado (``Departure.delay_source``).
+DELAY_SOURCE_LIVE = "live"
+DELAY_SOURCE_INBOUND_ESTIMATE = "inbound_estimate"
+
+#: Renfe publica cada viaje en GTFS-RT unos 30 min antes de su salida de
+#: CABECERA (archivo del 21/10/2026, n=850: p10 29, mediana 30, p90 30 min).
+#: Un viaje sin datos cuya salida de origen queda a MAS de esto no es una
+#: anomalia: "Renfe aun no lo publica". Dentro de la ventana, faltar si lo es.
+#: Configurable en la ingesta con ``PUBLISH_WINDOW_MINUTES``. Ver RB-007.
+PUBLISH_WINDOW_MINUTES = 30
+
+#: ``Departure.realtime_status``, por orden de precedencia.
+REALTIME_LIVE = "live"
+REALTIME_INBOUND_ESTIMATE = "inbound_estimate"
+REALTIME_NOT_PUBLISHED = "not_published"
+REALTIME_NO_DATA = "no_data"
+
 
 @dataclass(frozen=True)
 class ScheduledStop:
@@ -94,6 +116,12 @@ class ScheduledStop:
     #: Estación de origen, para comprobar que el retraso del entrante está medido
     #: precisamente ahí y no ocho paradas antes.
     origin_stop_id: str | None = None
+    #: El enlace se eligió entre candidatos casi empatados: no se sabe qué tren
+    #: físico hará el servicio, así que NO se estima nada desde el entrante.
+    inbound_ambiguous: bool = False
+    #: Hora de salida del viaje en su ORIGEN (``seq == 1``). La ventana de
+    #: publicacion de Renfe se mide desde ahi, no desde esta estacion.
+    origin_departure_hhmmss: str | None = None
 
 
 @dataclass(frozen=True)
@@ -158,6 +186,33 @@ class Departure:
     #: Especial en una estación que para su línea es sólo cabecera: puede estar
     #: llegando al final de su recorrido, no saliendo.
     at_terminus: bool = False
+    #: Retraso ESTIMADO desde el enlace entrante cuando el propio viaje aún no
+    #: está en el feed (RB-007). Ya incluido en ``expected_hhmm``. No es un dato
+    #: en vivo: ``delay_minutes`` sigue en ``None`` y ``located`` en ``False``.
+    estimated_delay_minutes: int | None = None
+    #: Sin dato en vivo ni estimado, y su salida de origen esta a mas de
+    #: ``PUBLISH_WINDOW_MINUTES``: Renfe aun no lo publica. No es una anomalia.
+    not_published: bool = False
+
+    @property
+    def delay_source(self) -> str | None:
+        """``"live"``, ``"inbound_estimate"`` o ``None`` (sin dato)."""
+        if self.delay_minutes is not None:
+            return DELAY_SOURCE_LIVE
+        if self.estimated_delay_minutes is not None:
+            return DELAY_SOURCE_INBOUND_ESTIMATE
+        return None
+
+    @property
+    def realtime_status(self) -> str:
+        """``live`` > ``inbound_estimate`` > ``not_published`` > ``no_data``."""
+        if self.located:
+            return REALTIME_LIVE
+        if self.estimated_delay_minutes is not None:
+            return REALTIME_INBOUND_ESTIMATE
+        if self.not_published:
+            return REALTIME_NOT_PUBLISHED
+        return REALTIME_NO_DATA
 
     @property
     def at_risk(self) -> bool:
@@ -168,10 +223,9 @@ class Departure:
     def shows_on_time(self) -> bool:
         """¿Puede afirmarse "en hora"?
 
-        Un ``delay`` de 0 en un viaje que aún no ha salido es un marcador de
-        posición del feed, no una lectura. Con el enlace en riesgo, presentarlo
-        como "en hora" es la peor forma de equivocarse: alguien se queda en el
-        andén tranquilo mientras su tren está a dieciséis minutos.
+        Sí cuando el propio viaje está en el feed con ``delay <= 0`` (RB-008: el
+        dato en vivo manda). ``at_risk`` sólo puede ser cierto para un viaje que
+        NO está en el feed, así que aquí sólo frena lo que no tiene dato propio.
         """
         return (
             self.delay_minutes is not None
@@ -244,14 +298,72 @@ class DepartureQuery:
     #: corriendo al andén.
     grace_minutes: int = 3
     limit: int = 6
+    #: Estimar la salida desde el enlace entrante (RB-007). Desactivado por
+    #: defecto: quien llama lo activa SOLO con un snapshot fresco (guard de
+    #: PR #7). Con datos conservados, proyectar sería inventar.
+    estimate_from_inbound: bool = False
+    #: Familias de línea (``C4``, ``C8``…) cuyo emparejamiento de cabecera no
+    #: está validado: ni se estima (RB-007) ni se avisa de "el tren que hace este
+    #: servicio viene con +N" (RB-008). Configuración, no código.
+    estimate_excluded_routes: frozenset[str] = frozenset()
+    #: Ventana de publicacion de Renfe. ``None`` = no afirmar "no publicado"
+    #: (snapshot viejo o degradado: no sabemos que hay en el feed).
+    publish_window_minutes: int | None = None
+
+
+def estimate_from_inbound(inbound_delay_minutes: int, scheduled_layover_minutes: int) -> int:
+    """Retraso proyectado de la vuelta: ``max(0, retraso - holgura)``.
+
+    ``holgura = maniobra programada - MIN_PHYSICAL_TURNAROUND_MINUTES``: lo que
+    el entrante puede llegar tarde sin que la vuelta se resienta. Un adelanto
+    jamás se propaga: el tren no sale antes de su hora.
+    """
+    holgura = scheduled_layover_minutes - MIN_PHYSICAL_TURNAROUND_MINUTES
+    return max(0, inbound_delay_minutes - holgura)
+
+
+def _route_family(stop: ScheduledStop) -> str:
+    parsed = parse_trip_id(stop.trip_id)
+    return parsed.route_group if parsed else stop.route
+
+
+def _inbound_estimate(
+    stop: ScheduledStop,
+    live: dict[str, LiveTrain],
+    propio: LiveTrain | None,
+    query: DepartureQuery,
+) -> int | None:
+    """Retraso estimado desde el entrante, o ``None`` si no procede.
+
+    Vale en TODAS las paradas del viaje, no sólo en cabecera: mientras el viaje
+    no está en el feed, su retraso en Tres Cantos es el que arrastre desde
+    Colmenar. En cuanto aparece, su dato manda (``propio``).
+    """
+    if not query.estimate_from_inbound or propio is not None:
+        return None
+    if not stop.inbound_trip_id or stop.inbound_ambiguous:
+        return None
+    if stop.turnaround_slack_minutes is None:
+        return None
+    if _route_family(stop) in query.estimate_excluded_routes:
+        return None
+    entrante = live.get(stop.inbound_trip_id)
+    if entrante is None or entrante.cancelled or entrante.delay_seconds is None:
+        return None
+    return estimate_from_inbound(
+        round(entrante.delay_seconds / 60), stop.turnaround_slack_minutes
+    )
 
 
 def _inbound_warning(
-    stop: ScheduledStop, live: dict[str, LiveTrain], propio: LiveTrain | None
+    stop: ScheduledStop,
+    live: dict[str, LiveTrain],
+    propio: LiveTrain | None,
+    query: DepartureQuery,
 ) -> int | None:
     """Minutos de retraso del enlace entrante, si procede avisar.
 
-    Cinco condiciones, todas necesarias. Cada una corresponde a una forma
+    Todas las condiciones son necesarias. Cada una corresponde a una forma
     concreta de mentirle a alguien que está en un andén.
     """
     # 1. Sólo en el origen del viaje. En una parada intermedia el tren ya circula
@@ -259,10 +371,20 @@ def _inbound_warning(
     if not stop.is_origin or not stop.inbound_trip_id:
         return None
 
-    # 2. El dato propio manda... pero sólo si es un dato de verdad. Un `delay` de
-    #    0 en un viaje que aún no ha salido es un marcador de posición, no una
-    #    lectura: tomarlo por bueno pinta "en hora" con el tren a 25 minutos.
-    if propio is not None and propio.delay_seconds:
+    # 2. El dato EN VIVO del propio viaje manda, sea el que sea (RB-008). Antes un
+    #    ``delay`` de 0 se tomaba por "marcador de posición" y se avisaba igual:
+    #    el 22/10/2026 a las 08:36 el 20428 estaba en Colmenar, andén 3, +0, y
+    #    salió en hora (Renfe lo confirma), pero el bot decía "sin confirmar" y
+    #    "viene con +17" porque el 20427 —que NO lo formaba: en Colmenar Renfe
+    #    cambia de material— iba +17 por Tres Cantos. Con el viaje en el feed,
+    #    un aviso desde el entrante sólo puede contradecir el dato en vivo.
+    if propio is not None:
+        return None
+
+    # 3. Sólo con un emparejamiento fiable. Mismo criterio que la estimación
+    #    (RB-007): empate entre candidatos o familia de línea no validada
+    #    (C4b acierta el 47 %) = no se sabe qué tren físico hace el servicio.
+    if stop.inbound_ambiguous or _route_family(stop) in query.estimate_excluded_routes:
         return None
 
     entrante = live.get(stop.inbound_trip_id)
@@ -324,21 +446,36 @@ def next_departures(
         if tren is not None and tren.delay_seconds is not None:
             retraso = round(tren.delay_seconds / 60)
 
-        # El aviso del enlace SOLO aplica mientras no haya dato propio: en cuanto
-        # el tren aparece con su retraso, ese dato manda y el del enlace sobra.
-        retraso_enlace = _inbound_warning(stop, live, tren)
+        # El aviso del enlace SOLO aplica mientras el viaje no esté en el feed: en
+        # cuanto aparece, su dato manda y el del enlace sobra (RB-008).
+        retraso_enlace = _inbound_warning(stop, live, tren, query)
+        estimado = _inbound_estimate(stop, live, tren, query) if retraso is None else None
+        desfase = retraso if retraso is not None else (estimado or 0)
 
         entrante_vivo = live.get(stop.inbound_trip_id) if stop.inbound_trip_id else None
         suprimido = bool(tren and tren.cancelled)
-        entrante_suprimido = bool(stop.is_origin and entrante_vivo and entrante_vivo.cancelled)
+        # Con el propio viaje en el feed, la supresión del entrante queda
+        # desmentida: ya hay material haciendo el servicio (RB-008).
+        entrante_suprimido = bool(
+            tren is None and stop.is_origin and entrante_vivo and entrante_vivo.cancelled
+        )
 
         # Un tren que termina su recorrido desaparece del feed con normalidad: es
         # el caso NORMAL de una maniobra, no una señal de supresión. Por eso la
         # ausencia del entrante no genera aviso. Lo que sí se puede afirmar es que
         # no hay nada que respalde esta hora.
+        origen = stop.origin_departure_hhmmss
+        no_publicado = (
+            tren is None
+            and estimado is None
+            and query.publish_window_minutes is not None
+            and origen is not None
+            and parse_hhmm_to_minutes(origen) - now_minutes > query.publish_window_minutes
+        )
         sin_respaldo = (
             tren is None
             and retraso_enlace is None
+            and estimado is None
             and not entrante_suprimido
             and programada - now_minutes <= UNCONFIRMED_LEAD_MINUTES
         )
@@ -346,19 +483,21 @@ def next_departures(
         salidas.append(
             Departure(
                 scheduled_hhmm=format_minutes(programada),
-                expected_hhmm=format_minutes(programada + (retraso or 0)),
+                expected_hhmm=format_minutes(programada + desfase),
                 route=stop.route,
                 destination=stop.destination,
                 train_number=train_number(stop.trip_id),
                 delay_minutes=retraso,
                 platform=tren.platform if tren else None,
-                minutes_until=programada + (retraso or 0) - now_minutes,
+                minutes_until=programada + desfase - now_minutes,
                 located=tren is not None,
                 inbound_delay_minutes=retraso_enlace,
                 unconfirmed=sin_respaldo,
                 cancelled=suprimido,
                 inbound_cancelled=entrante_suprimido,
                 shortened=bool(tren and tren.skips_stops),
+                estimated_delay_minutes=estimado,
+                not_published=no_publicado,
             )
         )
 
