@@ -90,7 +90,12 @@ despliegue: `/health` ok, `boards.json` con `display` en 853/853 filas, 95
 estaciones, `health.departures_contradicting_live = 0`, snapshot fresco (~20 s).
 Cuando se mergeen PR #7 y #8, `main` vuelve a coincidir con producción.
 
-**Matiz al hecho 6:** desde RB-008 un viaje que está en el feed manda aunque su
+**Hecho 6, medido (RB-009, pendiente de despliegue):** con el tren aún en su
+origen (`STOPPED_AT`), el 54 % de los «0» de Renfe salieron ≥3 min tarde
+(19-22/10/2026, n=2.387; C4 67 %). Ese estado es `pending_departure`, nunca
+«en hora». La salida es la transición a `IN_TRANSIT_TO`.
+
+**Matiz al hecho 6 (anterior):** desde RB-008 un viaje que está en el feed manda aunque su
 `delay` sea 0; el aviso de entrante sólo sale sin dato propio y en líneas con
 emparejamiento validado (hoy C1). Ver `docs/runbooks/RB-008-bot-boards-inconsistent.md`.
 

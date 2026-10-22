@@ -106,12 +106,33 @@ def test_linea_excluida_por_configuracion(monkeypatch: pytest.MonkeyPatch, tmp_p
 
 
 def test_la_vuelta_en_el_feed_anula_la_estimacion(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Ya salió de cabecera (IN_TRANSIT_TO): su dato manda."""
+    snap = _snapshot(delay_min=20)
+    snap["vehicles"].append({"trip_id": "1092X20476C4b", "route": "C4b", "platform": "3",
+                             "next_stop_id": TRES_CANTOS, "status": "IN_TRANSIT_TO",
+                             "delay_seconds": 120})
+    boards = _boards(monkeypatch, tmp_path, snap)
+    d = _tren(boards, TRES_CANTOS, "20476")
+    assert (d["delay_source"], d["delay"], d["estimated_delay"]) == ("live", 2, None)
+    assert d["pending_departure"] is False
+
+
+def test_la_vuelta_aun_en_cabecera_queda_pendiente_de_salir(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """RB-009: en el feed pero STOPPED_AT en Colmenar antes de su hora: el delay
+    del feed no es una medida, y en C4 no se estima (ORIGIN_ESTIMATE_ROUTES vacío)."""
     snap = _snapshot(delay_min=20)
     snap["vehicles"].append({"trip_id": "1092X20476C4b", "route": "C4b", "platform": "3",
                              "next_stop_id": COLMENAR, "status": "STOPPED_AT", "delay_seconds": 120})
     boards = _boards(monkeypatch, tmp_path, snap)
-    d = _tren(boards, COLMENAR, "20476")
-    assert (d["delay_source"], d["delay"], d["estimated_delay"]) == ("live", 2, None)
+    for parada in (COLMENAR, TRES_CANTOS):
+        d = _tren(boards, parada, "20476")
+        assert d["live"] is True and d["pending_departure"] is True
+        assert (d["delay"], d["estimated_delay"], d["inbound_delay"]) == (None, None, None)
+        assert d["realtime_status"] == "pending_departure"
+        assert d["display"]["label"] == "pendiente de salir · Renfe aún no da retraso"
+    assert boards["health"]["departures_contradicting_live"] == 0
 
 
 def test_enlace_ambiguo_en_el_horario_no_estima(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

@@ -103,6 +103,12 @@ INBOUND_ESTIMATE_EXCLUDED_ROUTES = frozenset(
     ).split(",")
     if r.strip()
 )
+#: Familias en las que se estima la salida de un tren que sigue en cabecera antes
+#: de su hora (RB-009). Lista PERMITIDA, vacia por defecto: con el archivo del
+#: 19-22/10/2026 ninguna linea llega a >= 80 % a +-3 min (5 y 10 min antes).
+ORIGIN_ESTIMATE_ROUTES = frozenset(
+    r.strip() for r in os.environ.get("ORIGIN_ESTIMATE_ROUTES", "").split(",") if r.strip()
+)
 #: Los horarios viven en el bucket, un fichero por dia de servicio
 #: (``horarios/1030J.json``). Estaban empaquetados en la imagen y caducaron sin
 #: que nadie lo viera: cada regeneracion exigia reconstruir el contenedor, asi
@@ -316,12 +322,20 @@ def _load_day_schedule(publisher: Any, service: str) -> dict[str, list[Scheduled
     origenes = {
         d["trip"]: d["t"] for paradas in estaciones.values() for d in paradas if d.get("seq") == 1
     }
+    # Estacion de origen de cada viaje: si el tren sigue ahi, aun no ha salido y
+    # el delay del feed no es una medida (RB-009).
+    paradas_origen = {
+        d["trip"]: stop_id
+        for stop_id, paradas in estaciones.items()
+        for d in paradas
+        if d.get("seq") == 1
+    }
     return {
         stop_id: [
             ScheduledStop(
                 d["trip"], d["t"], d.get("route", ""), d.get("dest"),
                 bool(d.get("terminates")), d.get("from"), d.get("slack"),
-                d.get("seq") == 1, stop_id,
+                d.get("seq") == 1, paradas_origen.get(d["trip"]),
                 inbound_ambiguous=bool(d.get("amb")),
                 origin_departure_hhmmss=origenes.get(d["trip"]),
             )
@@ -456,6 +470,7 @@ def _build_boards(
                 # Estimar desde el entrante SOLO con datos frescos (RB-007).
                 estimate_from_inbound=fresco,
                 estimate_excluded_routes=INBOUND_ESTIMATE_EXCLUDED_ROUTES,
+                origin_estimate_routes=ORIGIN_ESTIMATE_ROUTES,
                 # Sin snapshot fresco no sabemos que hay en el feed: no se
                 # afirma "no publicado".
                 publish_window_minutes=PUBLISH_WINDOW_MINUTES if fresco else None,
@@ -495,6 +510,8 @@ def _build_boards(
                     "special": d.special,
                     "status": d.status,
                     "at_terminus": d.at_terminus,
+                    # RB-009: en el feed pero aun en cabecera sin salir.
+                    "pending_departure": d.pending_departure,
                 }
                 for d in salidas
             ],
@@ -585,6 +602,9 @@ def _build_boards(
             "departures_not_published": no_publicadas,
             "departures_missing_in_window": ausentes_en_ventana,
             "departures_contradicting_live": contradictorias,
+            "departures_pending_departure": sum(
+                1 for e in estaciones.values() for d in e["departures"] if d["pending_departure"]
+            ),
         },
         "stations": estaciones,
     }

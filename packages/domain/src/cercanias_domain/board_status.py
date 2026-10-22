@@ -5,8 +5,14 @@ las mismas columnas de ``boards.json``. Divergían en los huecos: una fila con
 ``live: true``, ``delay: 0`` y ``on_time: false`` caía en el ``else`` final y salía
 como "sin confirmar" con el tren localizado en el andén. Aquí se decide una vez:
 
-- **Precedencia**: suprimido > especial > EN VIVO > estimado desde el entrante >
-  no publicado > sin datos. Si el propio viaje está en el feed, eso manda.
+- **Precedencia**: suprimido > especial > EN VIVO (ya salió) > PENDIENTE DE SALIR
+  (en el feed pero aún en cabecera, RB-009) > estimado desde el entrante > no
+  publicado > sin datos. Si el propio viaje circula, su dato manda.
+- **Pendiente de salir no es "en hora"** (RB-009): antes de salir de cabecera
+  Renfe publica 0 o el retraso que arrastra la unidad, y en el archivo del
+  19-22/10/2026 el 54 % de esos "0" salieron con >= 3 min. Se dice
+  "pendiente de salir · Renfe aún no da retraso"; pasada su hora, "+N min · aún
+  sin salir" (lo que ya lleva esperando, cota inferior cierta).
 - **Con el viaje en vivo nunca** se dice "sin confirmar", ni "el tren que hace
   este servicio viene con +N", ni "el que debía hacerlo está suprimido": los tres
   contradicen el dato en vivo. Se filtran aquí aunque la fila los traiga (p. ej.
@@ -29,6 +35,7 @@ LATE_TONE_MINUTES = 3
 KIND_CANCELLED = "cancelled"
 KIND_SPECIAL = "special"
 KIND_LIVE = "live"
+KIND_PENDING_DEPARTURE = "pending_departure"
 KIND_INBOUND_ESTIMATE = "inbound_estimate"
 KIND_NOT_PUBLISHED = "not_published"
 KIND_NO_DATA = "no_data"
@@ -84,18 +91,30 @@ def is_live(row: Mapping[str, Any]) -> bool:
     return row.get("delay") is not None
 
 
+def is_pending_departure(row: Mapping[str, Any]) -> bool:
+    """En el feed pero aún en su estación de origen sin salir (RB-009)."""
+    return bool(row.get("pending_departure")) or row.get("realtime_status") == "pending_departure"
+
+
+def is_measured(row: Mapping[str, Any]) -> bool:
+    """¿Hay un retraso MEDIDO del propio viaje? (circulando, o ya pasada su hora en cabecera)."""
+    return is_live(row) and not (is_pending_departure(row) and row.get("delay") is None)
+
+
 def _kind(row: Mapping[str, Any], live: bool) -> str:
-    if row.get("cancelled"):
-        return KIND_CANCELLED
-    if row.get("special"):
-        return KIND_SPECIAL
-    if live:
-        return KIND_LIVE
-    if row.get("delay_source") == "inbound_estimate" or row.get("realtime_status") == "inbound_estimate":
-        return KIND_INBOUND_ESTIMATE
-    if row.get("realtime_status") == "not_published":
-        return KIND_NOT_PUBLISHED
-    return KIND_NO_DATA
+    estimado = (
+        row.get("delay_source") == "inbound_estimate"
+        or row.get("realtime_status") == "inbound_estimate"
+    )
+    reglas = (
+        (bool(row.get("cancelled")), KIND_CANCELLED),
+        (bool(row.get("special")), KIND_SPECIAL),
+        (live and is_pending_departure(row), KIND_PENDING_DEPARTURE),
+        (live, KIND_LIVE),
+        (estimado, KIND_INBOUND_ESTIMATE),
+        (row.get("realtime_status") == "not_published", KIND_NOT_PUBLISHED),
+    )
+    return next((kind for cumple, kind in reglas if cumple), KIND_NO_DATA)
 
 
 #: Etiquetas que no dependen de ningún número.
@@ -117,9 +136,22 @@ def _live_label_tone(delay: int | None) -> tuple[str, str]:
     return "en hora", "ontime"
 
 
+def _pending_label_tone(row: Mapping[str, Any]) -> tuple[str, str]:
+    delay = row.get("delay")
+    if delay is not None and delay > 0:
+        # Pasada su hora y aún en el andén: lo que lleva es seguro, puede ser más.
+        return f"+{delay} min · aún sin salir", "late" if delay > LATE_TONE_MINUTES else "ontime"
+    if row.get("estimated_delay") is not None:
+        est = row["estimated_delay"]
+        return (f"≈ +{est} min (estimado)" if est > 0 else "≈ en hora (estimado)"), "estimated"
+    return "pendiente de salir · Renfe aún no da retraso", "neutral"
+
+
 def _label_tone(kind: str, row: Mapping[str, Any]) -> tuple[str, str]:
     if kind == KIND_LIVE:
         return _live_label_tone(row.get("delay"))
+    if kind == KIND_PENDING_DEPARTURE:
+        return _pending_label_tone(row)
     if kind == KIND_INBOUND_ESTIMATE:
         est = row.get("estimated_delay") or 0
         return (f"≈ +{est} min (estimado)" if est > 0 else "≈ en hora (estimado)"), "estimated"
@@ -148,6 +180,19 @@ def _notices(kind: str, row: Mapping[str, Any], live: bool) -> tuple[Notice, ...
         avisos.append(Notice(
             "at_terminus", "🏁", "final de línea: puede ser una llegada, no una salida",
             "Final de línea: puede ser una llegada, no una salida."))
+    if kind == KIND_PENDING_DEPARTURE:
+        if row.get("estimated_delay") is not None and row.get("delay") is None:
+            avisos.append(Notice(
+                "estimated", "≈", "estimado por el tren que llega a cabecera; aún no ha salido",
+                "Estimado a partir del tren que llega a cabecera para dar la vuelta. "
+                "Este tren aún no ha salido y Renfe no da su retraso hasta que sale."))
+        if row.get("inbound_delay") and row.get("delay") is None:
+            # Sólo llega aquí en líneas validadas (ORIGIN_ESTIMATE_ROUTES).
+            n = row["inbound_delay"]
+            avisos.append(Notice(
+                "inbound_delay", "⚠️", f"posible retraso: el tren de llegada viene con +{n} min",
+                f"Posible retraso: el tren que llega a cabecera viene con +{n} min."))
+        return tuple(avisos)
     if live:
         # El dato en vivo manda: nada que lo contradiga (RB-008).
         return tuple(avisos)
@@ -178,9 +223,13 @@ def departure_status(row: Mapping[str, Any]) -> DepartureStatus:
     live = is_live(row)
     kind = _kind(row, live)
     label, tone = _label_tone(kind, row)
-    approximate = kind == KIND_INBOUND_ESTIMATE
+    approximate = kind == KIND_INBOUND_ESTIMATE or (
+        kind == KIND_PENDING_DEPARTURE
+        and row.get("delay") is None
+        and row.get("estimated_delay") is not None
+    )
     show_scheduled = bool(
-        (kind == KIND_LIVE and row.get("delay"))
+        (kind in (KIND_LIVE, KIND_PENDING_DEPARTURE) and row.get("delay"))
         or (approximate and row.get("estimated_delay"))
     )
     return DepartureStatus(
@@ -198,7 +247,13 @@ def contradicts_live(row: Mapping[str, Any]) -> bool:
 
     Invariante de la ingesta: debe ser siempre ``False``. Se cuenta en la salud de
     ``boards.json`` (``departures_contradicting_live``) para detectarlo en RB-008.
+
+    Un tren localizado nunca es ``unconfirmed``. Un aviso de entrante sólo
+    contradice un retraso MEDIDO: con el tren aún en cabecera antes de su hora
+    (RB-009) no hay medida que contradecir.
     """
     if not is_live(row) or row.get("special"):
         return False
-    return bool(row.get("inbound_delay") or row.get("unconfirmed") or row.get("inbound_cancelled"))
+    if row.get("unconfirmed"):
+        return True
+    return is_measured(row) and bool(row.get("inbound_delay") or row.get("inbound_cancelled"))

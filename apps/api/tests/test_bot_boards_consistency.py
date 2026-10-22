@@ -71,13 +71,18 @@ def test_20428_en_el_tablon_en_vivo_y_en_hora_sin_aviso(boards: dict[str, Any]) 
     assert boards["health"]["departures_contradicting_live"] == 0
 
 
-def test_bot_colmenar_viejo_0836_dice_en_hora(boards: dict[str, Any]) -> None:
+def test_bot_colmenar_viejo_0836_no_contradice_ni_inventa(boards: dict[str, Any]) -> None:
+    """RB-008 + RB-009: el 20428 ya ha salido (IN_TRANSIT_TO) y salio en hora; los
+    20430/20432/20434 siguen STOPPED_AT en Colmenar antes de su hora y Renfe da 0,
+    que no es una medida (salieron +8, +6, +8): "pendiente de salir", nunca "en hora"."""
     t = _proximos(boards)
     assert "sin confirmar" not in t
     assert "viene con" not in t
-    for tren in ("20428", "20430", "20432", "20434"):
-        assert f"C4b tren {tren} · Andén <b>3</b> · en hora" in t
     assert "<b>08:33</b> → Parla\n   C4b tren 20428 · Andén <b>3</b> · en hora\n<b>08:43</b>" in t
+    for tren in ("20430", "20432", "20434"):
+        assert (
+            f"C4b tren {tren} · Andén <b>3</b> · pendiente de salir · Renfe aún no da retraso" in t
+        )
 
 
 def test_bot_y_tablon_coinciden_en_cada_salida(boards: dict[str, Any]) -> None:

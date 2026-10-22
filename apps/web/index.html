@@ -266,7 +266,7 @@ function renderTrains() {
         <div class="meta" style="font-size:1rem;color:var(--fg)"><strong>→ ${d.dest || "destino desconocido"}</strong></div>
         <div class="meta" style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
           ${anden}<span>${d.special ? (d.status === "STOPPED_AT" ? "en el andén" : "llegando")
-            : d.in <= 0 ? "saliendo" : `en ${d.in} min`}</span>
+            : d.in <= 0 ? (d.pending_departure ? "en el andén, aún sin salir" : "saliendo") : `en ${d.in} min`}</span>
           ${d.live || noPublicado ? "" : '<span style="opacity:.7">· aún no localizado</span>'}
         </div>
         ${avisos}

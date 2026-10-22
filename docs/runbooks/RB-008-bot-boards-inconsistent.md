@@ -103,6 +103,10 @@ Requiere el OK de Juan. Orden recomendado (cada paso es seguro por sí solo):
   las versiones anteriores de web y bot los ignoran.
 
 ## Riesgo conocido
+**Resuelto en RB-009:** con el tren aún en su origen el `delay` de Renfe no es
+una medida (54 % de los «0» salieron ≥3 min tarde, 19-22/10/2026). Ahora se dice
+«pendiente de salir · Renfe aún no da retraso»; el dato en vivo manda en cuanto sale.
+
 El aviso de entrante ya no aparece sobre un viaje en vivo aunque su `delay` 0
 sea, de verdad, un marcador previo a la salida (caso del 21/08, Colmenar 16:12).
 Se acepta: un aviso desde un emparejamiento no validado contradecía datos
