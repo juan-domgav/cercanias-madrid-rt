@@ -70,27 +70,30 @@ Todo esto está **medido**, no supuesto. Cada uno costó una avería o una revis
   cada enlace, no a una mediana de población. Un aviso que no aporta enseña a
   ignorar los que sí.
 
-## Despliegue actual (2026-10-22, RB-008)
+## Despliegue actual (2026-10-22, RB-009)
 
-Producción corre la rama `feat/estimate-from-inbound` en `03c0967` (PR #7 +
-PR #8 + RB-008), **aún sin mergear en `main`**. Desplegado el 22/10 entre las
-15:30 y las 15:37 (Madrid) con el OK de Juan, en el orden de RB-008:
+Producción corre la rama `fix/origin-delay-placeholder` en `42234c2` (PR #9,
+CI verde), **aún sin mergear en `main`** (`main` = `72d72a0`, RB-008). Desplegado
+el 22/10 entre las 17:53 y las 17:59 (Madrid) con el OK de Juan, en el orden de
+RB-008/RB-009, desde un `git archive` limpio de `42234c2`:
 
 | Pieza | Ahora | Rollback (anterior, = `main`) |
 |---|---|---|
-| API `cercanias-api` | revisión `cercanias-api-00006-v2z` (`cercanias-api@sha256:4858e269…d807`) | `gcloud run services update-traffic cercanias-api --region europe-southwest1 --to-revisions cercanias-api-00005-7sk=100` |
-| Job `cercanias-ingesta` | `cercanias-ingesta@sha256:d44a820a…94f7f` | `gcloud run jobs update cercanias-ingesta --region europe-southwest1 --image europe-southwest1-docker.pkg.dev/cercanias-en-hora/cloud-run-source-deploy/cercanias-ingesta@sha256:6df10a54004ba6ba6e7065da3716ef0db595190ccc4eece9638cf9bd8b56f8c8` |
-| Web `index.html` | generación `1792676247042413` (= `apps/web/index.html` de `03c0967`) | subir `apps/web/index.html` de `main` (`a7b11ac`) con `--cache-control="public, max-age=60" --content-type="text/html"` (antes: generación `1792504396121694`) |
+| API `cercanias-api` | revisión `cercanias-api-00007-vcv` (`cercanias-api@sha256:44a51d4f…aa85`) | `gcloud run services update-traffic cercanias-api --region europe-southwest1 --to-revisions cercanias-api-00006-v2z=100` |
+| Job `cercanias-ingesta` | `cercanias-ingesta@sha256:646a4d8b…083294` | `gcloud run jobs update cercanias-ingesta --region europe-southwest1 --image europe-southwest1-docker.pkg.dev/cercanias-en-hora/cloud-run-source-deploy/cercanias-ingesta@sha256:d44a820af87f323f4832abdf1a98264b3a1994542d5dc15f51c5e0ccf9694f7f` |
+| Web `index.html` | generación `1792684768397146` (= `apps/web/index.html` de `42234c2`) | subir `apps/web/index.html` de `main` (`72d72a0`) con `--cache-control="public, max-age=60" --content-type="text/html"` (antes: generación `1792676247042413`) |
 
-API: imagen completa `europe-southwest1-docker.pkg.dev/cercanias-en-hora/cloud-run-source-deploy/cercanias-api@sha256:4858e26969f1a8ee07d00caf7f83783f2ebaceda7223b13c8c4a806981b7d807`
-(anterior `…@sha256:eadb687959e9be4e30ca81e0932d64b063f40d006cdd7e2dfb1b116fc6c0a96f`).
-Ingesta: `…cercanias-ingesta@sha256:d44a820af87f323f4832abdf1a98264b3a1994542d5dc15f51c5e0ccf9694f7f`.
-Env, secretos, cuenta de servicio y Scheduler sin cambios. Verificación tras el
-despliegue: `/health` ok, `boards.json` con `display` en 853/853 filas, 95
-estaciones, `health.departures_contradicting_live = 0`, snapshot fresco (~20 s).
-Cuando se mergeen PR #7 y #8, `main` vuelve a coincidir con producción.
+API: imagen completa `europe-southwest1-docker.pkg.dev/cercanias-en-hora/cloud-run-source-deploy/cercanias-api@sha256:44a51d4f7ef08f21b22293ff4037b84e19bd818b786c9fd57a5ab9b6ca09aa85`
+(anterior `…@sha256:4858e26969f1a8ee07d00caf7f83783f2ebaceda7223b13c8c4a806981b7d807`).
+Ingesta: `…cercanias-ingesta@sha256:646a4d8b871226afb99de7f7d15a72a9f9196ae6397d776161227bfb84083294`.
+Env, secretos, cuenta de servicio y Scheduler sin cambios; `ORIGIN_ESTIMATE_ROUTES`
+sin definir (vacío). Verificación: `/health` 200 ok, 95 estaciones, 838/838 filas
+con `pending_departure`, `health.departures_pending_departure = 218`,
+`departures_contradicting_live = 0`, ninguna fila pendiente dice «en hora»,
+snapshot fresco, web sin errores JS. Cuando se mergee PR #9, `main` vuelve a
+coincidir con producción.
 
-**Hecho 6, medido (RB-009, pendiente de despliegue):** con el tren aún en su
+**Hecho 6, medido (RB-009, desplegado):** con el tren aún en su
 origen (`STOPPED_AT`), el 54 % de los «0» de Renfe salieron ≥3 min tarde
 (19-22/10/2026, n=2.387; C4 67 %). Ese estado es `pending_departure`, nunca
 «en hora». La salida es la transición a `IN_TRANSIT_TO`.
