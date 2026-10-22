@@ -74,3 +74,24 @@ def test_route_label_with_digits_in_suffix() -> None:
 def test_unparseable_trip_id_returns_none() -> None:
     assert parse_trip_id("not-a-valid-trip-id") is None
     assert parse_trip_id("") is None
+
+
+def test_especial_agrupa_su_ramal_en_mayuscula() -> None:
+    """El feed escribe C4B: una suscripcion a "C4" tiene que incluirlo."""
+    parsed = parse_trip_id("SPECIAL_10_91887C4B")
+    assert parsed is not None
+    assert parsed.train_number == "91887"
+    assert parsed.route_raw == "C4B", "route_raw se conserva intacto (A.3)"
+    assert parsed.route_canonical == "C4b"
+    assert parsed.route_group == "C4"
+
+
+def test_viaje_normal_route_canonical_igual_a_raw() -> None:
+    parsed = parse_trip_id("1080J20316C4a")
+    assert parsed is not None
+    assert parsed.route_canonical == "C4a"
+
+
+def test_especial_sin_linea_no_se_parte_mal() -> None:
+    """Sin ancla de letra, SPECIAL_10_91887 daba tren 9188 y linea "7"."""
+    assert parse_trip_id("SPECIAL_10_91887") is None

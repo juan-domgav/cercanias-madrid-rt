@@ -1,9 +1,13 @@
 # RB-001 — Tablones vacíos, snapshot sano
 
 ## Sintoma
-`boards.json` tiene `stations_with_departures: 0` (o `stations: {}`) y
+`boards.json` tiene `stations_with_departures: 0` y
 `health.schedule_missing: true`, pero `snapshot.json` trae trenes frescos y no
 está `degraded`. La app parece «sin trenes» en hora punta.
+
+`stations_with_departures` cuenta sólo salidas DEL HORARIO: con trenes
+especiales circulando, `stations` puede no estar vacío (tablones sólo con
+especiales, `specials_on_boards > 0`) y el síntoma sigue siendo este. Ver RB-006.
 
 ## Causa
 Falta `horarios/<servicio>.json` en el bucket (el índice rota a diario,
@@ -12,7 +16,7 @@ el tick salía 0 sin alerta.
 
 ## Checks
 ```bash
-curl -s "$WEB/boards.json" | jq '{service,stations_with_departures,health}'
+curl -s "$WEB/boards.json" | jq '{service,stations_with_departures,specials_on_boards,health}'
 curl -s "$WEB/snapshot.json" | jq '{generated_at,n:(.vehicles|length),degraded}'
 # WEB=https://storage.googleapis.com/cercanias-madrid-rt-web
 gcloud storage ls "gs://cercanias-madrid-rt-web/horarios/${SERVICIO}.json"

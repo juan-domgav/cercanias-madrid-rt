@@ -227,7 +227,7 @@ function renderTrains() {
            ${d === null ? "Ambos sentidos" : "→ " + d}</button>`).join("") + `</div>`
     : "";
 
-  const salidas = (est.departures || []).filter(d => !sentidoFiltro || d.dest === sentidoFiltro);
+  const salidas = (est.departures || []).filter(d => d.special || !sentidoFiltro || d.dest === sentidoFiltro);
   if (!salidas.length) {
     box.innerHTML = chips + `<div class="empty">No hay salidas programadas en las próximas 2 h.</div>`;
   } else {
@@ -236,7 +236,10 @@ function renderTrains() {
       // "en hora" solo si se puede afirmar. Un delay=0 del feed en un viaje que
       // aun no ha salido es un marcador, no una lectura (visto en vivo el 21/08:
       // Colmenar 16:12 decia "En hora" con su tren a 16 minutos).
+      // Tren especial (SPECIAL_10_*): no tiene horario, asi que no hay retraso
+      // que mostrar. Esta localizado: decir "sin datos en vivo" seria falso.
       const etiqueta = d.cancelled ? "SUPRIMIDO"
+                     : d.special ? "tren especial"
                      : d.delay == null ? "sin datos en vivo"
                      : d.on_time ? "en hora"
                      : d.delay > 0 ? `+${d.delay} min`
@@ -253,7 +256,8 @@ function renderTrains() {
           <span class="delay ${cls}">${etiqueta}</span></div>
         <div class="meta" style="font-size:1rem;color:var(--fg)"><strong>→ ${d.dest || "destino desconocido"}</strong></div>
         <div class="meta" style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
-          ${anden}<span>${d.in <= 0 ? "saliendo" : `en ${d.in} min`}</span>
+          ${anden}<span>${d.special ? (d.status === "STOPPED_AT" ? "en el andén" : "llegando")
+            : d.in <= 0 ? "saliendo" : `en ${d.in} min`}</span>
           ${d.live ? "" : '<span style="opacity:.7">· aún no localizado</span>'}
         </div>
         ${d.inbound_delay ? `<div class="riesgo">⚠️ El tren que hace este servicio
@@ -265,6 +269,11 @@ function renderTrains() {
         ${d.shortened ? `<div class="riesgo">✂️ Este tren <strong>no efectúa todas sus
           paradas</strong>. Puede que no llegue a ${d.dest || "su destino"}: confírmalo
           antes de subir.</div>` : ""}
+        ${d.special ? `<div class="riesgo">🚆 <strong>Tren especial</strong> sin horario
+          publicado. Lo vemos en vivo; la hora es la de cuando se le vio, no la de un
+          horario. Sin destino publicado: se muestra en cualquier sentido.</div>` : ""}
+        ${d.at_terminus ? `<div class="riesgo">🏁 Final de línea: puede ser una
+          <strong>llegada</strong>, no una salida.</div>` : ""}
         ${d.unconfirmed ? `<div class="riesgo">❓ Sin confirmar: no localizamos este tren
           ni el que debería traerlo. La hora es la del horario, no hay dato en vivo
           que la respalde.</div>` : ""}

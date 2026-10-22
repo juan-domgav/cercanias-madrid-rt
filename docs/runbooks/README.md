@@ -10,5 +10,6 @@ verificación y rollback. Los jobs viven en el proyecto `cercanias-en-hora`.
 | Job nocturno `cercanias-horarios` fallido o <25 días | [RB-003](RB-003-nightly-horarios-failed.md) |
 | `health.schedule_days_left` bajo en falso al cruzar 1099→1001 | [RB-004](RB-004-wraparound-days-left.md) |
 | El bot de ops de Telegram no responde o responde en bucle | [RB-005](RB-005-telegram-ops-bot.md) |
+| Tren `SPECIAL_10_*` en `snapshot.json` pero ausente de `boards.json` | [RB-006](RB-006-special-trains-missing.md) |
 
 Detalle de despliegue: [`docs/DESPLIEGUE.md`](../DESPLIEGUE.md).

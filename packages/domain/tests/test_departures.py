@@ -4,13 +4,16 @@ from cercanias_domain.departures import (
     DepartureQuery,
     LiveTrain,
     ScheduledStop,
+    board_departures,
     destinations_available,
     format_minutes,
+    live_special_departures,
     next_departures,
     now_in_operating_day,
     parse_hhmm_to_minutes,
     train_number,
 )
+from cercanias_domain.trip_id import canonical_route
 
 SERV = "1020L"
 
@@ -439,3 +442,151 @@ def test_tren_normal_no_hereda_ninguna_de_las_marcas() -> None:
     d = next_departures([parada], vivos, DepartureQuery(now_minutes=9*60, service_prefix=SERV))[0]
     assert (d.cancelled, d.inbound_cancelled, d.shortened) == (False, False, False)
     assert d.shows_on_time is True
+
+
+# --- Trenes especiales (SPECIAL_10_*, Anexo A.2). Ver RB-006. ---------------
+
+ESPECIAL = "SPECIAL_10_91887C4B"
+
+
+def _especial(
+    trip_id: str = ESPECIAL, parada: str | None = "17009", status: str | None = "STOPPED_AT"
+) -> LiveTrain:
+    return LiveTrain(trip_id, None, "1", parada, status=status)
+
+
+def test_numero_de_tren_de_un_especial() -> None:
+    """El recorte fijo de 5 caracteres daba "10" (el prefijo de nucleo)."""
+    assert train_number(ESPECIAL) == "91887"
+    assert train_number("SPECIAL_10_91244C7") == "91244"
+
+
+def test_ruta_canonica_iguala_el_ramal_del_feed_al_del_horario() -> None:
+    assert canonical_route("C4B") == "C4b"
+    assert canonical_route("C10") == "C10"
+    assert canonical_route("C4b") == "C4b"
+
+
+def test_especial_no_aparece_en_next_departures() -> None:
+    """La causa raiz: el tablon recorre el horario y el especial no esta en el."""
+    paradas = [_parada("20431", "08:38:00", dest="Colmenar Viejo")]
+    salidas = next_departures(
+        paradas, {ESPECIAL: _especial()}, DepartureQuery(now_minutes=8 * 60 + 41, service_prefix=SERV)
+    )
+    assert all(d.train_number != "91887" for d in salidas)
+
+
+def test_especial_parado_en_la_estacion_sale_en_su_tablon() -> None:
+    (d,) = live_special_departures({ESPECIAL: _especial()}, "17009", 8 * 60 + 41)
+    assert d.train_number == "91887"
+    assert d.route == "C4b"
+    assert d.special is True
+    assert d.located is True
+    assert d.unconfirmed is False
+    assert d.delay_minutes is None, "sin horario no hay retraso que calcular"
+    assert d.shows_on_time is False, "no se afirma 'en hora' sin dato"
+    assert d.expected_hhmm == "08:41"
+    assert d.minutes_until == 0
+    assert d.platform == "1"
+    assert d.status == "STOPPED_AT"
+    assert d.destination is None
+
+
+def test_especial_solo_en_su_parada_actual_o_proxima() -> None:
+    vivos = {ESPECIAL: _especial(parada="17003", status="INCOMING_AT")}
+    assert live_special_departures(vivos, "17009", 520) == ()
+    (d,) = live_special_departures(vivos, "17003", 520)
+    assert d.status == "INCOMING_AT"
+
+
+def test_tren_normal_no_se_cuela_como_especial() -> None:
+    vivos = {f"{SERV}20431C4b": LiveTrain(f"{SERV}20431C4b", 60, "1", "17009")}
+    assert live_special_departures(vivos, "17009", 520) == ()
+
+
+def test_especial_sin_parada_no_va_a_ningun_tablon() -> None:
+    assert live_special_departures({ESPECIAL: _especial(parada=None)}, "17009", 520) == ()
+
+
+def test_especial_suprimido_conserva_la_marca() -> None:
+    vivos = {ESPECIAL: LiveTrain(ESPECIAL, None, "1", "17009", cancelled=True)}
+    (d,) = live_special_departures(vivos, "17009", 520)
+    assert d.cancelled is True
+
+
+def test_board_sin_especiales_es_identico_a_next_departures() -> None:
+    paradas = [_parada("20431", "08:38:00"), _parada("20435", "09:03:00")]
+    vivos = {f"{SERV}20435C4b": LiveTrain(f"{SERV}20435C4b", 120, "2", "17009")}
+    q = DepartureQuery(now_minutes=8 * 60 + 41, service_prefix=SERV)
+    assert board_departures(paradas, vivos, q, "17009") == next_departures(paradas, vivos, q)
+
+
+def test_board_combina_especial_y_horario_sin_romper_el_casado() -> None:
+    paradas = [_parada("20431", "08:38:00"), _parada("20435", "09:03:00")]
+    vivos = {
+        ESPECIAL: _especial(),
+        f"{SERV}20435C4b": LiveTrain(f"{SERV}20435C4b", 120, "2", "17009"),
+    }
+    q = DepartureQuery(now_minutes=8 * 60 + 41, service_prefix=SERV)
+    salidas = board_departures(paradas, vivos, q, "17009")
+    assert [d.train_number for d in salidas] == ["20431", "91887", "20435"]
+    assert salidas[0].unconfirmed is True, "el 20431 sigue sin rastro"
+    assert salidas[2].delay_minutes == 2, "el casado por trip_id no cambia"
+    assert not salidas[2].special
+
+
+def test_board_el_especial_no_se_pierde_por_el_limite() -> None:
+    paradas = [_parada(str(20400 + i), f"08:{42 + i}:00") for i in range(6)]
+    q = DepartureQuery(now_minutes=8 * 60 + 41, service_prefix=SERV, limit=3)
+    salidas = board_departures(paradas, {ESPECIAL: _especial()}, q, "17009")
+    assert len(salidas) == 3
+    assert salidas[0].train_number == "91887"
+
+
+def test_especial_usa_la_hora_de_la_observacion() -> None:
+    (d,) = live_special_departures({ESPECIAL: _especial()}, "17009", 8 * 60 + 43,
+                                   observed_minutes=8 * 60 + 41)
+    assert d.expected_hhmm == "08:41"
+    assert d.minutes_until == -2
+
+
+def _colmenar(num: str, hora: str, *, termina: bool, origen: bool) -> ScheduledStop:
+    return ScheduledStop(f"{SERV}{num}C4b", hora, "C4b", "Parla", termina, is_origin=origen)
+
+
+def test_especial_en_cabecera_se_marca_posible_llegada() -> None:
+    horario = [_colmenar("20430", "08:45:00", termina=True, origen=False),
+               _colmenar("20432", "08:50:00", termina=False, origen=True)]
+    (d,) = live_special_departures({ESPECIAL: _especial(parada="17005")}, "17005", 520,
+                                   scheduled=horario)
+    assert d.at_terminus is True
+
+
+def test_estacion_de_paso_con_acortados_no_es_cabecera() -> None:
+    horario = [_colmenar("20430", "08:45:00", termina=True, origen=False),
+               _colmenar("20434", "08:47:00", termina=False, origen=False)]
+    (d,) = live_special_departures({ESPECIAL: _especial(parada="17004")}, "17004", 520,
+                                   scheduled=horario)
+    assert d.at_terminus is False
+
+
+def test_cabecera_de_otra_linea_no_marca_al_especial() -> None:
+    horario = [ScheduledStop(f"{SERV}21001C7", "08:45:00", "C7", "X", True)]
+    (d,) = live_special_departures({ESPECIAL: _especial()}, "17009", 520, scheduled=horario)
+    assert d.at_terminus is False
+
+
+def test_board_con_destino_no_incluye_especiales() -> None:
+    """Destino desconocido: el dominio no afirma que vaya hacia donde se pide."""
+    paradas = [_parada("20435", "09:03:00", dest="Colmenar Viejo")]
+    q = DepartureQuery(now_minutes=8 * 60 + 41, service_prefix=SERV, destination="Colmenar Viejo")
+    salidas = board_departures(paradas, {ESPECIAL: _especial()}, q, "17009")
+    assert [d.train_number for d in salidas] == ["20435"]
+
+
+def test_board_los_especiales_respetan_el_limite() -> None:
+    vivos = {f"SPECIAL_10_9188{i}C4B": _especial(f"SPECIAL_10_9188{i}C4B") for i in range(4)}
+    q = DepartureQuery(now_minutes=8 * 60 + 41, service_prefix=SERV, limit=2)
+    salidas = board_departures([_parada("20435", "09:03:00")], vivos, q, "17009")
+    assert len(salidas) == 2
+    assert all(d.special for d in salidas)

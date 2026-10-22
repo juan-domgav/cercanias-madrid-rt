@@ -77,6 +77,24 @@ def find_station(query: str, stations: list[Station]) -> Station | None:
     return min(contiene, key=lambda s: len(s.name)) if contiene else None
 
 
+def _format_special(d: dict[str, Any]) -> str:
+    """Tren especial (SPECIAL_10_*): sin horario, asi que sin hora de salida.
+
+    Mismo criterio que la web: no se pinta una hora como si fuera de horario ni
+    "sin datos en vivo" (esta localizado); se dice donde esta y en que anden.
+    """
+    donde = "en el andén" if d.get("status") == "STOPPED_AT" else "llegando"
+    anden = f"Andén <b>{d['platform']}</b>" if d.get("platform") else "Andén —"
+    estado = "SUPRIMIDO" if d.get("cancelled") else "tren especial"
+    texto = (
+        f"<b>{donde}</b> → {d.get('dest') or 'destino desconocido'}\n"
+        f"   {d.get('route', '')} tren {d.get('train', '')} · {anden} · {estado}"
+    )
+    if d.get("at_terminus"):
+        texto += "\n   🏁 final de línea: puede ser una llegada, no una salida"
+    return texto
+
+
 def format_departures(station: Station, salidas: list[dict[str, Any]], destinos: list[str]) -> str:
     if not salidas:
         return f"<b>{station.name}</b>\nNo hay salidas programadas en las próximas 2 horas."
@@ -85,6 +103,9 @@ def format_departures(station: Station, salidas: list[dict[str, Any]], destinos:
         lineas.append(f"<i>Sentidos: {' · '.join(destinos)}</i>")
     lineas.append("")
     for d in salidas[:6]:
+        if d.get("special"):
+            lineas.append(_format_special(d))
+            continue
         hora = f"<b>{d['eta']}</b>"
         if d.get("delay"):
             hora += f" <s>{d['t']}</s>"

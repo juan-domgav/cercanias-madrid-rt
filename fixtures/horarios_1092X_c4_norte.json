@@ -1,0 +1,487 @@
+{
+  "_fixture_meta": {
+    "source": "gs://cercanias-madrid-rt-web/horarios/1092X.json (21/10/2026)",
+    "note": "Subconjunto C4 08:30-09:10 en 17000/17001/17009 y Colmenar Viejo 17005 (cabecera: todo C4 empieza o termina). No contiene ningun tren 918xx: los SPECIAL_10_* no estan en el GTFS estatico. 18002 no esta incluida a proposito."
+  },
+  "service": "1092X",
+  "stations": {
+    "17009": [
+      {
+        "trip": "1092X20229C4a",
+        "t": "08:32:00",
+        "seq": 12,
+        "dest": "Alcobendas-San Sebastián de los Reyes",
+        "route": "C4a",
+        "terminates": false,
+        "from": "1092X20410C4b",
+        "slack": 0
+      },
+      {
+        "trip": "1092X20426C4b",
+        "t": "08:32:00",
+        "seq": 4,
+        "dest": "Parla",
+        "route": "C4b",
+        "terminates": false,
+        "from": "1092X20423C4b",
+        "slack": 12
+      },
+      {
+        "trip": "1092X20431C4b",
+        "t": "08:38:00",
+        "seq": 12,
+        "dest": "Colmenar Viejo",
+        "route": "C4b",
+        "terminates": false,
+        "from": "1092X20222C4a",
+        "slack": 0
+      },
+      {
+        "trip": "1092X20240C4a",
+        "t": "08:40:00",
+        "seq": 4,
+        "dest": "Parla",
+        "route": "C4a",
+        "terminates": false,
+        "from": "1092X20227C4a",
+        "slack": 4
+      },
+      {
+        "trip": "1092X20231C4a",
+        "t": "08:42:00",
+        "seq": 12,
+        "dest": "Alcobendas-San Sebastián de los Reyes",
+        "route": "C4a",
+        "terminates": false,
+        "from": "1092X20412C4b",
+        "slack": 0
+      },
+      {
+        "trip": "1092X20428C4b",
+        "t": "08:47:00",
+        "seq": 4,
+        "dest": "Parla",
+        "route": "C4b",
+        "terminates": false,
+        "from": "1092X20427C4b",
+        "slack": 4
+      },
+      {
+        "trip": "1092X20433C4b",
+        "t": "08:48:00",
+        "seq": 12,
+        "dest": "Colmenar Viejo",
+        "route": "C4b",
+        "terminates": false,
+        "from": "1092X20220C4a",
+        "slack": 21
+      },
+      {
+        "trip": "1092X20242C4a",
+        "t": "08:53:00",
+        "seq": 4,
+        "dest": "Madrid-Atocha Cercanías",
+        "route": "C4a",
+        "terminates": false,
+        "from": "1092X20229C4a",
+        "slack": 5
+      },
+      {
+        "trip": "1092X20233C4a",
+        "t": "08:56:00",
+        "seq": 12,
+        "dest": "Alcobendas-San Sebastián de los Reyes",
+        "route": "C4a",
+        "terminates": false,
+        "from": "1092X20414C4b",
+        "slack": 1
+      },
+      {
+        "trip": "1092X20430C4b",
+        "t": "08:57:00",
+        "seq": 4,
+        "dest": "Parla",
+        "route": "C4b",
+        "terminates": false,
+        "from": "1092X20429C4b",
+        "slack": 1
+      },
+      {
+        "trip": "1092X20244C4a",
+        "t": "09:02:00",
+        "seq": 4,
+        "dest": "Parla",
+        "route": "C4a",
+        "terminates": false,
+        "from": "1092X20231C4a",
+        "slack": 4
+      },
+      {
+        "trip": "1092X20435C4b",
+        "t": "09:03:00",
+        "seq": 12,
+        "dest": "Colmenar Viejo",
+        "route": "C4b",
+        "terminates": false,
+        "from": "1092X20226C4a",
+        "slack": 3
+      },
+      {
+        "trip": "1092X20235C4a",
+        "t": "09:07:00",
+        "seq": 12,
+        "dest": "Alcobendas-San Sebastián de los Reyes",
+        "route": "C4a",
+        "terminates": false,
+        "from": "1092X20416C4b",
+        "slack": 0
+      },
+      {
+        "trip": "1092X20432C4b",
+        "t": "09:09:00",
+        "seq": 4,
+        "dest": "Parla",
+        "route": "C4b",
+        "terminates": false,
+        "from": "1092X20431C4b",
+        "slack": 1
+      }
+    ],
+    "17000": [
+      {
+        "trip": "1092X20231C4a",
+        "t": "08:33:00",
+        "seq": 10,
+        "dest": "Alcobendas-San Sebastián de los Reyes",
+        "route": "C4a",
+        "terminates": false,
+        "from": "1092X20412C4b",
+        "slack": 0
+      },
+      {
+        "trip": "1092X20238C4a",
+        "t": "08:39:00",
+        "seq": 6,
+        "dest": "Parla",
+        "route": "C4a",
+        "terminates": false,
+        "from": "1092X20225C4a",
+        "slack": 3
+      },
+      {
+        "trip": "1092X20433C4b",
+        "t": "08:39:00",
+        "seq": 10,
+        "dest": "Colmenar Viejo",
+        "route": "C4b",
+        "terminates": false,
+        "from": "1092X20220C4a",
+        "slack": 21
+      },
+      {
+        "trip": "1092X20426C4b",
+        "t": "08:45:00",
+        "seq": 6,
+        "dest": "Parla",
+        "route": "C4b",
+        "terminates": false,
+        "from": "1092X20423C4b",
+        "slack": 12
+      },
+      {
+        "trip": "1092X20233C4a",
+        "t": "08:47:00",
+        "seq": 10,
+        "dest": "Alcobendas-San Sebastián de los Reyes",
+        "route": "C4a",
+        "terminates": false,
+        "from": "1092X20414C4b",
+        "slack": 1
+      },
+      {
+        "trip": "1092X20240C4a",
+        "t": "08:53:00",
+        "seq": 6,
+        "dest": "Parla",
+        "route": "C4a",
+        "terminates": false,
+        "from": "1092X20227C4a",
+        "slack": 4
+      },
+      {
+        "trip": "1092X20435C4b",
+        "t": "08:54:00",
+        "seq": 10,
+        "dest": "Colmenar Viejo",
+        "route": "C4b",
+        "terminates": false,
+        "from": "1092X20226C4a",
+        "slack": 3
+      },
+      {
+        "trip": "1092X20235C4a",
+        "t": "08:58:00",
+        "seq": 10,
+        "dest": "Alcobendas-San Sebastián de los Reyes",
+        "route": "C4a",
+        "terminates": false,
+        "from": "1092X20416C4b",
+        "slack": 0
+      },
+      {
+        "trip": "1092X20428C4b",
+        "t": "09:00:00",
+        "seq": 6,
+        "dest": "Parla",
+        "route": "C4b",
+        "terminates": false,
+        "from": "1092X20427C4b",
+        "slack": 4
+      },
+      {
+        "trip": "1092X20437C4",
+        "t": "09:03:00",
+        "seq": 10,
+        "dest": "Madrid-Chamartín-Clara Campoamor",
+        "route": "C4",
+        "terminates": true,
+        "from": "1092X20224C4a",
+        "slack": 23
+      },
+      {
+        "trip": "1092X20242C4a",
+        "t": "09:06:00",
+        "seq": 6,
+        "dest": "Madrid-Atocha Cercanías",
+        "route": "C4a",
+        "terminates": false,
+        "from": "1092X20229C4a",
+        "slack": 5
+      },
+      {
+        "trip": "1092X20237C4a",
+        "t": "09:09:00",
+        "seq": 10,
+        "dest": "Alcobendas-San Sebastián de los Reyes",
+        "route": "C4a",
+        "terminates": false,
+        "from": "1092X20228C4a",
+        "slack": 4
+      },
+      {
+        "trip": "1092X20430C4b",
+        "t": "09:10:00",
+        "seq": 6,
+        "dest": "Parla",
+        "route": "C4b",
+        "terminates": false,
+        "from": "1092X20429C4b",
+        "slack": 1
+      }
+    ],
+    "17001": [
+      {
+        "trip": "1092X20238C4a",
+        "t": "08:32:00",
+        "seq": 5,
+        "dest": "Parla",
+        "route": "C4a",
+        "terminates": false,
+        "from": "1092X20225C4a",
+        "slack": 3
+      },
+      {
+        "trip": "1092X20431C4b",
+        "t": "08:33:00",
+        "seq": 11,
+        "dest": "Colmenar Viejo",
+        "route": "C4b",
+        "terminates": false,
+        "from": "1092X20222C4a",
+        "slack": 0
+      },
+      {
+        "trip": "1092X20231C4a",
+        "t": "08:37:00",
+        "seq": 11,
+        "dest": "Alcobendas-San Sebastián de los Reyes",
+        "route": "C4a",
+        "terminates": false,
+        "from": "1092X20412C4b",
+        "slack": 0
+      },
+      {
+        "trip": "1092X20426C4b",
+        "t": "08:38:00",
+        "seq": 5,
+        "dest": "Parla",
+        "route": "C4b",
+        "terminates": false,
+        "from": "1092X20423C4b",
+        "slack": 12
+      },
+      {
+        "trip": "1092X20433C4b",
+        "t": "08:43:00",
+        "seq": 11,
+        "dest": "Colmenar Viejo",
+        "route": "C4b",
+        "terminates": false,
+        "from": "1092X20220C4a",
+        "slack": 21
+      },
+      {
+        "trip": "1092X20240C4a",
+        "t": "08:46:00",
+        "seq": 5,
+        "dest": "Parla",
+        "route": "C4a",
+        "terminates": false,
+        "from": "1092X20227C4a",
+        "slack": 4
+      },
+      {
+        "trip": "1092X20233C4a",
+        "t": "08:51:00",
+        "seq": 11,
+        "dest": "Alcobendas-San Sebastián de los Reyes",
+        "route": "C4a",
+        "terminates": false,
+        "from": "1092X20414C4b",
+        "slack": 1
+      },
+      {
+        "trip": "1092X20428C4b",
+        "t": "08:53:00",
+        "seq": 5,
+        "dest": "Parla",
+        "route": "C4b",
+        "terminates": false,
+        "from": "1092X20427C4b",
+        "slack": 4
+      },
+      {
+        "trip": "1092X20435C4b",
+        "t": "08:58:00",
+        "seq": 11,
+        "dest": "Colmenar Viejo",
+        "route": "C4b",
+        "terminates": false,
+        "from": "1092X20226C4a",
+        "slack": 3
+      },
+      {
+        "trip": "1092X20242C4a",
+        "t": "08:59:00",
+        "seq": 5,
+        "dest": "Madrid-Atocha Cercanías",
+        "route": "C4a",
+        "terminates": false,
+        "from": "1092X20229C4a",
+        "slack": 5
+      },
+      {
+        "trip": "1092X20235C4a",
+        "t": "09:02:00",
+        "seq": 11,
+        "dest": "Alcobendas-San Sebastián de los Reyes",
+        "route": "C4a",
+        "terminates": false,
+        "from": "1092X20416C4b",
+        "slack": 0
+      },
+      {
+        "trip": "1092X20430C4b",
+        "t": "09:03:00",
+        "seq": 5,
+        "dest": "Parla",
+        "route": "C4b",
+        "terminates": false,
+        "from": "1092X20429C4b",
+        "slack": 1
+      },
+      {
+        "trip": "1092X20244C4a",
+        "t": "09:08:00",
+        "seq": 5,
+        "dest": "Parla",
+        "route": "C4a",
+        "terminates": false,
+        "from": "1092X20231C4a",
+        "slack": 4
+      }
+    ],
+    "17005": [
+      {
+        "trip": "1092X20428C4b",
+        "t": "08:33:00",
+        "seq": 1,
+        "dest": "Parla",
+        "route": "C4b",
+        "terminates": false,
+        "from": "1092X20427C4b",
+        "slack": 4
+      },
+      {
+        "trip": "1092X20429C4b",
+        "t": "08:42:00",
+        "seq": 15,
+        "dest": "Colmenar Viejo",
+        "route": "C4b",
+        "terminates": true,
+        "from": "1092X20218C4a",
+        "slack": 12
+      },
+      {
+        "trip": "1092X20430C4b",
+        "t": "08:43:00",
+        "seq": 1,
+        "dest": "Parla",
+        "route": "C4b",
+        "terminates": false,
+        "from": "1092X20429C4b",
+        "slack": 1
+      },
+      {
+        "trip": "1092X20431C4b",
+        "t": "08:54:00",
+        "seq": 15,
+        "dest": "Colmenar Viejo",
+        "route": "C4b",
+        "terminates": true,
+        "from": "1092X20222C4a",
+        "slack": 0
+      },
+      {
+        "trip": "1092X20432C4b",
+        "t": "08:55:00",
+        "seq": 1,
+        "dest": "Parla",
+        "route": "C4b",
+        "terminates": false,
+        "from": "1092X20431C4b",
+        "slack": 1
+      },
+      {
+        "trip": "1092X20433C4b",
+        "t": "09:04:00",
+        "seq": 15,
+        "dest": "Colmenar Viejo",
+        "route": "C4b",
+        "terminates": true,
+        "from": "1092X20220C4a",
+        "slack": 21
+      },
+      {
+        "trip": "1092X20434C4b",
+        "t": "09:05:00",
+        "seq": 1,
+        "dest": "Parla",
+        "route": "C4b",
+        "terminates": false,
+        "from": "1092X20433C4b",
+        "slack": 1
+      }
+    ]
+  }
+}

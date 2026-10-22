@@ -1,0 +1,109 @@
+{
+  "_fixture_meta": {
+    "source": "Archivo de pasadas gs://cercanias-madrid-rt-privado/archivo/2026-10-21/084109.json (real)",
+    "captured_at": "2026-10-21T08:41:09+02:00",
+    "note": "RB-006: los 3 especiales de esa pasada SUPERAN en numero a los 2 viajes con dia de servicio 1092X elegidos. SPECIAL_10_91921C4B va hacia 18002, parada que NO esta en fixtures/horarios_1092X_c4_norte.json. Campos _fixture_meta anadidos por nosotros.",
+    "license": "Datos originales de Renfe, CC BY 4.0"
+  },
+  "header": {
+    "gtfsRealtimeVersion": "2.0",
+    "timestamp": "1792564869"
+  },
+  "entity": [
+    {
+      "id": "VP_C4b-20430",
+      "vehicle": {
+        "trip": {
+          "tripId": "1092X20430C4b"
+        },
+        "position": {
+          "latitude": 40.644844,
+          "longitude": -3.7762609
+        },
+        "currentStatus": "STOPPED_AT",
+        "timestamp": "1792564869",
+        "stopId": "17005",
+        "vehicle": {
+          "id": "20430",
+          "label": "C4b-20430-PLATF.(3)"
+        }
+      }
+    },
+    {
+      "id": "VP_C4A-91891",
+      "vehicle": {
+        "trip": {
+          "tripId": "SPECIAL_10_91891C4A"
+        },
+        "position": {
+          "latitude": 40.471325,
+          "longitude": -3.6833096
+        },
+        "currentStatus": "IN_TRANSIT_TO",
+        "timestamp": "1792564869",
+        "stopId": "17000",
+        "vehicle": {
+          "id": "91891",
+          "label": "C4A-91891-PLATF.(5)"
+        }
+      }
+    },
+    {
+      "id": "VP_C4B-91921",
+      "vehicle": {
+        "trip": {
+          "tripId": "SPECIAL_10_91921C4B"
+        },
+        "position": {
+          "latitude": 40.4466,
+          "longitude": -3.6920877
+        },
+        "currentStatus": "IN_TRANSIT_TO",
+        "timestamp": "1792564869",
+        "stopId": "18002",
+        "vehicle": {
+          "id": "91921",
+          "label": "C4B-91921-PLATF.(6)"
+        }
+      }
+    },
+    {
+      "id": "VP_C4B-91887",
+      "vehicle": {
+        "trip": {
+          "tripId": "SPECIAL_10_91887C4B"
+        },
+        "position": {
+          "latitude": 40.54373,
+          "longitude": -3.7003317
+        },
+        "currentStatus": "STOPPED_AT",
+        "timestamp": "1792564869",
+        "stopId": "17009",
+        "vehicle": {
+          "id": "91887",
+          "label": "C4B-91887-PLATF.(1)"
+        }
+      }
+    },
+    {
+      "id": "VP_C4b-20433",
+      "vehicle": {
+        "trip": {
+          "tripId": "1092X20433C4b"
+        },
+        "position": {
+          "latitude": 40.24143,
+          "longitude": -3.769159
+        },
+        "currentStatus": "STOPPED_AT",
+        "timestamp": "1792564869",
+        "stopId": "37012",
+        "vehicle": {
+          "id": "20433",
+          "label": "C4b-20433-PLATF.(2)"
+        }
+      }
+    }
+  ]
+}
