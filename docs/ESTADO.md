@@ -1,7 +1,7 @@
 # Estado del proyecto y traspaso
 
 Documento de continuidad. Se escribe para que otra sesión pueda seguir sin
-reconstruir el contexto. **Última actualización: 2026-10-14.**
+reconstruir el contexto. **Última actualización: 2026-10-22.**
 
 ## Modo de trabajo
 
@@ -69,6 +69,30 @@ Todo esto está **medido**, no supuesto. Cada uno costó una avería o una revis
 - **Avisar sólo cuando cambia una decisión.** Umbrales relativos a la maniobra de
   cada enlace, no a una mediana de población. Un aviso que no aporta enseña a
   ignorar los que sí.
+
+## Despliegue actual (2026-10-22, RB-008)
+
+Producción corre la rama `feat/estimate-from-inbound` en `03c0967` (PR #7 +
+PR #8 + RB-008), **aún sin mergear en `main`**. Desplegado el 22/10 entre las
+15:30 y las 15:37 (Madrid) con el OK de Juan, en el orden de RB-008:
+
+| Pieza | Ahora | Rollback (anterior, = `main`) |
+|---|---|---|
+| API `cercanias-api` | revisión `cercanias-api-00006-v2z` (`cercanias-api@sha256:4858e269…d807`) | `gcloud run services update-traffic cercanias-api --region europe-southwest1 --to-revisions cercanias-api-00005-7sk=100` |
+| Job `cercanias-ingesta` | `cercanias-ingesta@sha256:d44a820a…94f7f` | `gcloud run jobs update cercanias-ingesta --region europe-southwest1 --image europe-southwest1-docker.pkg.dev/cercanias-en-hora/cloud-run-source-deploy/cercanias-ingesta@sha256:6df10a54004ba6ba6e7065da3716ef0db595190ccc4eece9638cf9bd8b56f8c8` |
+| Web `index.html` | generación `1792676247042413` (= `apps/web/index.html` de `03c0967`) | subir `apps/web/index.html` de `main` (`a7b11ac`) con `--cache-control="public, max-age=60" --content-type="text/html"` (antes: generación `1792504396121694`) |
+
+API: imagen completa `europe-southwest1-docker.pkg.dev/cercanias-en-hora/cloud-run-source-deploy/cercanias-api@sha256:4858e26969f1a8ee07d00caf7f83783f2ebaceda7223b13c8c4a806981b7d807`
+(anterior `…@sha256:eadb687959e9be4e30ca81e0932d64b063f40d006cdd7e2dfb1b116fc6c0a96f`).
+Ingesta: `…cercanias-ingesta@sha256:d44a820af87f323f4832abdf1a98264b3a1994542d5dc15f51c5e0ccf9694f7f`.
+Env, secretos, cuenta de servicio y Scheduler sin cambios. Verificación tras el
+despliegue: `/health` ok, `boards.json` con `display` en 853/853 filas, 95
+estaciones, `health.departures_contradicting_live = 0`, snapshot fresco (~20 s).
+Cuando se mergeen PR #7 y #8, `main` vuelve a coincidir con producción.
+
+**Matiz al hecho 6:** desde RB-008 un viaje que está en el feed manda aunque su
+`delay` sea 0; el aviso de entrante sólo sale sin dato propio y en líneas con
+emparejamiento validado (hoy C1). Ver `docs/runbooks/RB-008-bot-boards-inconsistent.md`.
 
 ## Estado actual
 
