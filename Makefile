@@ -60,7 +60,8 @@ typecheck: unhide
 		packages/connectors-renfe/src \
 		packages/connectors-adif/src \
 		packages/persistence/src \
-		apps/worker/src
+		apps/worker/src \
+		apps/api/src
 
 test: unhide
 	uv run pytest \

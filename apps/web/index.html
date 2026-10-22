@@ -58,6 +58,7 @@
   .delay { font-weight: 600; }
   .delay.late { color: var(--late); } .delay.ontime { color: var(--ok); }
   .delay.estimated { color: var(--muted); font-style: italic; }
+  .delay.cancelled { color: var(--late); font-weight: 700; }
   .meta { color: var(--muted); font-size: .85rem; margin-top: .3rem; }
   .banner { border-radius: .6rem; padding: .7rem .85rem; margin: .75rem 0; font-size: .9rem; }
   .banner.warn { background: #fef3c7; color: #92400e; }
@@ -108,6 +109,8 @@
 </footer>
 
 <script>
+// Texto de boards.json a HTML sin interpretarlo como marcado.
+const esc = t => String(t ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 // La pagina PINTA, no calcula. El tablon de salidas lo precalcula la ingesta en
 // Python probado (cercanias_domain.departures) y lo publica en boards.json.
 // Antes esta logica existia dos veces —una en Python y otra aqui, sin tests— y
@@ -233,62 +236,40 @@ function renderTrains() {
     box.innerHTML = chips + `<div class="empty">No hay salidas programadas en las próximas 2 h.</div>`;
   } else {
     box.innerHTML = chips + salidas.map(d => {
-      // RB-007: retraso ESTIMADO desde el tren que llega a cabecera. Nunca con el
-      // estilo de un dato en vivo: "≈" y "(estimado)", sin color de puntualidad.
-      const estimado = d.delay_source === "inbound_estimate";
-      // Renfe publica cada viaje ~30 min antes de salir de cabecera: antes de eso
-      // no es una anomalia, y se dice en tono neutro (RB-007).
-      const noPublicado = d.realtime_status === "not_published";
-      const cls = estimado ? "estimated" : d.delay == null ? "" : d.delay > 3 ? "late" : "ontime";
-      // "en hora" solo si se puede afirmar. Un delay=0 del feed en un viaje que
-      // aun no ha salido es un marcador, no una lectura (visto en vivo el 21/08:
-      // Colmenar 16:12 decia "En hora" con su tren a 16 minutos).
-      // Tren especial (SPECIAL_10_*): no tiene horario, asi que no hay retraso
-      // que mostrar. Esta localizado: decir "sin datos en vivo" seria falso.
-      const etiqueta = d.cancelled ? "SUPRIMIDO"
-                     : d.special ? "tren especial"
-                     : estimado ? (d.estimated_delay > 0 ? `≈ +${d.estimated_delay} min (estimado)`
-                                                         : "≈ en hora (estimado)")
-                     : noPublicado ? "programado · Renfe aún no lo publica"
-                     : d.delay == null ? "sin datos en vivo"
-                     : d.on_time ? "en hora"
-                     : d.delay > 0 ? `+${d.delay} min`
-                     : "sin confirmar";
+      // RB-008: estado, etiqueta y avisos los decide UNA funcion en Python
+      // (cercanias_domain.board_status.departure_status), la misma que usa el bot.
+      // La ingesta la deja en d.display; aqui solo se pinta. Precedencia: en vivo
+      // manda; con el tren en vivo nunca 'sin confirmar' ni aviso de entrante.
+      // Fallback solo para un boards.json anterior a RB-008 (despliegue a medias):
+      // dato en vivo y nada mas, nunca avisos que lo contradigan.
+      const s = d.display || {
+        kind: d.cancelled ? "cancelled" : d.delay == null ? "no_data" : "live",
+        label: d.cancelled ? "SUPRIMIDO" : d.delay == null ? "sin datos en vivo"
+             : d.delay > 0 ? `+${d.delay} min` : "en hora",
+        tone: d.cancelled ? "cancelled" : d.delay == null ? "neutral" : d.delay > 3 ? "late" : "ontime",
+        approximate: false, show_scheduled: !!d.delay, notices: [],
+      };
+      const cls = s.tone === "neutral" ? "" : s.tone;
+      const noPublicado = s.kind === "not_published";
       // El anden es el dato mas accionable: dice donde ponerse. Solo existe en el
       // feed en vivo (A.6); si el tren no esta localizado se dice, no se inventa.
       const anden = d.platform
         ? `<span class="plat">Andén ${d.platform}</span>`
         : `<span class="plat plat-unknown">Andén —</span>`;
+      const avisos = (s.notices || []).map(n =>
+        `<div class="riesgo">${n.icon} ${esc(n.detail)}</div>`).join("");
       return `<div class="train">
         <div class="top">
-          <span class="route">${estimado ? "≈ " : ""}${d.eta}${d.delay || d.estimated_delay ? ` <s style="opacity:.6">${d.t}</s>` : ""}
+          <span class="route">${s.approximate ? "≈ " : ""}${d.eta}${s.show_scheduled ? ` <s style="opacity:.6">${d.t}</s>` : ""}
             <span style="font-weight:400;color:var(--muted)">· ${d.route} tren ${d.train}</span></span>
-          <span class="delay ${cls}">${etiqueta}</span></div>
+          <span class="delay ${cls}">${esc(s.label)}</span></div>
         <div class="meta" style="font-size:1rem;color:var(--fg)"><strong>→ ${d.dest || "destino desconocido"}</strong></div>
         <div class="meta" style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
           ${anden}<span>${d.special ? (d.status === "STOPPED_AT" ? "en el andén" : "llegando")
             : d.in <= 0 ? "saliendo" : `en ${d.in} min`}</span>
           ${d.live || noPublicado ? "" : '<span style="opacity:.7">· aún no localizado</span>'}
         </div>
-        ${estimado ? `<div class="meta" style="opacity:.8">≈ Estimado a partir del tren que
-          llega a cabecera para dar la vuelta. Renfe aún no publica este viaje en vivo.</div>` : ""}
-        ${d.inbound_delay ? `<div class="riesgo">⚠️ El tren que hace este servicio
-          viene con <strong>+${d.inbound_delay} min</strong>. Es probable que salga tarde.</div>` : ""}
-        ${d.cancelled ? `<div class="riesgo">🚫 <strong>Tren suprimido.</strong>
-          Renfe ha cancelado este servicio.</div>` : ""}
-        ${d.inbound_cancelled ? `<div class="riesgo">🚫 El tren que debía hacer este
-          servicio está <strong>suprimido</strong>. Es probable que no salga.</div>` : ""}
-        ${d.shortened ? `<div class="riesgo">✂️ Este tren <strong>no efectúa todas sus
-          paradas</strong>. Puede que no llegue a ${d.dest || "su destino"}: confírmalo
-          antes de subir.</div>` : ""}
-        ${d.special ? `<div class="riesgo">🚆 <strong>Tren especial</strong> sin horario
-          publicado. Lo vemos en vivo; la hora es la de cuando se le vio, no la de un
-          horario. Sin destino publicado: se muestra en cualquier sentido.</div>` : ""}
-        ${d.at_terminus ? `<div class="riesgo">🏁 Final de línea: puede ser una
-          <strong>llegada</strong>, no una salida.</div>` : ""}
-        ${d.unconfirmed ? `<div class="riesgo">❓ Sin confirmar: no localizamos este tren
-          ni el que debería traerlo. La hora es la del horario, no hay dato en vivo
-          que la respalde.</div>` : ""}
+        ${avisos}
         </div>`;
     }).join("");
   }

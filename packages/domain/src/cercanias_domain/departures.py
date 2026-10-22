@@ -223,10 +223,9 @@ class Departure:
     def shows_on_time(self) -> bool:
         """¿Puede afirmarse "en hora"?
 
-        Un ``delay`` de 0 en un viaje que aún no ha salido es un marcador de
-        posición del feed, no una lectura. Con el enlace en riesgo, presentarlo
-        como "en hora" es la peor forma de equivocarse: alguien se queda en el
-        andén tranquilo mientras su tren está a dieciséis minutos.
+        Sí cuando el propio viaje está en el feed con ``delay <= 0`` (RB-008: el
+        dato en vivo manda). ``at_risk`` sólo puede ser cierto para un viaje que
+        NO está en el feed, así que aquí sólo frena lo que no tiene dato propio.
         """
         return (
             self.delay_minutes is not None
@@ -303,8 +302,9 @@ class DepartureQuery:
     #: defecto: quien llama lo activa SOLO con un snapshot fresco (guard de
     #: PR #7). Con datos conservados, proyectar sería inventar.
     estimate_from_inbound: bool = False
-    #: Familias de línea (``C4``, ``C8``…) en las que no se estima porque el
-    #: emparejamiento no está validado. Configuración, no código (RB-007).
+    #: Familias de línea (``C4``, ``C8``…) cuyo emparejamiento de cabecera no
+    #: está validado: ni se estima (RB-007) ni se avisa de "el tren que hace este
+    #: servicio viene con +N" (RB-008). Configuración, no código.
     estimate_excluded_routes: frozenset[str] = frozenset()
     #: Ventana de publicacion de Renfe. ``None`` = no afirmar "no publicado"
     #: (snapshot viejo o degradado: no sabemos que hay en el feed).
@@ -356,11 +356,14 @@ def _inbound_estimate(
 
 
 def _inbound_warning(
-    stop: ScheduledStop, live: dict[str, LiveTrain], propio: LiveTrain | None
+    stop: ScheduledStop,
+    live: dict[str, LiveTrain],
+    propio: LiveTrain | None,
+    query: DepartureQuery,
 ) -> int | None:
     """Minutos de retraso del enlace entrante, si procede avisar.
 
-    Cinco condiciones, todas necesarias. Cada una corresponde a una forma
+    Todas las condiciones son necesarias. Cada una corresponde a una forma
     concreta de mentirle a alguien que está en un andén.
     """
     # 1. Sólo en el origen del viaje. En una parada intermedia el tren ya circula
@@ -368,10 +371,20 @@ def _inbound_warning(
     if not stop.is_origin or not stop.inbound_trip_id:
         return None
 
-    # 2. El dato propio manda... pero sólo si es un dato de verdad. Un `delay` de
-    #    0 en un viaje que aún no ha salido es un marcador de posición, no una
-    #    lectura: tomarlo por bueno pinta "en hora" con el tren a 25 minutos.
-    if propio is not None and propio.delay_seconds:
+    # 2. El dato EN VIVO del propio viaje manda, sea el que sea (RB-008). Antes un
+    #    ``delay`` de 0 se tomaba por "marcador de posición" y se avisaba igual:
+    #    el 22/10/2026 a las 08:36 el 20428 estaba en Colmenar, andén 3, +0, y
+    #    salió en hora (Renfe lo confirma), pero el bot decía "sin confirmar" y
+    #    "viene con +17" porque el 20427 —que NO lo formaba: en Colmenar Renfe
+    #    cambia de material— iba +17 por Tres Cantos. Con el viaje en el feed,
+    #    un aviso desde el entrante sólo puede contradecir el dato en vivo.
+    if propio is not None:
+        return None
+
+    # 3. Sólo con un emparejamiento fiable. Mismo criterio que la estimación
+    #    (RB-007): empate entre candidatos o familia de línea no validada
+    #    (C4b acierta el 47 %) = no se sabe qué tren físico hace el servicio.
+    if stop.inbound_ambiguous or _route_family(stop) in query.estimate_excluded_routes:
         return None
 
     entrante = live.get(stop.inbound_trip_id)
@@ -433,15 +446,19 @@ def next_departures(
         if tren is not None and tren.delay_seconds is not None:
             retraso = round(tren.delay_seconds / 60)
 
-        # El aviso del enlace SOLO aplica mientras no haya dato propio: en cuanto
-        # el tren aparece con su retraso, ese dato manda y el del enlace sobra.
-        retraso_enlace = _inbound_warning(stop, live, tren)
+        # El aviso del enlace SOLO aplica mientras el viaje no esté en el feed: en
+        # cuanto aparece, su dato manda y el del enlace sobra (RB-008).
+        retraso_enlace = _inbound_warning(stop, live, tren, query)
         estimado = _inbound_estimate(stop, live, tren, query) if retraso is None else None
         desfase = retraso if retraso is not None else (estimado or 0)
 
         entrante_vivo = live.get(stop.inbound_trip_id) if stop.inbound_trip_id else None
         suprimido = bool(tren and tren.cancelled)
-        entrante_suprimido = bool(stop.is_origin and entrante_vivo and entrante_vivo.cancelled)
+        # Con el propio viaje en el feed, la supresión del entrante queda
+        # desmentida: ya hay material haciendo el servicio (RB-008).
+        entrante_suprimido = bool(
+            tren is None and stop.is_origin and entrante_vivo and entrante_vivo.cancelled
+        )
 
         # Un tren que termina su recorrido desaparece del feed con normalidad: es
         # el caso NORMAL de una maniobra, no una señal de supresión. Por eso la

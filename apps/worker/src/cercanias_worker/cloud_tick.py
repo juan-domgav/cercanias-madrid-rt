@@ -31,6 +31,7 @@ from datetime import UTC, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from cercanias_domain.board_status import contradicts_live, departure_status
 from cercanias_domain.departures import (
     PUBLISH_WINDOW_MINUTES as DEFAULT_PUBLISH_WINDOW_MINUTES,
 )
@@ -498,6 +499,10 @@ def _build_boards(
                 for d in salidas
             ],
         }
+        # RB-008: el estado presentable lo decide UNA funcion (la misma que usa el
+        # bot). La web solo pinta "display"; no recalcula etiquetas ni avisos.
+        for fila in estaciones[stop_id]["departures"]:
+            fila["display"] = departure_status(fila).to_json()
     # Los horarios se generan por lotes de dias (ADR-012: el indice de calendario
     # avanza a diario). Cuando el servicio en circulacion cae fuera del lote, los
     # tablones salen vacios SIN error: es el mismo fallo silencioso de siempre, y
@@ -524,6 +529,17 @@ def _build_boards(
         1 for e in estaciones.values() for d in e["departures"]
         if fresco and not d["special"] and d["realtime_status"] == "no_data"
     )
+    # Invariante RB-008: una fila en vivo nunca lleva aviso de entrante ni
+    # "sin confirmar". Tiene que ser 0; si no, el tablon contradice al feed.
+    contradictorias = sum(
+        1 for e in estaciones.values() for d in e["departures"] if contradicts_live(d)
+    )
+    if contradictorias:
+        _log(
+            "ERROR",
+            f"{contradictorias} salidas en vivo con aviso que las contradice (RB-008)",
+            alert="departures_contradicting_live", count=contradictorias,
+        )
     especiales_en_tablon = sum(
         1 for e in estaciones.values() for d in e["departures"] if d["special"]
     )
@@ -568,6 +584,7 @@ def _build_boards(
             "inbound_estimates_disabled_stale": not fresco,
             "departures_not_published": no_publicadas,
             "departures_missing_in_window": ausentes_en_ventana,
+            "departures_contradicting_live": contradictorias,
         },
         "stations": estaciones,
     }

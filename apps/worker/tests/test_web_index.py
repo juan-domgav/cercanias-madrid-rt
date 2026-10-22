@@ -13,15 +13,23 @@ def test_las_dos_copias_de_index_html_son_identicas() -> None:
     assert fuente == publica, "copia apps/web/index.html a apps/web/public/index.html"
 
 
-def test_la_web_pinta_el_estimado_como_estimado() -> None:
-    """RB-007: el retraso estimado desde el entrante no se pinta como dato en vivo."""
+def test_la_web_pinta_el_estado_de_la_funcion_compartida() -> None:
+    """RB-008: la web no tiene su propia cascada de etiquetas: pinta ``display``,
+    que la ingesta rellena con ``board_status.departure_status`` (la misma que el bot)."""
     html = (WEB / "index.html").read_text(encoding="utf-8")
-    assert 'd.delay_source === "inbound_estimate"' in html
-    assert "(estimado)" in html
-    assert ".delay.estimated" in html
+    assert "d.display" in html
+    assert "s.label" in html and "s.notices" in html and "s.approximate" in html
+    assert ".delay.estimated" in html, "el tono 'estimated' sigue teniendo estilo"
+    # Las cascadas antiguas desaparecen: eran las que divergian del bot.
+    assert '"sin confirmar"' not in html
+    assert "d.inbound_delay" not in html
+    assert 'd.delay_source === "inbound_estimate"' not in html
 
 
-def test_la_web_distingue_no_publicado() -> None:
+def test_el_fallback_de_la_web_nunca_contradice_el_dato_en_vivo() -> None:
+    """Con un boards.json previo a RB-008 (sin ``display``) la web solo pinta el
+    dato en vivo: ningun aviso de entrante ni "sin confirmar"."""
     html = (WEB / "index.html").read_text(encoding="utf-8")
-    assert 'd.realtime_status === "not_published"' in html
-    assert "programado · Renfe aún no lo publica" in html
+    fallback = html[html.index("const s = d.display ||"):html.index("const cls =")]
+    assert "notices: []" in fallback
+    assert "inbound" not in fallback

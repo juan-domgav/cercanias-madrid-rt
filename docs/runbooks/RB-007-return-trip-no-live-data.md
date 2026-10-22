@@ -102,7 +102,9 @@ la salida de cabecera. Probado aparte: elegir la llegada MÁS ANTIGUA (FIFO) sub
 
 ## Arreglo / ajuste
 - Activar o quitar líneas: variable `INBOUND_ESTIMATE_EXCLUDED_ROUTES` del Cloud Run job
-  `cercanias-ingesta` (familias separadas por comas; vacía = todas). Revalidar
+  `cercanias-ingesta` (familias separadas por comas; vacía = todas).
+  Desde RB-008 la misma lista apaga también el aviso «el tren que hace este
+  servicio viene con +N» (y éste nunca sale si el propio viaje está en vivo). Revalidar
   antes con el archivo (`gs://cercanias-madrid-rt-privado/archivo/<día>/`).
 - Cambios de emparejamiento (`INTERLINE_TERMINI`, `AMBIGUITY_TIE_MINUTES`)
   requieren regenerar horarios (job `cercanias-horarios`, ver DESPLIEGUE.md).
