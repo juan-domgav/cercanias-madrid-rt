@@ -75,9 +75,10 @@ p. ej. `1092X20114C3` a las 05:18 del 21/10 con −69960; después → día sigu
 y el `tripId` canónico (`1093J…` → `1092X…`). Si no, manda la etiqueta.
 
 ### Feed congelado
-El feed puede quedarse **congelado**: el 03/10 (sábado) de ~00:00 a ~11:00
-repitió cada 20 s la misma foto de 28 trenes del viernes (`1073V`, mismos
-`delay`/`next_stop`/posición) y luego hasta ~13:00 sólo un `SPECIAL`. Una racha de
+El feed puede quedarse **congelado**: el 03/10 (sábado) hasta las 09:17 repitió
+cada 20 s la misma foto de 28 trenes del viernes (`1073V`, mismos
+`delay`/`next_stop`/posición) y luego hasta ~13:00 sólo un `SPECIAL`. Igual las
+mañanas del 26/09, 28/09, 30/09 y 05/10. Una racha de
 pasadas **idénticas** (≥ 5 trenes) que dura ≥ 10 min se trata como congelada:
 se conserva la primera y se descartan las repeticiones (no son observaciones
 nuevas; si se contaran, el último `ts` de esos trenes sería falso). Las pasadas
@@ -108,6 +109,8 @@ script): día parcial (primera pasada >06:00 o última <23:30), <3.500 pasadas,
 >30 min de huecos o de feed congelado en 06-24 h, servicio mayoritario del feed ≠ esperado, sin
 horario, <85 % de trenes programados vistos, <60 % medido. `revisar` no excluye
 el día: avisa de que hay que filtrar (por hora, por `medido`).
+
+Informe del backfill inicial: [`docs/informes/historico-calidad-2026-09-08_2026-10-22.md`](../informes/historico-calidad-2026-09-08_2026-10-22.md).
 
 ## Reconstruir un día
 ```bash
