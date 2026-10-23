@@ -14,5 +14,6 @@ verificación y rollback. Los jobs viven en el proyecto `cercanias-en-hora`.
 | Un sentido «sin datos en vivo» con el tren que llega a cabecera localizado | [RB-007](RB-007-return-trip-no-live-data.md) |
 | Bot o web dicen «sin confirmar» / «viene con +N» con el tren en vivo y en hora | [RB-008](RB-008-bot-boards-inconsistent.md) |
 | Salidas de cabecera «en hora» mientras los que llegan van tarde | [RB-009](RB-009-origin-delay-placeholder.md) |
+| Reconstruir, rellenar o verificar el histórico de retrasos (`historico/<día>.parquet`) | [RB-010](RB-010-historico.md) |
 
 Detalle de despliegue: [`docs/DESPLIEGUE.md`](../DESPLIEGUE.md).

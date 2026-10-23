@@ -109,8 +109,17 @@ emparejamiento validado (hoy C1). Ver `docs/runbooks/RB-008-bot-boards-inconsist
   `cercanias-horarios-nightly`). El GTFS de Renfe trae ~30 días por delante.
   **Incidente:** los subidos a mano en agosto caducaron hacia el 29/08 y los
   tablones estuvieron vacíos hasta el 14/10 sin que ningún job fallara.
-- Archivo histórico: >5.700 pasadas desde el 20/08, en el bucket privado, con
-  regla de borrado a 45 días. `make analizar` lo resume.
+- Archivo histórico: >5.700 pasadas desde el 20/08, en el bucket privado.
+  **Retención: 90 días** desde el 23/10/2026 (lo pidió Juan; antes, regla de
+  borrado `age 45` sobre el prefijo `archivo/`). Rollback:
+  `gcloud storage buckets update gs://cercanias-madrid-rt-privado --lifecycle-file=/workspace/historico/lifecycle_before.json`.
+  `make analizar` lo resume.
+- **Histórico de retrasos** (23/10/2026): `historico/<día>.parquet` + `historico/calidad/<día>.json`
+  en el bucket privado, una fila por (día, tren, parada), **sin regla de borrado**.
+  Rellenado del 08/09 al 22/10. Se construye con `scripts/construir_historico.py`;
+  definición de «retraso real», calidad y rollback en
+  `docs/runbooks/RB-010-historico.md`. Aún sin job programado: el incremental
+  diario (`... construir_historico.py ayer`) se lanza a mano o desde el box.
 - Feedback del bot: bucket **privado**, `make feedback`.
 
 ## Trabajo pendiente, por prioridad
