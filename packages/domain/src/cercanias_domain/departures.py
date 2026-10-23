@@ -61,6 +61,10 @@ TURNAROUND_SAFETY_MARGIN_MINUTES = 2
 #: presentarla con su hora limpia es la mentira que deja a alguien esperando.
 UNCONFIRMED_LEAD_MINUTES = 5
 
+#: Hasta cuánto después de su hora programada puede seguir en el tablón un tren
+#: con retraso (en vivo, cota de cabecera o estimado). Sólo acota el recorrido.
+MAX_LINGER_MINUTES = 180
+
 #: Materialidad mínima. Renfe considera puntual un Cercanías con menos de tres
 #: minutos, así que por debajo de eso avisar es ruido AUNQUE la maniobra sea 0 y
 #: el andén esté técnicamente vacío. Se aplica siempre, no sólo cuando falta el
@@ -81,6 +85,9 @@ PUBLISH_WINDOW_MINUTES = 30
 
 #: ``Departure.realtime_status``, por orden de precedencia.
 REALTIME_LIVE = "live"
+#: En el feed pero AÚN en su estación de origen (RB-009): el ``delay`` que publica
+#: Renfe antes de la salida no es una medida.
+REALTIME_PENDING_DEPARTURE = "pending_departure"
 REALTIME_INBOUND_ESTIMATE = "inbound_estimate"
 REALTIME_NOT_PUBLISHED = "not_published"
 REALTIME_NO_DATA = "no_data"
@@ -113,8 +120,8 @@ class ScheduledStop:
     #: sólo significa algo ahí: en una parada intermedia el tren ya circula y su
     #: propio retraso es el dato bueno.
     is_origin: bool = False
-    #: Estación de origen, para comprobar que el retraso del entrante está medido
-    #: precisamente ahí y no ocho paradas antes.
+    #: Estación de ORIGEN del viaje (``seq == 1``), en todas sus paradas. Sirve
+    #: para saber si el tren sigue en cabecera sin haber salido (RB-009).
     origin_stop_id: str | None = None
     #: El enlace se eligió entre candidatos casi empatados: no se sabe qué tren
     #: físico hará el servicio, así que NO se estima nada desde el entrante.
@@ -193,6 +200,11 @@ class Departure:
     #: Sin dato en vivo ni estimado, y su salida de origen esta a mas de
     #: ``PUBLISH_WINDOW_MINUTES``: Renfe aun no lo publica. No es una anomalia.
     not_published: bool = False
+    #: El tren está en el feed pero sigue en su estación de origen sin haber
+    #: salido (RB-009). Antes de su hora de salida ``delay_minutes`` es ``None``:
+    #: Renfe publica 0 (o el retraso que arrastra la unidad) y no es una medida.
+    #: Pasada la hora, ``delay_minutes`` es una COTA INFERIOR (lo que ya lleva).
+    pending_departure: bool = False
 
     @property
     def delay_source(self) -> str | None:
@@ -205,7 +217,9 @@ class Departure:
 
     @property
     def realtime_status(self) -> str:
-        """``live`` > ``inbound_estimate`` > ``not_published`` > ``no_data``."""
+        """``live`` > ``pending_departure`` > ``inbound_estimate`` > ``not_published`` > ``no_data``."""
+        if self.pending_departure:
+            return REALTIME_PENDING_DEPARTURE
         if self.located:
             return REALTIME_LIVE
         if self.estimated_delay_minutes is not None:
@@ -231,6 +245,7 @@ class Departure:
             self.delay_minutes is not None
             and self.delay_minutes <= 0
             and not self.at_risk
+            and not self.pending_departure
             and not self.cancelled
             and not self.inbound_cancelled
         )
@@ -309,6 +324,29 @@ class DepartureQuery:
     #: Ventana de publicacion de Renfe. ``None`` = no afirmar "no publicado"
     #: (snapshot viejo o degradado: no sabemos que hay en el feed).
     publish_window_minutes: int | None = None
+    #: Familias de línea en las que, con el tren AÚN en cabecera y antes de su
+    #: hora, se estima la salida desde el entrante (RB-009). Lista PERMITIDA, vacía
+    #: por defecto: la validación del 19-22/10/2026 no alcanzó el umbral (>= 80 %
+    #: a +-3 min con 5 y 10 min de antelación, n >= 30) en ninguna línea.
+    origin_estimate_routes: frozenset[str] = frozenset()
+
+
+#: Estados del feed que significan "todavía en el andén de origen". Tras salir,
+#: Renfe pasa a ``IN_TRANSIT_TO`` con ``next_stop`` = origen durante unos minutos
+#: (archivo 19-22/10: 4121 de 4126 viajes empiezan ``STOPPED_AT`` en cabecera y
+#: la salida es la transición a ``IN_TRANSIT_TO``).
+_AT_ORIGIN_STATUSES = frozenset({"STOPPED_AT", "INCOMING_AT"})
+
+
+def _still_at_origin(stop: ScheduledStop, tren: LiveTrain | None) -> bool:
+    """¿Está el tren en el feed pero aún sin salir de su estación de origen?"""
+    return (
+        tren is not None
+        and not tren.cancelled
+        and stop.origin_stop_id is not None
+        and tren.next_stop_id == stop.origin_stop_id
+        and tren.status in _AT_ORIGIN_STATUSES
+    )
 
 
 def estimate_from_inbound(inbound_delay_minutes: int, scheduled_layover_minutes: int) -> int:
@@ -327,6 +365,17 @@ def _route_family(stop: ScheduledStop) -> str:
     return parsed.route_group if parsed else stop.route
 
 
+def _estimate_allowed(stop: ScheduledStop, propio: LiveTrain | None, query: DepartureQuery) -> bool:
+    """¿Se puede estimar desde el entrante? Sin el viaje en el feed, salvo líneas
+    excluidas (RB-007); con el tren aún en cabecera, sólo líneas validadas (RB-009)."""
+    if not query.estimate_from_inbound or not stop.inbound_trip_id or stop.inbound_ambiguous:
+        return False
+    familia = _route_family(stop)
+    if propio is None:
+        return familia not in query.estimate_excluded_routes
+    return _still_at_origin(stop, propio) and familia in query.origin_estimate_routes
+
+
 def _inbound_estimate(
     stop: ScheduledStop,
     live: dict[str, LiveTrain],
@@ -339,15 +388,9 @@ def _inbound_estimate(
     no está en el feed, su retraso en Tres Cantos es el que arrastre desde
     Colmenar. En cuanto aparece, su dato manda (``propio``).
     """
-    if not query.estimate_from_inbound or propio is not None:
+    if not _estimate_allowed(stop, propio, query) or stop.turnaround_slack_minutes is None:
         return None
-    if not stop.inbound_trip_id or stop.inbound_ambiguous:
-        return None
-    if stop.turnaround_slack_minutes is None:
-        return None
-    if _route_family(stop) in query.estimate_excluded_routes:
-        return None
-    entrante = live.get(stop.inbound_trip_id)
+    entrante = live.get(stop.inbound_trip_id) if stop.inbound_trip_id else None
     if entrante is None or entrante.cancelled or entrante.delay_seconds is None:
         return None
     return estimate_from_inbound(
@@ -378,7 +421,9 @@ def _inbound_warning(
     #    "viene con +17" porque el 20427 —que NO lo formaba: en Colmenar Renfe
     #    cambia de material— iba +17 por Tres Cantos. Con el viaje en el feed,
     #    un aviso desde el entrante sólo puede contradecir el dato en vivo.
-    if propio is not None:
+    if propio is not None and not (
+        _still_at_origin(stop, propio) and _route_family(stop) in query.origin_estimate_routes
+    ):
         return None
 
     # 3. Sólo con un emparejamiento fiable. Mismo criterio que la estimación
@@ -436,9 +481,13 @@ def next_departures(
             continue
 
         programada = parse_hhmm_to_minutes(stop.time_hhmmss)
-        if programada < now_minutes - grace_minutes:
-            continue
         if programada > now_minutes + window_minutes:
+            continue
+        # El margen se mide sobre la hora PREVISTA, no la programada (RB-009): un
+        # tren que va +10 (o que sigue en el andén de cabecera pasada su hora) no
+        # puede desaparecer del tablón 3 minutos después de su hora de horario.
+        # Corte barato primero: ningún retraso publicado pasa de unas horas.
+        if programada < now_minutes - grace_minutes - MAX_LINGER_MINUTES:
             continue
 
         tren = live.get(stop.trip_id)
@@ -446,11 +495,26 @@ def next_departures(
         if tren is not None and tren.delay_seconds is not None:
             retraso = round(tren.delay_seconds / 60)
 
+        # RB-009: con el tren aún en cabecera, el delay del feed no es una medida.
+        # Antes de su hora: sin retraso (ni 0 ni el que arrastre la unidad). Ya
+        # pasada: lo que lleva esperando es una cota inferior cierta.
+        en_cabecera = _still_at_origin(stop, tren)
+        if en_cabecera:
+            salida_origen = (
+                parse_hhmm_to_minutes(stop.origin_departure_hhmmss)
+                if stop.origin_departure_hhmmss
+                else programada
+            )
+            esperando = now_minutes - salida_origen
+            retraso = max(retraso or 0, esperando) if esperando > 0 else None
+
         # El aviso del enlace SOLO aplica mientras el viaje no esté en el feed: en
         # cuanto aparece, su dato manda y el del enlace sobra (RB-008).
         retraso_enlace = _inbound_warning(stop, live, tren, query)
         estimado = _inbound_estimate(stop, live, tren, query) if retraso is None else None
         desfase = retraso if retraso is not None else (estimado or 0)
+        if programada + max(desfase, 0) < now_minutes - grace_minutes:
+            continue
 
         entrante_vivo = live.get(stop.inbound_trip_id) if stop.inbound_trip_id else None
         suprimido = bool(tren and tren.cancelled)
@@ -498,6 +562,7 @@ def next_departures(
                 shortened=bool(tren and tren.skips_stops),
                 estimated_delay_minutes=estimado,
                 not_published=no_publicado,
+                pending_departure=en_cabecera,
             )
         )
 

@@ -1,6 +1,6 @@
 {
  "service": "1093J",
- "_source": "horarios/1093J.json (bucket web, 22/10/2026), solo Colmenar Viejo 08:00-10:30. RB-008.",
+ "_source": "horarios/1093J.json (bucket web, 22/10/2026), solo Colmenar Viejo (17005) y Tres Cantos (17004) 08:00-10:30. RB-008/RB-009.",
  "stations": {
   "17005": [
    {
@@ -202,6 +202,198 @@
     "terminates": true,
     "from": "1093J20424C4b",
     "slack": 3
+   }
+  ],
+  "17004": [
+   {
+    "trip": "1093J20424C4b",
+    "t": "08:06:00",
+    "seq": 2,
+    "dest": "Parla",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1093J20421C4b",
+    "slack": 7
+   },
+   {
+    "trip": "1093J20425C4b",
+    "t": "08:10:00",
+    "seq": 14,
+    "dest": "Colmenar Viejo",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1093J20216C4a",
+    "slack": 2
+   },
+   {
+    "trip": "1093J20427C4b",
+    "t": "08:20:00",
+    "seq": 14,
+    "dest": "Colmenar Viejo",
+    "route": "C4b",
+    "terminates": false,
+    "from": null,
+    "slack": null
+   },
+   {
+    "trip": "1093J20426C4b",
+    "t": "08:24:00",
+    "seq": 2,
+    "dest": "Parla",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1093J20423C4b",
+    "slack": 12
+   },
+   {
+    "trip": "1093J20429C4b",
+    "t": "08:33:00",
+    "seq": 14,
+    "dest": "Colmenar Viejo",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1093J20218C4a",
+    "slack": 12
+   },
+   {
+    "trip": "1093J20428C4b",
+    "t": "08:39:00",
+    "seq": 2,
+    "dest": "Parla",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1093J20427C4b",
+    "slack": 4
+   },
+   {
+    "trip": "1093J20431C4b",
+    "t": "08:45:00",
+    "seq": 14,
+    "dest": "Colmenar Viejo",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1093J20222C4a",
+    "slack": 0
+   },
+   {
+    "trip": "1093J20430C4b",
+    "t": "08:49:00",
+    "seq": 2,
+    "dest": "Parla",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1093J20429C4b",
+    "slack": 1
+   },
+   {
+    "trip": "1093J20433C4b",
+    "t": "08:55:00",
+    "seq": 14,
+    "dest": "Colmenar Viejo",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1093J20220C4a",
+    "slack": 21
+   },
+   {
+    "trip": "1093J20432C4b",
+    "t": "09:01:00",
+    "seq": 2,
+    "dest": "Parla",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1093J20431C4b",
+    "slack": 1
+   },
+   {
+    "trip": "1093J20435C4b",
+    "t": "09:10:00",
+    "seq": 14,
+    "dest": "Colmenar Viejo",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1093J20226C4a",
+    "slack": 3
+   },
+   {
+    "trip": "1093J20434C4b",
+    "t": "09:11:00",
+    "seq": 2,
+    "dest": "Parla",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1093J20433C4b",
+    "slack": 1
+   },
+   {
+    "trip": "1093J20436C4b",
+    "t": "09:24:00",
+    "seq": 2,
+    "dest": "Parla",
+    "route": "C4b",
+    "terminates": false,
+    "from": null,
+    "slack": null
+   },
+   {
+    "trip": "1093J20439C4b",
+    "t": "09:34:00",
+    "seq": 14,
+    "dest": "Colmenar Viejo",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1093J20230C4a",
+    "slack": 0
+   },
+   {
+    "trip": "1093J20438C4b",
+    "t": "09:44:00",
+    "seq": 2,
+    "dest": "Parla",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1093J20435C4b",
+    "slack": 19
+   },
+   {
+    "trip": "1093J20443C4b",
+    "t": "09:59:00",
+    "seq": 14,
+    "dest": "Colmenar Viejo",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1093J20234C4a",
+    "slack": 0
+   },
+   {
+    "trip": "1093J20440C4b",
+    "t": "10:04:00",
+    "seq": 2,
+    "dest": "Parla",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1093J20439C4b",
+    "slack": 15
+   },
+   {
+    "trip": "1093J20445C4b",
+    "t": "10:11:00",
+    "seq": 14,
+    "dest": "Colmenar Viejo",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1093J20424C4b",
+    "slack": 3
+   },
+   {
+    "trip": "1093J20442C4b",
+    "t": "10:24:00",
+    "seq": 2,
+    "dest": "Parla",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1093J20443C4b",
+    "slack": 10
    }
   ]
  }

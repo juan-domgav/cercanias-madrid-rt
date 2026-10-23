@@ -1,0 +1,214 @@
+{
+ "_source": "archivo/2026-10-22/101011.json (privado), solo C4 de 1093J. RB-009.",
+ "generated_at": "2026-10-22T10:10:11.082021+02:00",
+ "vehicles": [
+  {
+   "trip_id": "1093J20237C4a",
+   "lat": 40.546417,
+   "lon": -3.6351175,
+   "platform": "2",
+   "next_stop_id": "19003",
+   "status": "STOPPED_AT",
+   "delay_seconds": 2100
+  },
+  {
+   "trip_id": "1093J20239C4a",
+   "lat": 40.546333,
+   "lon": -3.6483345,
+   "platform": "1",
+   "next_stop_id": "19002",
+   "status": "IN_TRANSIT_TO",
+   "delay_seconds": 1800
+  },
+  {
+   "trip_id": "1093J20243C4a",
+   "lat": 40.501648,
+   "lon": -3.6821797,
+   "platform": "5",
+   "next_stop_id": "17000",
+   "status": "INCOMING_AT",
+   "delay_seconds": 1680
+  },
+  {
+   "trip_id": "1093J20245C4a",
+   "lat": 40.421925,
+   "lon": -3.6998749,
+   "platform": "1",
+   "next_stop_id": "18101",
+   "status": "IN_TRANSIT_TO",
+   "delay_seconds": 1140
+  },
+  {
+   "trip_id": "1093J20248C4a",
+   "lat": 40.288372,
+   "lon": -3.7373493,
+   "platform": "2",
+   "next_stop_id": "37002",
+   "status": "INCOMING_AT",
+   "delay_seconds": 360
+  },
+  {
+   "trip_id": "1093J20249C4a",
+   "lat": 40.323135,
+   "lon": -3.7273622,
+   "platform": "1",
+   "next_stop_id": "37002",
+   "status": "INCOMING_AT",
+   "delay_seconds": 180
+  },
+  {
+   "trip_id": "1093J20251C4a",
+   "lat": 40.24143,
+   "lon": -3.769159,
+   "platform": "1",
+   "next_stop_id": "37012",
+   "status": "STOPPED_AT",
+   "delay_seconds": 0
+  },
+  {
+   "trip_id": "1093J20254C4a",
+   "lat": 40.546417,
+   "lon": -3.6351175,
+   "platform": "2",
+   "next_stop_id": "19003",
+   "status": "STOPPED_AT",
+   "delay_seconds": 0
+  },
+  {
+   "trip_id": "1093J20256C4a",
+   "lat": 40.546417,
+   "lon": -3.6351175,
+   "platform": "2",
+   "next_stop_id": "19003",
+   "status": "STOPPED_AT",
+   "delay_seconds": 0
+  },
+  {
+   "trip_id": "1093J20434C4b",
+   "lat": 40.24143,
+   "lon": -3.769159,
+   "platform": "2",
+   "next_stop_id": "37011",
+   "status": "INCOMING_AT",
+   "delay_seconds": 420
+  },
+  {
+   "trip_id": "1093J20436C4b",
+   "lat": 40.323135,
+   "lon": -3.7273622,
+   "platform": "2",
+   "next_stop_id": "37001",
+   "status": "INCOMING_AT",
+   "delay_seconds": 180
+  },
+  {
+   "trip_id": "1093J20438C4b",
+   "lat": 40.4466,
+   "lon": -3.6920877,
+   "platform": "2",
+   "next_stop_id": "17000",
+   "status": "INCOMING_AT",
+   "delay_seconds": 600
+  },
+  {
+   "trip_id": "1093J20439C4b",
+   "lat": 40.64852,
+   "lon": -3.7282178,
+   "platform": "2",
+   "next_stop_id": "17004",
+   "status": "IN_TRANSIT_TO",
+   "delay_seconds": 1860
+  },
+  {
+   "trip_id": "1093J20440C4b",
+   "lat": 40.644844,
+   "lon": -3.7762609,
+   "platform": "3",
+   "next_stop_id": "17005",
+   "status": "STOPPED_AT",
+   "delay_seconds": 660
+  },
+  {
+   "trip_id": "1093J20442C4b",
+   "lat": 40.644844,
+   "lon": -3.7762609,
+   "platform": "3",
+   "next_stop_id": "17005",
+   "status": "STOPPED_AT",
+   "delay_seconds": 0
+  },
+  {
+   "trip_id": "1093J20443C4b",
+   "lat": 40.471325,
+   "lon": -3.6833096,
+   "platform": "4",
+   "next_stop_id": "17000",
+   "status": "IN_TRANSIT_TO",
+   "delay_seconds": 1620
+  },
+  {
+   "trip_id": "1093J20444C4b",
+   "lat": 40.644844,
+   "lon": -3.7762609,
+   "platform": "3",
+   "next_stop_id": "17005",
+   "status": "STOPPED_AT",
+   "delay_seconds": 0
+  },
+  {
+   "trip_id": "1093J20445C4b",
+   "lat": 40.4466,
+   "lon": -3.6920877,
+   "platform": "6",
+   "next_stop_id": "18002",
+   "status": "STOPPED_AT",
+   "delay_seconds": 1380
+  },
+  {
+   "trip_id": "1093J20447C4",
+   "lat": 40.411304,
+   "lon": -3.6969545,
+   "platform": "6",
+   "next_stop_id": "18000",
+   "status": "IN_TRANSIT_TO",
+   "delay_seconds": 900
+  },
+  {
+   "trip_id": "1093J20449C4b",
+   "lat": 40.417023,
+   "lon": -3.7031636,
+   "platform": "5",
+   "next_stop_id": "18000",
+   "status": "INCOMING_AT",
+   "delay_seconds": 600
+  },
+  {
+   "trip_id": "1093J20451C4b",
+   "lat": 40.40654,
+   "lon": -3.6895106,
+   "platform": "2",
+   "next_stop_id": "60100",
+   "status": "INCOMING_AT",
+   "delay_seconds": 120
+  },
+  {
+   "trip_id": "1093J20453C4b",
+   "lat": 40.24143,
+   "lon": -3.769159,
+   "platform": "2",
+   "next_stop_id": "37012",
+   "status": "STOPPED_AT",
+   "delay_seconds": 0
+  },
+  {
+   "trip_id": "1093J20455C4b",
+   "lat": 40.24143,
+   "lon": -3.769159,
+   "platform": "2",
+   "next_stop_id": "37012",
+   "status": "STOPPED_AT",
+   "delay_seconds": 0
+  }
+ ],
+ "incidents": []
+}
