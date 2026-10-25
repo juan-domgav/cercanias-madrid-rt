@@ -15,5 +15,6 @@ verificación y rollback. Los jobs viven en el proyecto `cercanias-en-hora`.
 | Bot o web dicen «sin confirmar» / «viene con +N» con el tren en vivo y en hora | [RB-008](RB-008-bot-boards-inconsistent.md) |
 | Salidas de cabecera «en hora» mientras los que llegan van tarde | [RB-009](RB-009-origin-delay-placeholder.md) |
 | `degraded: true` / «datos conservados» con `generated_at` de segundos (última pasada de Renfe vacía) | [RB-011](RB-011-degraded-with-fresh-data.md) |
+| `from` de cabecera con una llegada de 1-4 min antes que no forma esa salida | [RB-012](RB-012-turnaround-minimum.md) |
 
 Detalle de despliegue: [`docs/DESPLIEGUE.md`](../DESPLIEGUE.md).
