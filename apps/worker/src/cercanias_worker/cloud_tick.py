@@ -228,6 +228,18 @@ def _snapshot_a_publicar(
     desapariciones en el ~5 % de los sondeos, avisar por cada fallo llena la app
     de advertencias sobre datos de 80 segundos y se acaba ignorando el aviso.
     """
+    if actual.get("vehicles") and actual.get("stale_since"):
+        # La ultima pasada de ESTA invocacion vino vacia y run_cycle conservo una
+        # anterior de la misma invocacion marcandola ``degraded``. Esos datos
+        # tienen segundos: se aplica el mismo umbral que entre invocaciones para
+        # no publicar un aviso falso de datos viejos.
+        salida = dict(actual)
+        edad = _snapshot_age_seconds(salida)
+        if edad is not None and edad < STALE_WARNING_SECONDS:
+            salida.pop("degraded", None)
+            salida.pop("reason", None)
+            print(f"pasada final vacia: se conserva la anterior ({edad:.0f}s), aun vigente")
+        return salida
     if actual.get("vehicles") or not previo:
         return actual
     salida = dict(previo)
