@@ -83,7 +83,8 @@ def test_bot_y_tablon_dicen_lo_mismo_del_tren_previsto(
         "   📊 previsto por su histórico; Renfe aún no lo publica en vivo"
     )
     c5 = next(f for f in filas if f["train"] == "35001")
-    assert "previsto puntual" in format_departure(c5)
+    assert "previsto sin retraso" in format_departure(c5)
+    assert "en hora" not in format_departure(c5)
     vivo = next(f for f in filas if f["train"] == "35003")
     assert format_departure(vivo).splitlines()[1].endswith("Andén <b>6</b> · en hora")
     assert "«previsto» = previsión por el histórico de ese tren, no dato en vivo" in texto

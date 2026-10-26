@@ -65,7 +65,7 @@ def _artefacto(generado: datetime = AHORA, **cambios: Any) -> dict[str, Any]:
     obs: list[Observation] = []
     for d in lab:
         obs.append(Observation("C1", "19799", ATOCHA, d, 180))   # +3
-        obs.append(Observation("C5", "35001", ATOCHA, d, 0))     # puntual
+        obs.append(Observation("C5", "35001", ATOCHA, d, 0))     # sin retraso
         obs.append(Observation("C5", "35003", ATOCHA, d, 600))   # +10 (pero va en vivo)
         obs.append(Observation("C3", "23001", ATOCHA, d, 300))   # línea no habilitada
     datos = build_table(obs, lines=frozenset({"C1", "C3", "C5"}), holidays=frozenset({date(2026, 10, 12)}),
@@ -128,7 +128,8 @@ def test_previsto_solo_en_lineas_habilitadas_y_sin_dato_en_vivo(entorno: tuple[P
     assert c1["eta"] == "08:20" and c1["delay"] is None and c1["live"] is False
     assert c1["on_time"] is False
 
-    assert filas["35001"]["display"]["label"] == "previsto puntual"
+    assert filas["35001"]["display"]["label"] == "previsto sin retraso"
+    assert "en hora" not in filas["35001"]["display"]["label"]
     # En vivo: manda Renfe, aunque su histórico diga +10.
     vivo = filas["35003"]
     assert vivo["predicted_delay"] is None and vivo["display"]["label"] == "en hora"

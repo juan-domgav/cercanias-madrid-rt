@@ -19,7 +19,7 @@ como "sin confirmar" con el tren localizado en el andén. Aquí se decide una ve
   un ``boards.json`` generado por una versión anterior de la ingesta).
 - **Previsto no es en vivo** (RB-013): sin nada del feed, en líneas habilitadas,
   se dice "previsto +N min" (mediana del histórico de ese tren en esa estación) o
-  "previsto puntual"; NUNCA "en hora". Va tras el estimado por entrante y antes
+  "previsto sin retraso"; NUNCA "en hora". Va tras el estimado por entrante y antes
   de "no publicado" / "sin datos", y con el tren en vivo no se muestra.
 
 La ingesta guarda el resultado en ``boards.json`` (``display``) para que la web
@@ -167,8 +167,12 @@ def _label_tone(kind: str, row: Mapping[str, Any]) -> tuple[str, str]:
 
 
 def predicted_label(minutes: int) -> str:
-    """Etiqueta de una previsión. Nunca "en hora": eso solo lo dice el dato en vivo."""
-    return f"previsto +{minutes} min" if minutes > 0 else "previsto puntual"
+    """Etiqueta de una previsión. Nunca "en hora": eso solo lo dice el dato en vivo.
+
+    Con mediana 0 (o negativa) se dice "previsto sin retraso", no "puntual": es
+    una previsión, no una medida de puntualidad.
+    """
+    return f"previsto +{minutes} min" if minutes > 0 else "previsto sin retraso"
 
 
 _DAY_TYPE_TEXT = {"laborable": "días laborables", "festivo": "sábados, domingos y festivos"}

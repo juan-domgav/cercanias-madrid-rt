@@ -48,10 +48,11 @@ def test_previsto_con_retraso() -> None:
 
 
 @pytest.mark.parametrize("mediana", [0, -1])
-def test_mediana_cero_o_negativa_es_previsto_puntual_nunca_en_hora(mediana: int) -> None:
+def test_mediana_cero_o_negativa_es_previsto_sin_retraso_nunca_en_hora(mediana: int) -> None:
     s = departure_status(_fila(predicted_delay=mediana))
-    assert s.label == "previsto puntual"
+    assert s.label == "previsto sin retraso"
     assert "en hora" not in s.label
+    assert "puntual" not in s.label
 
 
 def test_festivos_en_el_detalle() -> None:

@@ -7,7 +7,7 @@ tablón y el bot pueden mostrar el retraso **previsto**: la mediana del retraso
 de *ese tren en esa estación* en los días recientes del mismo tipo (laborable o
 sábado/domingo/festivo).
 
-- Etiqueta: `previsto +3 min`; mediana 0 → `previsto puntual`. **Nunca** `en hora`.
+- Etiqueta: `previsto +3 min`; mediana 0 → `previsto sin retraso`. **Nunca** `en hora`.
 - Aviso: `📊 previsto por su histórico; Renfe aún no lo publica en vivo`; detalle
   en la web: «Previsión, no dato en vivo: es la mediana del retraso de este tren
   en esta estación en N días laborables recientes. Cuando Renfe lo publique en
