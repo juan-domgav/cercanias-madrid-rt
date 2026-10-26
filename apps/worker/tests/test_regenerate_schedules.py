@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -292,23 +293,138 @@ def test_empate_de_salidas_respeta_el_minimo() -> None:
 
 def test_parse_min_turnaround() -> None:
     assert module.parse_min_turnaround("") == {}
-    assert module.parse_min_turnaround(" 35607=5 , 70200=7,") == {"35607": 5, "70200": 7}
-    for malo in ("35607", "35607=x", "=5", "35607=-1", "35607=99"):
-        with pytest.raises(ValueError):
-            module.parse_min_turnaround(malo)
+    assert module.parse_min_turnaround("   ") == {}
+    assert module.parse_min_turnaround(" 35607:5 ; 70200:7;") == {"35607": 5, "70200": 7}
+    assert module.parse_min_turnaround("17005:0") == {"17005": 0}
+    assert module.parse_min_turnaround(f"17005:{module.MAX_TURNAROUND_MINUTES}") == {
+        "17005": module.MAX_TURNAROUND_MINUTES
+    }
+
+
+@pytest.mark.parametrize(
+    "malo",
+    [
+        "35607",  # sin valor
+        "35607:x",  # no entero
+        "35607:5.0",
+        "35607:+5",
+        "35607:-1",  # negativo
+        "35607:41",  # > MAX_TURNAROUND_MINUTES
+        "35607:999",
+        ":5",  # sin parada
+        "35607:",
+        "35607=5",  # formato antiguo
+        "35607:5,70200:7",  # coma: gcloud la partiria
+        "35607:5:1",
+        "35607:\u0665",  # digito no ASCII: int() lo aceptaria
+        "356-07:5",
+        "35607:5;35607:0",  # repetida
+        "17005:5;basura",  # una mala invalida TODA la tabla
+    ],
+)
+def test_parse_min_turnaround_rechaza(malo: str) -> None:
+    with pytest.raises(module.MinTurnaroundError):
+        module.parse_min_turnaround(malo)
 
 
 def test_min_turnaround_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("MIN_TURNAROUND_BY_TERMINUS", raising=False)
-    assert module.min_turnaround_from_env() == module.DEFAULT_MIN_TURNAROUND_BY_TERMINUS
-    # Vuelta atras sin desplegar codigo: variable vacia = comportamiento anterior.
+    assert module.min_turnaround_from_env() == {}
     monkeypatch.setenv("MIN_TURNAROUND_BY_TERMINUS", "")
     assert module.min_turnaround_from_env() == {}
-    monkeypatch.setenv("MIN_TURNAROUND_BY_TERMINUS", "35607=5")
-    assert module.min_turnaround_from_env() == {"35607": 5}
+    monkeypatch.setenv("MIN_TURNAROUND_BY_TERMINUS", "35607:5;70200:7")
+    assert module.min_turnaround_from_env() == {"35607": 5, "70200": 7}
 
 
-def test_tabla_por_defecto_es_la_documentada() -> None:
-    assert module.DEFAULT_MIN_TURNAROUND_BY_TERMINUS == {"17005": 5, "70200": 5, "60200": 3}
-    tabla = module.DEFAULT_MIN_TURNAROUND_BY_TERMINUS
-    assert all(0 <= n <= module.MAX_TURNAROUND_MINUTES for n in tabla.values())
+@pytest.mark.parametrize("malo", ["17005:5;70200:x", "17005:-3", "17005:99", "17005=5,70200=5"])
+def test_min_turnaround_mal_formada_cae_a_vacia_con_error(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], malo: str
+) -> None:
+    monkeypatch.setenv("MIN_TURNAROUND_BY_TERMINUS", malo)
+    assert module.min_turnaround_from_env() == {}  # ni media tabla: nada
+    registro = json.loads(capsys.readouterr().err.strip().splitlines()[-1])
+    assert registro["severity"] == "ERROR"
+    assert registro["component"] == "regenerate-schedules"
+    assert registro["value"] == malo
+
+
+def test_tabla_por_defecto_vacia_es_main() -> None:
+    """Sin valores aprobados (RB-012): por defecto, el enlace de main."""
+    assert module.DEFAULT_MIN_TURNAROUND_BY_TERMINUS == {}
+
+
+def test_validate_min_turnaround_descarta_paradas_desconocidas(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    tabla = module.validate_min_turnaround({"35607": 5, "99999": 3}, {"35607", "35002"})
+    assert tabla == {"35607": 5}
+    registro = json.loads(capsys.readouterr().err.strip())
+    assert registro["severity"] == "ERROR"
+    assert registro["unknown_stops"] == ["99999"]
+    assert module.validate_min_turnaround({"35607": 5}, {"35607"}) == {"35607": 5}
+    assert capsys.readouterr().err == ""
+
+
+def test_build_schedules_ignora_parada_desconocida(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Una parada que no es cabecera en el GTFS no cambia nada (y deja ERROR)."""
+    _escribe_gtfs_mostoles(tmp_path)
+    base = module.build_schedules(tmp_path)
+    assert module.build_schedules(tmp_path, {"99999": 9}) == base
+    assert "99999" in capsys.readouterr().err
+    # Y la cabecera de verdad si aplica.
+    assert module.build_schedules(tmp_path, {"35607": 5}) != base
+
+
+def _escribe_gtfs_mostoles(directorio: Path) -> None:
+    viajes = _mostoles()
+    (directorio / "routes.txt").write_text(
+        "route_id,route_short_name\n10T0005C5,C5\n", encoding="utf-8"
+    )
+    (directorio / "stops.txt").write_text(
+        "stop_id,stop_name\n35607,Mostoles-El Soto\n35002,Humanes\n", encoding="utf-8"
+    )
+    (directorio / "calendar.txt").write_text("service_id\n1092X\n", encoding="utf-8")
+    (directorio / "trips.txt").write_text(
+        "route_id,service_id,trip_id\n"
+        + "".join(f"10T0005C5,1092X,{v.trip_id}\n" for v in viajes),
+        encoding="utf-8",
+    )
+    (directorio / "stop_times.txt").write_text(
+        "trip_id,arrival_time,departure_time,stop_id,stop_sequence\n"
+        + "".join(
+            f"{v.trip_id},{p.arrival_time},{p.departure_time},{p.stop_id},{p.sequence}\n"
+            for v in viajes
+            for p in v.stops
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_main_publica_aunque_la_variable_este_mal_formada(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Una MIN_TURNAROUND_BY_TERMINUS rota no deja la noche sin horarios: ERROR
+    en el log y se publica lo mismo que publicaria main."""
+    _escribe_gtfs_mostoles(tmp_path)
+
+    class Outcome:
+        version_dir = tmp_path
+
+    published: dict[str, bytes] = {}
+
+    class Publisher:
+        def publish(self, key: str, body: bytes, **_kwargs: object) -> str:
+            published[key] = body
+            return key
+
+    monkeypatch.setattr(module, "download_gtfs_static", lambda *_a, **_k: Outcome())
+    monkeypatch.setattr(module, "publisher_from_env", Publisher)
+    monkeypatch.setattr(module, "MIN_SERVICE_DAYS", 1)
+    monkeypatch.setenv("MIN_TURNAROUND_BY_TERMINUS", "35607=5,70200=5")
+
+    assert module.main() == 0
+    assert '"severity": "ERROR"' in capsys.readouterr().err
+    esperado = module.build_schedules(tmp_path)["1092X"]
+    assert json.loads(published["horarios/1092X.json"]) == esperado

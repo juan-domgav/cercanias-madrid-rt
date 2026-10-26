@@ -15,9 +15,16 @@ Compara, por cabecera, el enlace actual (llegada sin consumir mas proxima, manio
   cuenta como fallo) y ``prec`` = aciertos / ``cob``.
 
 Ajuste y validacion en dias DISTINTOS: N se elige por cabecera en los dias de
-ajuste (mejor ``ok`` medio en A=5 y A=10 entre ``CANDIDATOS``) y solo se adopta si
+ajuste (mejor F1 medio en A=5 y A=10 entre ``CANDIDATOS``) y solo se adopta si
 supera a N=0 en ``MEJORA_MINIMA`` puntos con ``n >= N_MINIMO``; la tabla final se
 mide en los dias de validacion.
+
+Metrica DURA (RB-012): ``enhora`` = salidas con retraso real >= 3 min cuya
+estimacion desde el entrante da < 3 (el tablon diria «≈ en hora»). Ninguna tabla
+puede subirla sobre N=0 (el enlace de main), ni en total ni en ninguna cabecera,
+ni a 5 ni a 10 min: en el ajuste esos N se descartan, y si la tabla final la sube
+en ajuste o validacion el script imprime FAIL y sale con codigo 1. Se compara
+tambien con «suponer en hora» (decir siempre 0), que esconde TODOS los retrasos.
 
 Uso::
 
@@ -156,6 +163,14 @@ def metricas(fs: list[dict[str, Any]]) -> dict[str, float]:
         avisos = [f for f in e if f[f"e{a}"] >= TOLERANCIA]
         m[f"av{a}"] = len(avisos)
         m[f"avok{a}"] = sum(abs(f[f"e{a}"] - f["real"]) <= TOLERANCIA for f in avisos)
+    # METRICA DURA (RB-012): retrasos reales (>= 3) que el tablon mostraria como
+    # "≈ en hora" porque la estimacion desde el entrante da < 3. Es la forma de
+    # mentir que no se puede empeorar: ninguna tabla puede subirla sobre N=0.
+    # ``sin{a}``: los mismos retrasos sin estimacion (el tablon no dice nada).
+    tarde_ = [f for f in fs if f["real"] >= TOLERANCIA]
+    for a in ANTELACIONES:
+        m[f"enhora{a}"] = sum(f[f"e{a}"] is not None and f[f"e{a}"] < TOLERANCIA for f in tarde_)
+        m[f"sin{a}"] = sum(f[f"e{a}"] is None for f in tarde_)
     # Referencia ingenua: decir siempre 0 (en hora) acierta esto.
     m["cero"] = 100 * sum(abs(f["real"]) <= TOLERANCIA for f in fs) / len(fs) if fs else float("nan")
     tarde = [f for f in fs if f["real"] >= TOLERANCIA]
@@ -185,6 +200,7 @@ def por_origen(dias: list[Dia], minimos: dict[str, int]) -> dict[str, list[dict[
 
 def ajustar(dias: list[Dia]) -> tuple[dict[str, int], dict[str, dict[int, float]]]:
     puntuaciones: dict[str, dict[int, float]] = defaultdict(dict)
+    en_hora: dict[str, dict[int, float]] = defaultdict(dict)
     ns: dict[str, int] = {}
     origenes = {p[0][1] for d in dias for p in d.viajes.values() if p[0][0] == 1}
     for n in CANDIDATOS:
@@ -193,13 +209,60 @@ def ajustar(dias: list[Dia]) -> tuple[dict[str, int], dict[str, dict[int, float]
             m = metricas(fs)
             clave = "f1" if OBJETIVO == "f1" else "ok"
             puntuaciones[origen][n] = (m[f"{clave}5"] + m[f"{clave}10"]) / 2
+            en_hora[origen][n] = max(m[f"enhora{a}"] for a in ANTELACIONES)
             ns[origen] = len(fs)
     elegido: dict[str, int] = {}
     for origen, p in puntuaciones.items():
-        mejor = max(p, key=lambda n: (p[n], -n))
+        # Metrica dura: un N que muestra en hora MAS retrasos reales que N=0 no
+        # es candidato, mejore lo que mejore el F1.
+        validos = {n: v for n, v in p.items() if n == 0 or en_hora[origen][n] <= en_hora[origen][0]}
+        descartados = sorted(set(p) - set(validos))
+        if descartados:
+            print(f"  {origen}: N={descartados} descartados (suben retrasos mostrados en hora)")
+        mejor = max(validos, key=lambda n: (validos[n], -n))
         if mejor and ns[origen] >= N_MINIMO and p[mejor] - p[0] >= MEJORA_MINIMA:
             elegido[origen] = mejor
     return elegido, dict(puntuaciones)
+
+
+def regresiones_en_hora(
+    viejo: dict[str, list[dict[str, Any]]], nuevo: dict[str, list[dict[str, Any]]]
+) -> list[str]:
+    """Cabeceras (y total) donde la tabla SUBE los retrasos reales mostrados en hora."""
+    fallos = []
+    grupos = {**{o: (viejo[o], nuevo.get(o, [])) for o in viejo},
+              "TODAS": ([f for fs in viejo.values() for f in fs],
+                        [f for fs in nuevo.values() for f in fs])}
+    for origen, (a_, b_) in grupos.items():
+        a, b = metricas(a_), metricas(b_)
+        for ant in ANTELACIONES:
+            if b[f"enhora{ant}"] > a[f"enhora{ant}"]:
+                fallos.append(f"{origen} A={ant}: {a[f'enhora{ant}']:.0f}→{b[f'enhora{ant}']:.0f}")
+    return fallos
+
+
+def informe_en_hora(
+    etiqueta: str, viejo: dict[str, list[dict[str, Any]]], nuevo: dict[str, list[dict[str, Any]]],
+    tabla: dict[str, int],
+) -> list[str]:
+    print(f"\n## Retrasos reales (>=3) mostrados «≈ en hora» — {etiqueta}")
+    print("| cabecera | N | salidas reales >=3 | «suponer en hora» | en hora A=5 N=0→tabla "
+          "| en hora A=10 N=0→tabla | sin estimacion A=10 N=0→tabla |")
+    origenes = sorted(set(tabla) & set(viejo))
+    for origen in [*origenes, "TODAS"]:
+        if origen == "TODAS":
+            a_ = [f for fs in viejo.values() for f in fs]
+            b_ = [f for fs in nuevo.values() for f in fs]
+        else:
+            a_, b_ = viejo[origen], nuevo.get(origen, [])
+        a, b = metricas(a_), metricas(b_)
+        # "Suponer en hora" (decir siempre 0) esconde TODOS los retrasos reales.
+        print(f"| {origen} | {tabla.get(origen, '')} | {a['tarde']:.0f} | {a['tarde']:.0f} "
+              f"| {a['enhora5']:.0f}→{b['enhora5']:.0f} | {a['enhora10']:.0f}→{b['enhora10']:.0f} "
+              f"| {a['sin10']:.0f}→{b['sin10']:.0f} |")
+    fallos = regresiones_en_hora(viejo, nuevo)
+    print("RESULTADO:", "FAIL " + "; ".join(fallos) if fallos else "OK (ninguna subida sobre N=0)")
+    return fallos
 
 
 def comprobar_from(d: Dia) -> tuple[int, int]:
@@ -213,13 +276,13 @@ def comprobar_from(d: Dia) -> tuple[int, int]:
     return iguales, total
 
 
-def main() -> None:
+def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("archivo", type=Path)
     ap.add_argument("horarios", type=Path)
     ap.add_argument("--ajuste", nargs="+", required=True)
     ap.add_argument("--validacion", nargs="+", required=True)
-    ap.add_argument("--fijo", default=None, help="tabla fija (p. ej. 35607=5) en vez de ajustar")
+    ap.add_argument("--fijo", default=None, help="tabla fija (p. ej. 35607:5;70200:5) en vez de ajustar")
     ap.add_argument("--diferencias", action="store_true")
     ap.add_argument("--objetivo", choices=("f1", "ok"), default="f1")
     args = ap.parse_args()
@@ -271,6 +334,9 @@ def main() -> None:
               f"| {a['tok10']:.0f}→{b['tok10']:.0f} "
               f"| {a['av10']:.0f} ({a['avok10']:.0f})→{b['av10']:.0f} ({b['avok10']:.0f}) "
               f"| {a['av5']:.0f} ({a['avok5']:.0f})→{b['av5']:.0f} ({b['avok5']:.0f}) |")
+    fallos = informe_en_hora("dias de validacion", viejo, nuevo, elegido)
+    fallos += informe_en_hora("dias de ajuste", por_origen(ajuste, {}), por_origen(ajuste, elegido),
+                              elegido)
     todos_a = [f for fs in viejo.values() for f in fs]
     todos_b = [f for fs in nuevo.values() for f in fs]
     a, b = metricas(todos_a), metricas(todos_b)
@@ -282,7 +348,13 @@ def main() -> None:
     print(f"TODAS siempre0={a['cero']:.1f} tarde={a['tarde']:.0f} tok10 {a['tok10']:.0f}→{b['tok10']:.0f} "
           f"av10 {a['av10']:.0f}({a['avok10']:.0f})→{b['av10']:.0f}({b['avok10']:.0f}) "
           f"av5 {a['av5']:.0f}({a['avok5']:.0f})→{b['av5']:.0f}({b['avok5']:.0f})")
+    if fallos:
+        print("\nFAIL: la tabla sube los retrasos reales mostrados «≈ en hora» sobre N=0:")
+        for f in fallos:
+            print("  ", f)
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
