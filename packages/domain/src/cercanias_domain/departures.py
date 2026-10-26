@@ -24,12 +24,18 @@ Reglas que no son evidentes y que costaron descubrir:
   antes de su salida (observado el 21/10/2026 en Colmenar Viejo y Parla). Si el
   entrante sí está localizado, se ESTIMA la salida (:func:`estimate_from_inbound`)
   y se etiqueta como estimada, nunca como dato en vivo. Ver RB-007.
+- **Sin nada en vivo, el histórico sí sabe algo.** Para líneas en lista blanca,
+  un tren que aún no está en el feed lleva su retraso PREVISTO (mediana de su
+  histórico en esa estación, :mod:`cercanias_domain.prevision`). Es solo una
+  etiqueta: no mueve la hora ni el orden, y el dato en vivo manda. Ver RB-013.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 
+from cercanias_domain.prevision import Prediction
 from cercanias_domain.trip_id import parse_trip_id
 
 #: Los minutos del día pueden pasar de 1440: GTFS expresa los servicios que
@@ -75,6 +81,8 @@ INBOUND_WARNING_FLOOR_MINUTES = 3
 #: Origen del retraso mostrado (``Departure.delay_source``).
 DELAY_SOURCE_LIVE = "live"
 DELAY_SOURCE_INBOUND_ESTIMATE = "inbound_estimate"
+#: Previsión por el histórico (RB-013). Nunca es un dato en vivo.
+DELAY_SOURCE_PREDICTED = "predicted"
 
 #: Renfe publica cada viaje en GTFS-RT unos 30 min antes de su salida de
 #: CABECERA (archivo del 21/10/2026, n=850: p10 29, mediana 30, p90 30 min).
@@ -205,14 +213,24 @@ class Departure:
     #: Renfe publica 0 (o el retraso que arrastra la unidad) y no es una medida.
     #: Pasada la hora, ``delay_minutes`` es una COTA INFERIOR (lo que ya lleva).
     pending_departure: bool = False
+    #: Retraso PREVISTO por el histórico (RB-013), solo si el viaje no está en el
+    #: feed y no hay estimación ni aviso de enlace. NO cambia ``expected_hhmm``,
+    #: ``minutes_until`` ni ``realtime_status``: es una etiqueta, no un dato.
+    prediction: Prediction | None = None
+
+    @property
+    def predicted_delay_minutes(self) -> int | None:
+        return self.prediction.delay_minutes if self.prediction is not None else None
 
     @property
     def delay_source(self) -> str | None:
-        """``"live"``, ``"inbound_estimate"`` o ``None`` (sin dato)."""
+        """``"live"``, ``"inbound_estimate"``, ``"predicted"`` o ``None`` (sin dato)."""
         if self.delay_minutes is not None:
             return DELAY_SOURCE_LIVE
         if self.estimated_delay_minutes is not None:
             return DELAY_SOURCE_INBOUND_ESTIMATE
+        if self.prediction is not None:
+            return DELAY_SOURCE_PREDICTED
         return None
 
     @property
@@ -329,6 +347,11 @@ class DepartureQuery:
     #: por defecto: la validación del 19-22/10/2026 no alcanzó el umbral (>= 80 %
     #: a +-3 min con 5 y 10 min de antelación, n >= 30) en ninguna línea.
     origin_estimate_routes: frozenset[str] = frozenset()
+    #: Previsiones por el histórico de ESTA estación (número de tren ->
+    #: previsión), ya filtradas por lista blanca de líneas y tipo de día (RB-013).
+    #: Vacío por defecto: sin previsión. Quien llama solo las pasa con un
+    #: snapshot fresco: con datos viejos no sabemos qué está en el feed.
+    predictions: Mapping[str, Prediction] = field(default_factory=dict)
 
 
 #: Estados del feed que significan "todavía en el andén de origen". Tras salir,
@@ -544,6 +567,12 @@ def next_departures(
             and programada - now_minutes <= UNCONFIRMED_LEAD_MINUTES
         )
 
+        prevision = _prediction(
+            stop, query,
+            sin_fuente=tren is None and estimado is None and retraso_enlace is None
+            and not entrante_suprimido,
+        )
+
         salidas.append(
             Departure(
                 scheduled_hhmm=format_minutes(programada),
@@ -563,11 +592,22 @@ def next_departures(
                 estimated_delay_minutes=estimado,
                 not_published=no_publicado,
                 pending_departure=en_cabecera,
+                prediction=prevision,
             )
         )
 
     salidas.sort(key=lambda d: parse_hhmm_to_minutes(d.expected_hhmm))
     return tuple(salidas[:limit])
+
+
+def _prediction(stop: ScheduledStop, query: DepartureQuery, *, sin_fuente: bool) -> Prediction | None:
+    """Previsión del histórico SOLO si no hay ninguna fuente mejor (RB-013)."""
+    if not sin_fuente or not query.predictions:
+        return None
+    pred = query.predictions.get(train_number(stop.trip_id))
+    if pred is None or pred.line != _route_family(stop):
+        return None
+    return pred
 
 
 def _route_groups_ending_here(scheduled: list[ScheduledStop]) -> frozenset[str]:
