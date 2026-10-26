@@ -36,6 +36,26 @@ INTERLINE_TERMINI: dict[str, frozenset[str]] = {
     "12006": frozenset({"C8", "C9"}),  # Cercedilla: el C8 vuelve como C9 a Cotos
 }
 LINE_VARIANT_MIN_LENGTH = 3
+#: Maniobra MINIMA (minutos) entre la llegada de un tren a una cabecera y la
+#: salida que puede hacer con ese mismo material (RB-012). Fuera de la tabla vale
+#: 0: la llegada sin consumir mas proxima a la salida, el comportamiento de main.
+#:
+#: Donde el horario deja menos que esto entre una llegada y la salida siguiente,
+#: esa llegada no forma esa salida sino una posterior (en Mostoles-El Soto, con 3
+#: min de horario, el 19545 de las 07:42 no forma el 20754 de las 07:45 sino el
+#: 19564 de las 07:50, archivo del 21/10/2026).
+#:
+#: VACIA A PROPOSITO: el backtest de 8 dias laborables de octubre (RB-012) no da
+#: muestra suficiente para fijar ningun valor. Ninguno esta aprobado. Se activa,
+#: si acaso, con ``MIN_TURNAROUND_BY_TERMINUS`` en el job (ver RB-012), tras 2-3
+#: semanas mas de datos con fines de semana y supresiones.
+DEFAULT_MIN_TURNAROUND_BY_TERMINUS: dict[str, int] = {}
+#: Separadores de ``MIN_TURNAROUND_BY_TERMINUS``: ``"17005:5;70200:5"``. Ni coma
+#: ni ``=``: ``gcloud --update-env-vars`` parte por comas y no hace falta el
+#: escape ``^@^``. Cualquier otra forma invalida la variable ENTERA.
+MIN_TURNAROUND_ENTRY_SEPARATOR = ";"
+MIN_TURNAROUND_VALUE_SEPARATOR = ":"
+MIN_TURNAROUND_ENV = "MIN_TURNAROUND_BY_TERMINUS"
 #: Renfe publica ~30 dias por delante. Menos de esto significa que el GTFS viene
 #: recortado o que el filtro de Madrid ha dejado de casar: hay que enterarse
 #: antes de que los tablones se queden vacios, no despues (los horarios
@@ -187,6 +207,91 @@ def _compatible(arrival: Trip, departure: Trip) -> bool:
     return permitidas is not None and {fam_in, fam_out} <= permitidas
 
 
+class MinTurnaroundError(ValueError):
+    """``MIN_TURNAROUND_BY_TERMINUS`` mal formada."""
+
+
+def _log_error(message: str, **extra: object) -> None:
+    """ERROR estructurado (Cloud Logging lee ``severity`` del JSON en stderr)."""
+    print(
+        json.dumps(
+            {
+                "severity": "ERROR",
+                "message": message,
+                "component": "regenerate-schedules",
+                **extra,
+            },
+            ensure_ascii=False,
+        ),
+        file=sys.stderr,
+    )
+
+
+def parse_min_turnaround(text: str) -> dict[str, int]:
+    """``"35607:5;70200:7"`` -> ``{"35607": 5, "70200": 7}``. Vacio -> ``{}``.
+
+    Estricto: cualquier entrada mal formada lanza ``MinTurnaroundError``. Quien
+    lee el entorno (``min_turnaround_from_env``) la convierte en ``{}``.
+    """
+    tabla: dict[str, int] = {}
+    if not text.strip():
+        return tabla
+    for parte in text.split(MIN_TURNAROUND_ENTRY_SEPARATOR):
+        entrada = parte.strip()
+        if not entrada:
+            continue  # tolera un ";" final
+        trozos = entrada.split(MIN_TURNAROUND_VALUE_SEPARATOR)
+        if len(trozos) != 2:  # noqa: PLR2004
+            raise MinTurnaroundError(f"entrada sin forma parada:minutos: {parte!r}")
+        parada, minutos = trozos[0].strip(), trozos[1].strip()
+        if not parada.isascii() or not parada.isalnum():
+            raise MinTurnaroundError(f"parada invalida: {parte!r}")
+        # isdigit admite digitos no ASCII (U+0665); int() los aceptaria.
+        if not minutos.isascii() or not minutos.isdigit():
+            raise MinTurnaroundError(f"minutos no enteros o negativos: {parte!r}")
+        valor = int(minutos)
+        if valor > MAX_TURNAROUND_MINUTES:
+            raise MinTurnaroundError(
+                f"minutos > MAX_TURNAROUND_MINUTES ({MAX_TURNAROUND_MINUTES}): {parte!r}"
+            )
+        if parada in tabla:
+            raise MinTurnaroundError(f"parada repetida: {parte!r}")
+        tabla[parada] = valor
+    return tabla
+
+
+def min_turnaround_from_env() -> dict[str, int]:
+    """Tabla del entorno, o la por defecto. NUNCA lanza: el job tiene que publicar.
+
+    Una variable mal formada se registra como ERROR y se ignora ENTERA (``{}``,
+    comportamiento de main): aplicar media tabla seria peor que ninguna.
+    """
+    texto = os.environ.get(MIN_TURNAROUND_ENV)
+    if texto is None:
+        return dict(DEFAULT_MIN_TURNAROUND_BY_TERMINUS)
+    try:
+        return parse_min_turnaround(texto)
+    except MinTurnaroundError as exc:
+        _log_error(
+            f"{MIN_TURNAROUND_ENV} invalida, se ignora entera (sin maniobra minima): {exc}",
+            value=texto,
+        )
+        return {}
+
+
+def validate_min_turnaround(
+    min_turnaround: dict[str, int], known_termini: set[str]
+) -> dict[str, int]:
+    """Quita (con ERROR) las paradas que no son origen de ningun viaje del GTFS."""
+    desconocidas = sorted(set(min_turnaround) - known_termini)
+    if desconocidas:
+        _log_error(
+            f"{MIN_TURNAROUND_ENV}: paradas que no son cabecera en el GTFS, se ignoran",
+            unknown_stops=desconocidas,
+        )
+    return {k: v for k, v in min_turnaround.items() if k in known_termini}
+
+
 def _gap(arrival: Trip, departure: Trip) -> int:
     return _minutes(departure.origin.departure_time) - _minutes(arrival.terminal.arrival_time)
 
@@ -208,7 +313,9 @@ def _block_links(trips: list[Trip]) -> dict[str, Turnaround]:
     return links
 
 
-def _link_turnarounds(trips: list[Trip]) -> dict[str, Turnaround]:
+def _link_turnarounds(
+    trips: list[Trip], min_turnaround: dict[str, int] | None = None
+) -> dict[str, Turnaround]:
     """Une llegadas terminales a salidas posteriores sin reutilizar material.
 
     Primero manda ``block_id`` cuando agrupa viajes de verdad. Para el resto se
@@ -231,7 +338,17 @@ def _link_turnarounds(trips: list[Trip]) -> dict[str, Turnaround]:
     Lo que SI es ambiguo es un empate (``AMBIGUITY_TIE_MINUTES``): dos llegadas
     a la par para una salida, o dos salidas a la par que podrian llevarse la
     misma llegada. El enlace se conserva, marcado ``ambiguous``.
+
+    ``min_turnaround`` (por estacion de cabecera) exige que la salida sea al
+    menos esos minutos POSTERIOR a la llegada: una llegada demasiado justa no
+    forma esa salida y queda libre para la siguiente. Sin entrada, 0.
     """
+    minimos = min_turnaround or {}
+
+    def _cabe(arrival: Trip, departure: Trip) -> bool:
+        minimo = minimos.get(departure.origin.stop_id, 0)
+        return minimo <= _gap(arrival, departure) <= MAX_TURNAROUND_MINUTES
+
     links = _block_links(trips)
     used_arrivals: set[str] = {link.inbound_trip_id for link in links.values()}
 
@@ -250,7 +367,7 @@ def _link_turnarounds(trips: list[Trip]) -> dict[str, Turnaround]:
             if arrival.trip_id not in used_arrivals
             and arrival.trip_id != departure.trip_id
             and _compatible(arrival, departure)
-            and 0 <= _gap(arrival, departure) <= MAX_TURNAROUND_MINUTES
+            and _cabe(arrival, departure)
         ]
 
     ordered_departures = sorted(
@@ -272,7 +389,7 @@ def _link_turnarounds(trips: list[Trip]) -> dict[str, Turnaround]:
             and otra.trip_id not in links
             and otra.origin.stop_id == departure.origin.stop_id
             and _compatible(inbound, otra)
-            and 0 <= _gap(inbound, otra) <= MAX_TURNAROUND_MINUTES
+            and _cabe(inbound, otra)
             and abs(_gap(inbound, otra) - gap) <= AMBIGUITY_TIE_MINUTES
             for otra in ordered_departures
         )
@@ -283,7 +400,9 @@ def _link_turnarounds(trips: list[Trip]) -> dict[str, Turnaround]:
     return links
 
 
-def build_schedules(gtfs_dir: Path) -> dict[str, dict[str, object]]:
+def build_schedules(
+    gtfs_dir: Path, min_turnaround: dict[str, int] | None = None
+) -> dict[str, dict[str, object]]:
     """Construye todos los días de servicio Madrid desde un directorio GTFS."""
     routes = _load_routes(gtfs_dir / "routes.txt")
     stop_names = _load_stop_names(gtfs_dir / "stops.txt")
@@ -296,9 +415,13 @@ def build_schedules(gtfs_dir: Path) -> dict[str, dict[str, object]]:
         if trip.stops:
             by_service[trip.service_id].append(trip)
 
+    if min_turnaround:
+        cabeceras = {trip.origin.stop_id for trips_ in by_service.values() for trip in trips_}
+        min_turnaround = validate_min_turnaround(min_turnaround, cabeceras)
+
     schedules: dict[str, dict[str, object]] = {}
     for service_id, service_trips in by_service.items():
-        links = _link_turnarounds(service_trips)
+        links = _link_turnarounds(service_trips, min_turnaround)
         stations: dict[str, list[dict[str, object]]] = defaultdict(list)
         for trip in service_trips:
             terminal = trip.terminal
@@ -333,7 +456,7 @@ def main() -> int:
         print(f"ERROR FATAL: no se publican horarios: {exc}", file=sys.stderr)
         return 1
 
-    schedules = build_schedules(outcome.version_dir)
+    schedules = build_schedules(outcome.version_dir, min_turnaround_from_env())
     publisher = publisher_from_env()
     for service_id, schedule in sorted(schedules.items()):
         publisher.publish(

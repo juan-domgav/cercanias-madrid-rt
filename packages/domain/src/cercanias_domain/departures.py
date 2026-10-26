@@ -519,9 +519,17 @@ def next_departures(
         entrante_vivo = live.get(stop.inbound_trip_id) if stop.inbound_trip_id else None
         suprimido = bool(tren and tren.cancelled)
         # Con el propio viaje en el feed, la supresión del entrante queda
-        # desmentida: ya hay material haciendo el servicio (RB-008).
+        # desmentida: ya hay material haciendo el servicio (RB-008). Y en una
+        # familia excluida el enlace no está validado (mismo criterio que la
+        # estimación y el aviso, RB-007/RB-012): el entrante suprimido puede no
+        # ser el tren que hace este servicio, y cambiar el emparejamiento no
+        # puede encender ni apagar este aviso allí.
         entrante_suprimido = bool(
-            tren is None and stop.is_origin and entrante_vivo and entrante_vivo.cancelled
+            tren is None
+            and stop.is_origin
+            and _route_family(stop) not in query.estimate_excluded_routes
+            and entrante_vivo
+            and entrante_vivo.cancelled
         )
 
         # Un tren que termina su recorrido desaparece del feed con normalidad: es

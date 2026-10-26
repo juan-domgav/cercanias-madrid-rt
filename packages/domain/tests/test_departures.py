@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from cercanias_domain.departures import (
+    Departure,
     DepartureQuery,
     LiveTrain,
     ScheduledStop,
@@ -594,3 +595,44 @@ def test_board_los_especiales_respetan_el_limite() -> None:
     salidas = board_departures([_parada("20435", "09:03:00")], vivos, q, "17009")
     assert len(salidas) == 2
     assert all(d.special for d in salidas)
+
+
+# --- RB-012: el aviso de entrante suprimido respeta las familias excluidas -----
+
+
+def _entrante_suprimido(excluidas: frozenset[str]) -> Departure:
+    parada = _enlace("20432", "09:05:00", "20431", 8)
+    vivos = {f"{SERV}20431C4b": LiveTrain(f"{SERV}20431C4b", 0, None, "17005", cancelled=True)}
+    query = DepartureQuery(now_minutes=9 * 60 + 3, service_prefix=SERV,
+                           estimate_excluded_routes=excluidas)
+    return next_departures([parada], vivos, query)[0]
+
+
+def test_entrante_suprimido_no_se_avisa_en_familia_excluida() -> None:
+    """Con C4 excluida el enlace no esta validado: no se afirma 'SUPRIMIDO'.
+
+    Asi un cambio de emparejamiento (maniobra minima, RB-012) no puede encender
+    ni apagar el aviso en una linea excluida. Sin respaldo, cae en 'sin confirmar'.
+    """
+    d = _entrante_suprimido(frozenset({"C4"}))
+    assert d.inbound_cancelled is False
+    assert d.unconfirmed is True
+
+
+def test_entrante_suprimido_se_avisa_fuera_de_las_excluidas() -> None:
+    assert _entrante_suprimido(frozenset()).inbound_cancelled is True
+    # Excluir OTRA familia no lo apaga.
+    assert _entrante_suprimido(frozenset({"C2", "C5"})).inbound_cancelled is True
+
+
+def test_familia_excluida_el_aviso_no_depende_del_emparejamiento() -> None:
+    """Mismo tablon con el ``from`` apuntando a un entrante suprimido o a otro en hora."""
+    vivos = {
+        f"{SERV}20431C4b": LiveTrain(f"{SERV}20431C4b", 0, None, "17005", cancelled=True),
+        f"{SERV}20433C4b": LiveTrain(f"{SERV}20433C4b", 0, None, "17005"),
+    }
+    query = DepartureQuery(now_minutes=9 * 60 + 3, service_prefix=SERV,
+                           estimate_excluded_routes=frozenset({"C4"}))
+    a = next_departures([_enlace("20432", "09:05:00", "20431", 8)], vivos, query)
+    b = next_departures([_enlace("20432", "09:05:00", "20433", 3)], vivos, query)
+    assert a == b
