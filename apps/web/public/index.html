@@ -58,6 +58,8 @@
   .delay { font-weight: 600; }
   .delay.late { color: var(--late); } .delay.ontime { color: var(--ok); }
   .delay.estimated { color: var(--muted); font-style: italic; }
+  /* RB-013: previsto por el historico, nunca dato en vivo: subrayado discontinuo. */
+  .delay.predicted { color: var(--muted); font-style: italic; text-decoration: underline dashed; text-underline-offset: .2em; }
   .delay.cancelled { color: var(--late); font-weight: 700; }
   .meta { color: var(--muted); font-size: .85rem; margin-top: .3rem; }
   .banner { border-radius: .6rem; padding: .7rem .85rem; margin: .75rem 0; font-size: .9rem; }

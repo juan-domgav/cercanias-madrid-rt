@@ -120,8 +120,13 @@ def format_departures(station: Station, salidas: list[dict[str, Any]], destinos:
         lineas.append(f"<i>Sentidos: {' · '.join(destinos)}</i>")
     lineas.append("")
     lineas.extend(format_departure(d) for d in salidas[:6])
-    lineas.append("\n<i>Andén y retraso vienen del feed en vivo; si el tren aún no "
-                  "está localizado, no se muestran.</i>")
+    if any(d.get("predicted_delay") is not None for d in salidas[:6]):
+        # RB-013: si se muestra alguna previsión, se explica qué es.
+        lineas.append("\n<i>Andén y retraso en vivo vienen del feed de Renfe. "
+                      "«previsto» = previsión por el histórico de ese tren, no dato en vivo.</i>")
+    else:
+        lineas.append("\n<i>Andén y retraso vienen del feed en vivo; si el tren aún no "
+                      "está localizado, no se muestran.</i>")
     return "\n".join(lineas)
 
 
