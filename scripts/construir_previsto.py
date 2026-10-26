@@ -35,11 +35,35 @@ import pyarrow.parquet as pq  # type: ignore[import-untyped]
 from cercanias_domain.prevision import MIN_OBSERVATIONS, Observation, PredictionTable, build_table
 
 HISTORICO_GS = "gs://cercanias-madrid-rt-privado/historico"
-# Festivos de la Comunidad de Madrid desde que hay histórico (sept. 2026). Los
-# locales de Madrid capital (09/11 Almudena, 15/05 San Isidro) NO están: no
-# aplican a toda la red. Se añaden con --festivos o, en producción, con
-# PREVISTO_FESTIVOS. Hay que ampliar la lista con el calendario de 2027 (BOCM).
+# Festivos laborales de la Comunidad de Madrid (nacionales + autonómicos) desde
+# que hay histórico (sept. 2026). Los locales de Madrid capital (09/11 Almudena,
+# 15/05 San Isidro) NO están: no aplican a toda la red. Se añaden con --festivos
+# o, en producción, con PREVISTO_FESTIVOS.
+#
+# 2026: calendario laboral de la Comunidad de Madrid para 2026 (desde el 12/10).
+# 2027: Decreto 82/2026, de 30 de septiembre, del Consejo de Gobierno (BOCM
+#   núm. 234, 1/10/2026, https://www.bocm.es/boletin/CM_Orden_BOCM/2026/10/01/BOCM-20261001-19.PDF),
+#   que coincide con la columna «Madrid» de la Resolución de 8 de octubre de 2026
+#   de la Dirección General de Trabajo (BOE núm. 254, 13/10/2026, BOE-A-2026-21254,
+#   https://www.boe.es/diario_boe/txt.php?id=BOE-A-2026-21254). El 2 de mayo
+#   (Fiesta de la Comunidad) cae en domingo y no se traslada; el 15 de agosto
+#   (domingo) pasa al lunes 16. Sábados incluidos por completitud (ya son festivo).
 FESTIVOS_CAM_2026 = ("2026-10-12", "2026-11-02", "2026-12-07", "2026-12-08", "2026-12-25")
+FESTIVOS_CAM_2027 = (
+    "2027-01-01",  # Año Nuevo
+    "2027-01-06",  # Epifanía del Señor
+    "2027-03-19",  # San José
+    "2027-03-25",  # Jueves Santo
+    "2027-03-26",  # Viernes Santo
+    "2027-05-01",  # Fiesta del Trabajo (sábado)
+    "2027-08-16",  # traslado de la Asunción de la Virgen
+    "2027-10-12",  # Fiesta Nacional de España
+    "2027-11-01",  # Todos los Santos
+    "2027-12-06",  # Día de la Constitución Española
+    "2027-12-08",  # Inmaculada Concepción
+    "2027-12-25",  # Natividad del Señor (sábado)
+)
+FESTIVOS_CAM = (*FESTIVOS_CAM_2026, *FESTIVOS_CAM_2027)
 COLUMNAS = ["fecha_servicio", "tren", "familia", "parada_id", "hora", "medido", "es_destino",
             "programada", "es_especial", "retraso_s"]
 
@@ -92,7 +116,7 @@ def leer_filas(origen: str, desde: date, hasta: date) -> Iterator[Fila]:
 
 
 def festivos(extra: str) -> frozenset[date]:
-    todos = (*FESTIVOS_CAM_2026, *extra.split(","))
+    todos = (*FESTIVOS_CAM, *extra.split(","))
     return frozenset(date.fromisoformat(x.strip()) for x in todos if x.strip())
 
 

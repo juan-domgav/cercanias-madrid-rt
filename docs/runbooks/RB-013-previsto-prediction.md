@@ -85,8 +85,12 @@ Listón para habilitar una línea: ≥14 días de histórico con ≥4 de fin de
 semana/festivo, mejora de MAE ≥30 % frente a «en hora» y ≥60 % de salidas a
 ±2 min. Semana 19-25/10/2026: C1 1,65 min / 79,8 % (en hora: 3,03 / 54,6 %),
 C5 3,14 / 62,1 % (5,70 / 31,0 %). Ver `docs/informes/previsto-holdout-2026-10-19.json`.
-Festivos: los de la Comunidad de Madrid (2026) van en el script; los locales de
-Madrid capital (09/11, 15/05) no, se añaden con `--festivos` o `PREVISTO_FESTIVOS`.
+Festivos: los de la Comunidad de Madrid de 2026 (desde el 12/10) y de 2027 van en el
+script (`FESTIVOS_CAM`). 2027 según el Decreto 82/2026 (BOCM 1/10/2026) y la
+Resolución de 8/10/2026 de la DG de Trabajo (BOE-A-2026-21254): 1/1, 6/1, 19/3,
+25/3, 26/3, 1/5, 16/8, 12/10, 1/11, 6/12, 8/12, 25/12. Los locales de Madrid
+capital (09/11, 15/05) no, se añaden con `--festivos` o `PREVISTO_FESTIVOS`.
+Antes de octubre de 2027 hay que añadir el calendario de 2028.
 
 ## Habilitar (con OK de Juan; línea a línea)
 ```bash
