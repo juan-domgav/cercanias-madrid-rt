@@ -206,3 +206,34 @@ def test_snapshot_degradado_no_afirma_no_publicado(monkeypatch: pytest.MonkeyPat
     assert _tren(boards, TRES_CANTOS, "20476")["realtime_status"] == "no_data"
     assert boards["health"]["departures_not_published"] == 0
     assert boards["health"]["departures_missing_in_window"] == 0, "sin datos frescos no hay anomalia"
+
+
+# --- RB-012: "el tren que debia hacer este servicio esta SUPRIMIDO" -----------
+
+
+def _boards_entrante_suprimido(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, excluidas: frozenset[str]
+) -> dict[str, Any]:
+    monkeypatch.setattr(cloud_tick, "INBOUND_ESTIMATE_EXCLUDED_ROUTES", excluidas)
+    web = tmp_path / "web"
+    (web / "horarios").mkdir(parents=True, exist_ok=True)
+    shutil.copy(FIXTURES / "horarios_1092X_c4b_vuelta_colmenar.json", web / "horarios" / "1092X.json")
+    monkeypatch.setattr(cloud_tick, "datetime", _reloj(AHORA))
+    return cloud_tick._build_boards(
+        _snapshot(delay_min=6), LocalSnapshotPublisher(web), frozenset({"1092X20479C4b"})
+    )
+
+
+def test_entrante_suprimido_en_linea_excluida_por_defecto(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Con la exclusion por defecto (C4 dentro) el enlace de Colmenar no esta
+    validado: el 20479 suprimido no se presenta como el tren del 20476."""
+    excluidas = frozenset(cloud_tick.DEFAULT_INBOUND_ESTIMATE_EXCLUDED_ROUTES.split(","))
+    boards = _boards_entrante_suprimido(monkeypatch, tmp_path, excluidas)
+    assert _tren(boards, COLMENAR, "20476")["inbound_cancelled"] is False
+
+
+def test_entrante_suprimido_en_linea_validada(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    boards = _boards_entrante_suprimido(monkeypatch, tmp_path, frozenset())
+    assert _tren(boards, COLMENAR, "20476")["inbound_cancelled"] is True
