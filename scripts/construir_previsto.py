@@ -1,0 +1,127 @@
+#!/usr/bin/env python3
+"""Construye el artefacto de previsión «previsto» (RB-013) desde el histórico.
+
+Lee los Parquet diarios del histórico (RB-010, PR #10): de un directorio local o
+de ``gs://cercanias-madrid-rt-privado/historico/`` (SOLO lectura, con
+``gcloud storage cp``) y escribe en LOCAL la tabla JSON de medianas por
+(línea, estación, tren, tipo de día). NO sube nada: subirla al bucket privado
+es un paso manual del runbook RB-013.
+
+El repo es público: el artefacto deriva de datos privados y NO se commitea.
+
+Uso::
+
+    uv run --with pyarrow python scripts/construir_previsto.py \\
+        --origen /ruta/historico --desde 2026-09-08 --hasta 2026-10-25 --out /tmp/previsto.json
+    uv run --with pyarrow python scripts/construir_previsto.py --origen gs \\
+        --desde 2026-09-08 --hasta 2026-10-25 --out /tmp/previsto.json
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import math
+import subprocess
+import sys
+import tempfile
+from collections.abc import Iterator
+from dataclasses import dataclass
+from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
+
+import pyarrow.parquet as pq  # type: ignore[import-untyped]
+
+from cercanias_domain.prevision import MIN_OBSERVATIONS, Observation, PredictionTable, build_table
+
+HISTORICO_GS = "gs://cercanias-madrid-rt-privado/historico"
+# Festivos de la Comunidad de Madrid desde que hay histórico (sept. 2026). Los
+# locales de Madrid capital (09/11 Almudena, 15/05 San Isidro) NO están: no
+# aplican a toda la red. Se añaden con --festivos o, en producción, con
+# PREVISTO_FESTIVOS. Hay que ampliar la lista con el calendario de 2027 (BOCM).
+FESTIVOS_CAM_2026 = ("2026-10-12", "2026-11-02", "2026-12-07", "2026-12-08", "2026-12-25")
+COLUMNAS = ["fecha_servicio", "tren", "familia", "parada_id", "hora", "medido", "es_destino",
+            "programada", "es_especial", "retraso_s"]
+
+
+@dataclass(frozen=True)
+class Fila:
+    """Una salida medida del histórico, ya filtrada como en el backtest."""
+
+    fecha: date
+    tren: str
+    familia: str
+    parada: str
+    hora: int
+    retraso_s: float
+
+    def observacion(self) -> Observation:
+        return Observation(self.familia, self.tren, self.parada, self.fecha, self.retraso_s)
+
+
+def dias(desde: date, hasta: date) -> list[date]:
+    return [desde + timedelta(days=i) for i in range((hasta - desde).days + 1)]
+
+
+def _ficheros(origen: str, fechas: list[date], tmp: Path) -> list[Path]:
+    if origen != "gs":
+        base = Path(origen)
+        locales = (base / f"{d.isoformat()}.parquet" for d in fechas)
+        return [f for f in locales if f.exists()]
+    rutas = [f"{HISTORICO_GS}/{d.isoformat()}.parquet" for d in fechas]
+    # Solo lectura: copia a un temporal local. Los días que falten no paran el proceso.
+    subprocess.run(["gcloud", "storage", "cp", "--continue-on-error", *rutas, str(tmp)],
+                   check=False, capture_output=True)
+    return sorted(tmp.glob("*.parquet"))
+
+
+def leer_filas(origen: str, desde: date, hasta: date) -> Iterator[Fila]:
+    """Filtro del backtest: medido, no destino, con hora programada, no especial y con retraso."""
+    with tempfile.TemporaryDirectory() as tmp:
+        for fichero in _ficheros(origen, dias(desde, hasta), Path(tmp)):
+            for r in pq.read_table(fichero, columns=COLUMNAS).to_pylist():
+                retraso = r["retraso_s"]
+                if (not r["medido"] or r["es_destino"] or r["programada"] is None or r["es_especial"]
+                        or retraso is None or not math.isfinite(retraso)):
+                    continue
+                fecha = r["fecha_servicio"]
+                if isinstance(fecha, str):
+                    fecha = date.fromisoformat(fecha)
+                yield Fila(fecha, str(r["tren"]), str(r["familia"]), str(r["parada_id"]),
+                           int(r["hora"]), float(retraso))
+
+
+def festivos(extra: str) -> frozenset[date]:
+    todos = (*FESTIVOS_CAM_2026, *extra.split(","))
+    return frozenset(date.fromisoformat(x.strip()) for x in todos if x.strip())
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--origen", required=True, help="directorio con <día>.parquet, o 'gs' (solo lectura)")
+    ap.add_argument("--desde", type=date.fromisoformat, required=True)
+    ap.add_argument("--hasta", type=date.fromisoformat, required=True)
+    ap.add_argument("--lineas", default="C1,C5")
+    ap.add_argument("--festivos", default="", help="festivos extra, AAAA-MM-DD separados por comas")
+    ap.add_argument("--min-observaciones", type=int, default=MIN_OBSERVATIONS)
+    ap.add_argument("--out", type=Path, required=True)
+    args = ap.parse_args(argv)
+
+    lineas = frozenset(x.strip() for x in args.lineas.split(",") if x.strip())
+    obs = [f.observacion() for f in leer_filas(args.origen, args.desde, args.hasta)]
+    if not obs:
+        print("ERROR: no hay filas en el histórico para ese periodo", file=sys.stderr)
+        return 1
+    tabla = build_table(obs, lines=lineas, holidays=festivos(args.festivos),
+                        generated_at=datetime.now(tz=UTC), min_observations=args.min_observaciones)
+    raw = json.dumps(tabla, ensure_ascii=False, separators=(",", ":")).encode()
+    # El worker lo validará igual: si no pasa aquí, no se escribe.
+    comprobada = PredictionTable.from_bytes(raw)
+    args.out.write_bytes(raw)
+    print(json.dumps({"out": str(args.out), "bytes": len(raw), "entries": comprobada.entry_count,
+                      "lines": sorted(comprobada.lines), "history": tabla["history"]}, ensure_ascii=False))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

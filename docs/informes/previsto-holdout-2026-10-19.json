@@ -1,0 +1,67 @@
+{
+ "entreno": "2026-09-08..2026-10-18",
+ "prueba": "2026-10-19..2026-10-25",
+ "history": {
+  "from": "2026-09-08",
+  "to": "2026-10-18",
+  "days": 41,
+  "festivo_days": 13
+ },
+ "entries": 15539,
+ "artifact_bytes": 523631,
+ "backtest_reproducido": {
+  "C1": {
+   "n": 2278,
+   "mae_predicted": 1.65,
+   "within2_predicted_pct": 79.8,
+   "mae_on_time": 3.03,
+   "within2_on_time_pct": 54.6,
+   "gain_pct": 45.8
+  },
+  "C5": {
+   "n": 38419,
+   "mae_predicted": 3.14,
+   "within2_predicted_pct": 62.1,
+   "mae_on_time": 5.7,
+   "within2_on_time_pct": 31.0,
+   "gain_pct": 45.0
+  }
+ },
+ "esperado": {
+  "C1": [
+   1.65,
+   79.8
+  ],
+  "C5": [
+   3.14,
+   62.1
+  ]
+ },
+ "reproduce_backtest": true,
+ "tabla_enviada": {
+  "C1": {
+   "n": 2278,
+   "covered": 2271,
+   "coverage_pct": 99.7,
+   "mae_predicted": 1.65,
+   "mae_on_time": 3.03,
+   "within2_predicted_pct": 80.2,
+   "within2_on_time_pct": 54.7,
+   "gain_pct": 45.5,
+   "mae_all_fallback_on_time": 1.66,
+   "mae_all_on_time": 3.03
+  },
+  "C5": {
+   "n": 38419,
+   "covered": 38169,
+   "coverage_pct": 99.3,
+   "mae_predicted": 3.14,
+   "mae_on_time": 5.71,
+   "within2_predicted_pct": 63.1,
+   "within2_on_time_pct": 30.9,
+   "gain_pct": 45.1,
+   "mae_all_fallback_on_time": 3.14,
+   "mae_all_on_time": 5.7
+  }
+ }
+}
