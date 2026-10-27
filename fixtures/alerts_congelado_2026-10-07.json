@@ -1,0 +1,577 @@
+{
+ "header": {
+  "gtfsRealtimeVersion": "2.0",
+  "timestamp": "1791358372"
+ },
+ "entity": [
+  {
+   "id": "AVISO_518335",
+   "alert": {
+    "activePeriod": [
+     {
+      "start": "1791356520"
+     }
+    ],
+    "informedEntity": [
+     {
+      "routeId": "10T0011C4"
+     },
+     {
+      "routeId": "10T0068C4"
+     },
+     {
+      "routeId": "10T0095C4"
+     },
+     {
+      "routeId": "10T0067C4"
+     },
+     {
+      "routeId": "10T0012C4"
+     },
+     {
+      "routeId": "10T0096C4"
+     },
+     {
+      "routeId": "10T0014C4a"
+     },
+     {
+      "routeId": "10T0013C4a"
+     },
+     {
+      "routeId": "10T0016C4b"
+     },
+     {
+      "routeId": "10T0015C4b"
+     }
+    ],
+    "descriptionText": {
+     "translation": [
+      {
+       "text": "#MadC4b Por reajuste de servicio, tren con salida de Colmenar Viejo a las 09:05h, y destino Parla, hoy inicia su recorrido en la estación de Tres Cantos a las 09:11h, aproximadamente. Siguiente tren con origen Colmenar Viejo, y destino Parla, tiene prevista su salida a las 09:18h, aproximadamente.",
+       "language": "es"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "AVISO_518347",
+   "alert": {
+    "activePeriod": [
+     {
+      "start": "1791355440"
+     }
+    ],
+    "informedEntity": [
+     {
+      "routeId": "10T0099C3"
+     },
+     {
+      "routeId": "10T0033C3"
+     },
+     {
+      "routeId": "10T0100C3"
+     },
+     {
+      "routeId": "10T0029C3"
+     },
+     {
+      "routeId": "10T0007C3"
+     },
+     {
+      "routeId": "10T0030C3"
+     },
+     {
+      "routeId": "10T0034C3"
+     },
+     {
+      "routeId": "10T0008C3"
+     },
+     {
+      "routeId": "10T0011C4"
+     },
+     {
+      "routeId": "10T0068C4"
+     },
+     {
+      "routeId": "10T0095C4"
+     },
+     {
+      "routeId": "10T0067C4"
+     },
+     {
+      "routeId": "10T0012C4"
+     },
+     {
+      "routeId": "10T0096C4"
+     },
+     {
+      "routeId": "10T0014C4a"
+     },
+     {
+      "routeId": "10T0013C4a"
+     },
+     {
+      "routeId": "10T0016C4b"
+     },
+     {
+      "routeId": "10T0015C4b"
+     }
+    ],
+    "descriptionText": {
+     "translation": [
+      {
+       "text": "#MadC3 #MadC4 Los trenes recuperan sus frecuencias de paso habituales de forma progresiva.",
+       "language": "es"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "AVISO_517064",
+   "alert": {
+    "activePeriod": [
+     {
+      "start": "1790866800"
+     }
+    ],
+    "informedEntity": [
+     {
+      "routeId": "10T0042C8"
+     },
+     {
+      "routeId": "10T0044C8"
+     },
+     {
+      "routeId": "10T0046C8"
+     },
+     {
+      "routeId": "10T0090C8"
+     },
+     {
+      "routeId": "10T0040C8"
+     },
+     {
+      "routeId": "10T0041C8"
+     },
+     {
+      "routeId": "10T0089C8"
+     },
+     {
+      "routeId": "10T0043C8"
+     },
+     {
+      "routeId": "10T0045C8"
+     },
+     {
+      "routeId": "10T0069C8"
+     },
+     {
+      "routeId": "10T0039C8"
+     },
+     {
+      "routeId": "10T0070C8"
+     }
+    ],
+    "descriptionText": {
+     "translation": [
+      {
+       "text": "#MadC8b Por obras de mejora en la infraestructura, del 10 al 12 de octubre, los trenes no prestan servicio entre Villalba de Guadarrama y Cercedilla. Se dispone de un servicio especial de autobús con parada en estaciones intermedias. ",
+       "language": "es"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "AVISO_516750",
+   "alert": {
+    "activePeriod": [
+     {
+      "start": "1790758620"
+     }
+    ],
+    "informedEntity": [
+     {
+      "routeId": "10T0035C5"
+     },
+     {
+      "routeId": "10T0048C5"
+     },
+     {
+      "routeId": "10T0101C5"
+     },
+     {
+      "routeId": "10T0018C5"
+     },
+     {
+      "routeId": "10T0036C5"
+     },
+     {
+      "routeId": "10T0047C5"
+     },
+     {
+      "routeId": "10T0102C5"
+     },
+     {
+      "routeId": "10T0017C5"
+     }
+    ],
+    "descriptionText": {
+     "translation": [
+      {
+       "text": "#MadC5 Por obras de mejora en la infraestructura, los fines de semana del 3-4, 17-18 y 24-25 de octubre entre las 00:30h y las 10:00h, los trenes inician y finalizan su recorrido en Atocha. ",
+       "language": "es"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "AVISO_483553",
+   "alert": {
+    "activePeriod": [
+     {
+      "start": "1774611420"
+     }
+    ],
+    "informedEntity": [
+     {
+      "routeId": "10T0114C9"
+     },
+     {
+      "routeId": "10T0116C9"
+     },
+     {
+      "routeId": "10T0025C9"
+     },
+     {
+      "routeId": "10T0026C9"
+     },
+     {
+      "routeId": "10T0113C9"
+     },
+     {
+      "routeId": "10T0115C9"
+     }
+    ],
+    "descriptionText": {
+     "translation": [
+      {
+       "text": "#MadC9 Por obras de reforma integral en la línea C-9, se encuentra suspendido el servicio de trenes entre las estaciones de Cercedilla-Puerto de Navacerrada-Los Cotos. Se ha establecido un servicio especial de autobuses con reserva de plaza.",
+       "language": "es"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "AVISO_467462",
+   "alert": {
+    "activePeriod": [
+     {
+      "start": "1765528080"
+     }
+    ],
+    "informedEntity": [
+     {
+      "routeId": "10T0042C8"
+     },
+     {
+      "routeId": "10T0044C8"
+     },
+     {
+      "routeId": "10T0046C8"
+     },
+     {
+      "routeId": "10T0090C8"
+     },
+     {
+      "routeId": "10T0040C8"
+     },
+     {
+      "routeId": "10T0041C8"
+     },
+     {
+      "routeId": "10T0089C8"
+     },
+     {
+      "routeId": "10T0043C8"
+     },
+     {
+      "routeId": "10T0045C8"
+     },
+     {
+      "routeId": "10T0069C8"
+     },
+     {
+      "routeId": "10T0039C8"
+     },
+     {
+      "routeId": "10T0070C8"
+     },
+     {
+      "routeId": "10T0114C9"
+     },
+     {
+      "routeId": "10T0116C9"
+     },
+     {
+      "routeId": "10T0025C9"
+     },
+     {
+      "routeId": "10T0026C9"
+     },
+     {
+      "routeId": "10T0113C9"
+     },
+     {
+      "routeId": "10T0115C9"
+     }
+    ],
+    "descriptionText": {
+     "translation": [
+      {
+       "text": "#MadC9 Debido a las obras que se están realizando en la línea C-9, los aseos públicos de la estación de Cercedilla permanecen temporalmente inoperativos. ",
+       "language": "es"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "INFO_518355",
+   "alert": {
+    "activePeriod": [
+     {
+      "start": "1791357480"
+     }
+    ],
+    "informedEntity": [
+     {
+      "stopId": "70100"
+     }
+    ],
+    "descriptionText": {
+     "translation": [
+      {
+       "text": "Ascensor de Vicálvaro, que da acceso a vías 1 y 3, sentido Chamartín, El Escorial, Cercedilla y Príncipe Pío, se encuentra fuera de servicio",
+       "language": "es"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "INFO_518353",
+   "alert": {
+    "activePeriod": [
+     {
+      "start": "1791356580"
+     }
+    ],
+    "informedEntity": [
+     {
+      "stopId": "35001"
+     }
+    ],
+    "descriptionText": {
+     "translation": [
+      {
+       "text": "Ascensor de la estación de Leganés que da acceso del vestíbulo a la vía 1 y 3 sentido Móstoles - El Soto, se encuentra fuera de servicio. ",
+       "language": "es"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "INFO_518350",
+   "alert": {
+    "activePeriod": [
+     {
+      "start": "1791356460"
+     }
+    ],
+    "informedEntity": [
+     {
+      "stopId": "70108"
+     }
+    ],
+    "descriptionText": {
+     "translation": [
+      {
+       "text": "Ascensor de la estación de Coslada que da acceso a la vía 2 sentido Alcalá de Henares / Guadalajara, se encuentra fuera de servicio. ",
+       "language": "es"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "AVISO_518346",
+   "alert": {
+    "activePeriod": [
+     {
+      "start": "1791354660"
+     }
+    ],
+    "informedEntity": [
+     {
+      "routeId": "30T0001C1"
+     },
+     {
+      "routeId": "30T0014C1"
+     },
+     {
+      "routeId": "30T0016C1"
+     }
+    ],
+    "descriptionText": {
+     "translation": [
+      {
+       "text": "Línea C-1 \r\n  \r\nViajeros del tren con salida de LORA DEL RIO a las 08:35h y con destino UTRERA, deben realizar un TRANSBORDO en la estación de SEVILLA SANTA JUSTA, a las 09:33h. \r\n\r\n Sigan las indicaciones del personal de Renfe, por favor. Sentimos las molestias. ",
+       "language": "es"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "AVISO_518331",
+   "alert": {
+    "activePeriod": [
+     {
+      "start": "1791354420"
+     }
+    ],
+    "informedEntity": [
+     {
+      "routeId": "30T0023C5"
+     },
+     {
+      "routeId": "30T0010C5"
+     },
+     {
+      "routeId": "30T0030C5"
+     }
+    ],
+    "descriptionText": {
+     "translation": [
+      {
+       "text": " Línea C-5 \r\n\r\nTren con salida a las 09:27h de la estación de BENACAZÓN y con destino JARDINES DE HÉRCULES, no presta servicio entre las estaciones de SEVILLA SANTA JUSTA y JARDINES DE HERCULES.     \r\n\r\nLos viajeros serán encaminados al siguiente tren de la línea C-5 o C-1 dirección UTRERA. \r\n\r\nIncidencia causada por el tren precedente. ",
+       "language": "es"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "AVISO_512188",
+   "alert": {
+    "activePeriod": [
+     {
+      "start": "1788837720"
+     }
+    ],
+    "informedEntity": [
+     {
+      "routeId": "30T0025C3"
+     },
+     {
+      "routeId": "30T0045C3"
+     },
+     {
+      "routeId": "30T0034C3"
+     }
+    ],
+    "descriptionText": {
+     "translation": [
+      {
+       "text": "ATENCIÓN Línea C3:\r\nPor obras de mejora en la infraestructura y para los trenes con origen/destino Madrid:\r\nSe establece un Plan Alternativo de Transporte por carretera entre las estaciones de Los Rosales y Cazalla-Constantina.\r\nEntre Los Rosales y Sevilla Santa Justa el recorrido se realiza con trenes de la línea C1.  (Consulta nuevos horarios por obras en canales oficiales y App).\r\nGracias por tu comprensión.",
+       "language": "es"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "AVISO_517177",
+   "alert": {
+    "activePeriod": [
+     {
+      "start": "1790923320"
+     }
+    ],
+    "informedEntity": [
+     {
+      "stopId": "43000"
+     }
+    ],
+    "descriptionText": {
+     "translation": [
+      {
+       "text": "Actualmente, por motivos técnicos, el ascensor de las vías 1-2 de la estación de San Jerónimo se encuentra fuera de servicio. Si tiene Movilidad Reducida y origen o destino en esta estación, contacte a través de los puntos de información en estaciones, máquinas auto venta o en el 954 485 672. Disculpe las molestias",
+       "language": "es"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "AVISO_518170",
+   "alert": {
+    "activePeriod": [
+     {
+      "start": "1791292620"
+     }
+    ],
+    "informedEntity": [
+     {
+      "stopId": "64103"
+     }
+    ],
+    "descriptionText": {
+     "translation": [
+      {
+       "text": "Ascensor de la estación de Carcaixent, sentido Xàtiva de vía 2, se encuentra fuera de servicio. Disculpen las molestias.",
+       "language": "es"
+      },
+      {
+       "text": "Ascensor de l'estació de Carcaixent, sentit Xàtiva de via 2, es troba fora de servei. Disculpen les molèsties.",
+       "language": "es"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "AVISO_516269",
+   "alert": {
+    "activePeriod": [
+     {
+      "start": "1790571180"
+     }
+    ],
+    "informedEntity": [
+     {
+      "stopId": "13400"
+     }
+    ],
+    "descriptionText": {
+     "translation": [
+      {
+       "text": "DESERTU-BARAKALDO: 1 eta 2. trenbideetako igogailuak zerbitzuz kanpo daude.  // Los ascensores de vía 1 y 2 se encuentran fuera de servicio. ",
+       "language": "es"
+      },
+      {
+       "text": "DESERTU-BARAKALDO: 1-3. trenbideetako igogailua zerbitzuz kanpo dago. Santurtzi/Muskiz noranzko bidaiarie eragiten die. // El ascensor de vía 1-3 se encuentra fuera de servicio. Afecta a los viajeros dirección Santurce-Muskiz.",
+       "language": "es"
+      }
+     ]
+    }
+   }
+  }
+ ]
+}
