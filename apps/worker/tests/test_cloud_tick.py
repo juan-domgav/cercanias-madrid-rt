@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -82,3 +83,32 @@ def test_days_left_ignores_leftover_same_number_different_letter(tmp_path: Path)
 def test_next_service_id_wraps_99_to_01_with_letter() -> None:
     assert cloud_tick._next_service_id("1099X") == "1001J"
     assert cloud_tick._next_service_id("1001J") == "1002V"
+
+
+def test_intra_invocation_stale_pass_is_not_flagged_degraded() -> None:
+    fresh = (datetime.now(tz=UTC) - timedelta(seconds=20)).isoformat()
+    actual = {
+        "generated_at": fresh,
+        "vehicles": [{"trip_id": "x"}],
+        "stale_since": datetime.now(tz=UTC).isoformat(),
+        "degraded": True,
+        "reason": "pasada sin datos de Madrid; se conserva el ultimo bueno",
+    }
+    salida = cloud_tick._snapshot_a_publicar(actual, None)
+    assert "degraded" not in salida
+    assert "reason" not in salida
+    assert salida["stale_since"] == actual["stale_since"]
+
+
+def test_intra_invocation_stale_pass_still_flagged_when_old() -> None:
+    edad = cloud_tick.STALE_WARNING_SECONDS + 60
+    old = (datetime.now(tz=UTC) - timedelta(seconds=edad)).isoformat()
+    actual = {
+        "generated_at": old,
+        "vehicles": [{"trip_id": "x"}],
+        "stale_since": datetime.now(tz=UTC).isoformat(),
+        "degraded": True,
+        "reason": "r",
+    }
+    salida = cloud_tick._snapshot_a_publicar(actual, None)
+    assert salida["degraded"] is True

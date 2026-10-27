@@ -1,7 +1,7 @@
 # Estado del proyecto y traspaso
 
 Documento de continuidad. Se escribe para que otra sesión pueda seguir sin
-reconstruir el contexto. **Última actualización: 2026-10-22.**
+reconstruir el contexto. **Última actualización: 2026-10-25.**
 
 ## Modo de trabajo
 
@@ -70,28 +70,34 @@ Todo esto está **medido**, no supuesto. Cada uno costó una avería o una revis
   cada enlace, no a una mediana de población. Un aviso que no aporta enseña a
   ignorar los que sí.
 
-## Despliegue actual (2026-10-22, RB-009)
+## Despliegue actual (2026-10-25, RB-011 / PR #11)
 
-Producción corre la rama `fix/origin-delay-placeholder` en `42234c2` (PR #9,
-CI verde), **aún sin mergear en `main`** (`main` = `72d72a0`, RB-008). Desplegado
-el 22/10 entre las 17:53 y las 17:59 (Madrid) con el OK de Juan, en el orden de
-RB-008/RB-009, desde un `git archive` limpio de `42234c2`:
+`main` = producción para la ingesta: PR #11 mergeado como `0a6dc68` (CI verde) y
+`cercanias-ingesta` reconstruido desde un `git archive` limpio de `0a6dc68` el
+25/10 entre las 08:27 y las 08:29 (Madrid), con el OK de Juan, con
+`gcloud run jobs deploy cercanias-ingesta --source .`. Sólo cambió la imagen:
+env, secretos, SA y Scheduler iguales (diff del `describe` antes/después).
+API y web siguen como en RB-009 (PR #9, ya mergeado en `251ef08`).
 
-| Pieza | Ahora | Rollback (anterior, = `main`) |
+| Pieza | Ahora | Rollback |
 |---|---|---|
 | API `cercanias-api` | revisión `cercanias-api-00007-vcv` (`cercanias-api@sha256:44a51d4f…aa85`) | `gcloud run services update-traffic cercanias-api --region europe-southwest1 --to-revisions cercanias-api-00006-v2z=100` |
-| Job `cercanias-ingesta` | `cercanias-ingesta@sha256:646a4d8b…083294` | `gcloud run jobs update cercanias-ingesta --region europe-southwest1 --image europe-southwest1-docker.pkg.dev/cercanias-en-hora/cloud-run-source-deploy/cercanias-ingesta@sha256:d44a820af87f323f4832abdf1a98264b3a1994542d5dc15f51c5e0ccf9694f7f` |
-| Web `index.html` | generación `1792684768397146` (= `apps/web/index.html` de `42234c2`) | subir `apps/web/index.html` de `main` (`72d72a0`) con `--cache-control="public, max-age=60" --content-type="text/html"` (antes: generación `1792676247042413`) |
+| Job `cercanias-ingesta` | `cercanias-ingesta@sha256:ee6d9dad…1934f2` (PR #11, `0a6dc68`) | `gcloud run jobs update cercanias-ingesta --region europe-southwest1 --image europe-southwest1-docker.pkg.dev/cercanias-en-hora/cloud-run-source-deploy/cercanias-ingesta@sha256:646a4d8b871226afb99de7f7d15a72a9f9196ae6397d776161227bfb84083294` (RB-009, `42234c2`); antes de esa, `…@sha256:d44a820af87f323f4832abdf1a98264b3a1994542d5dc15f51c5e0ccf9694f7f` |
+| Web `index.html` | generación `1792684768397146` (= `apps/web/index.html` de `42234c2`) | subir `apps/web/index.html` de `72d72a0` con `--cache-control="public, max-age=60" --content-type="text/html"` (antes: generación `1792676247042413`) |
 
 API: imagen completa `europe-southwest1-docker.pkg.dev/cercanias-en-hora/cloud-run-source-deploy/cercanias-api@sha256:44a51d4f7ef08f21b22293ff4037b84e19bd818b786c9fd57a5ab9b6ca09aa85`
 (anterior `…@sha256:4858e26969f1a8ee07d00caf7f83783f2ebaceda7223b13c8c4a806981b7d807`).
-Ingesta: `…cercanias-ingesta@sha256:646a4d8b871226afb99de7f7d15a72a9f9196ae6397d776161227bfb84083294`.
-Env, secretos, cuenta de servicio y Scheduler sin cambios; `ORIGIN_ESTIMATE_ROUTES`
-sin definir (vacío). Verificación: `/health` 200 ok, 95 estaciones, 838/838 filas
-con `pending_departure`, `health.departures_pending_departure = 218`,
-`departures_contradicting_live = 0`, ninguna fila pendiente dice «en hora»,
-snapshot fresco, web sin errores JS. Cuando se mergee PR #9, `main` vuelve a
-coincidir con producción.
+Ingesta: `europe-southwest1-docker.pkg.dev/cercanias-en-hora/cloud-run-source-deploy/cercanias-ingesta@sha256:ee6d9dadcb7b5795d162f9580d8ae2895cdb44d2a9dd17eada96ea81981934f2`.
+
+**PR #11 (RB-011):** si la última pasada de una invocación viene vacía y se
+conserva una anterior de la misma invocación con menos de
+`STALE_WARNING_SECONDS` (240 s), ya no se marca `degraded`; más vieja, sí.
+Verificación tras el despliegue: ejecuciones de 08:30, 08:31, 08:32 y 08:33 OK con la
+imagen nueva; a las 08:32 la pasada 3/3 vino vacía y se publicó sin `degraded`
+(«pasada final vacia: se conserva la anterior (20s), aun vigente»); snapshot de
+~60 s con 91 trenes y salud ok; `boards.json` fresco
+(`departures_contradicting_live = 0`, `schedule_days_left = 29`). Runbook:
+`docs/runbooks/RB-011-degraded-with-fresh-data.md`.
 
 **Hecho 6, medido (RB-009, desplegado):** con el tren aún en su
 origen (`STOPPED_AT`), el 54 % de los «0» de Renfe salieron ≥3 min tarde
@@ -104,7 +110,7 @@ emparejamiento validado (hoy C1). Ver `docs/runbooks/RB-008-bot-boards-inconsist
 
 ## Estado actual
 
-- 276 tests, cobertura 97,13 %. `make ci` verde.
+- 429 tests, cobertura 97,54 %. `make ci` verde.
 - Horarios: los regenera cada noche `cercanias-horarios` (Scheduler
   `cercanias-horarios-nightly`). El GTFS de Renfe trae ~30 días por delante.
   **Incidente:** los subidos a mano en agosto caducaron hacia el 29/08 y los

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import collections
 import json
+import re
 import statistics
 import subprocess
 import sys
@@ -46,7 +47,9 @@ def _run(args: list[str]) -> str:
 
 def listar_dias() -> list[str]:
     salida = _run(["gcloud", "storage", "ls", f"gs://{BUCKET}/archivo/"])
-    return sorted({linea.rstrip("/").split("/")[-1] for linea in salida.splitlines() if linea.strip()})
+    nombres = {linea.rstrip("/").split("/")[-1] for linea in salida.splitlines() if linea.strip()}
+    # Solo carpetas de dia: archivo/alerts/ (RB-014) vive al lado y no es un dia.
+    return sorted(n for n in nombres if re.fullmatch(r"\d{4}-\d{2}-\d{2}", n))
 
 
 def cargar_dia(dia: str) -> list[dict[str, Any]]:
