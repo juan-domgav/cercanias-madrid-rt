@@ -32,12 +32,25 @@ El informe de calidad va también dentro del Parquet (metadato `calidad`).
 | `llegada_obs`, `retraso_llegada_obs_s` | Primera `STOPPED_AT` en la parada (fuera de cabecera) y su diferencia con `programada`. |
 | `salida_obs`, `retraso_salida_obs_s` | Primera transición `STOPPED_AT` → `IN_TRANSIT_TO` con `next_stop` aún = la parada (salida, RB-009) y su diferencia con `programada`. No en destino. Medida independiente del `delay` de Renfe, resolución ~20 s. |
 | `fuente_horario` | `horarios/<svc>.json` (bucket web), `gtfs:mdb-2653-…` (GTFS archivado) o `sin_horario`. |
+| `cancelado` | El viaje salió como suprimido (`CANCELED`) en alguna pasada del día. Nulo si ese día no hay `canc` en el archivo (RB-014). |
+| `parada_omitida` | La parada salió como `SKIPPED` para ese viaje en alguna pasada. Nulo igual que `cancelado`. |
+| `recorrido_acortado` | El viaje omitió su origen o su destino (recorrido limitado). Nulo igual que `cancelado`. |
+| `alerta_activa_linea`, `alerta_tipo`, `min_desde_alerta` | Había un aviso de Renfe vigente en la familia (`C3` cubre `C3a`) a la hora `programada` (o última observación). Si hay varios, el de inicio más reciente. `min_desde_alerta` = minutos desde su inicio (nulo si no tiene). Nulos si no hay foto de avisos anterior a ese momento (`archivo/alerts/`, RB-014). |
+| `n_cancelados_linea_hora` | Viajes suprimidos de la misma familia con salida programada en esa hora (sin horario: hora en que se vio suprimido). `0` si se registró y no hubo ninguno; nulo si no se registró. |
 
 Trenes programados que nunca aparecen salen igual, con `tren_visto = false` y
 `no_observado` en todas sus paradas: así se ven las supresiones. Trenes vistos
 que no están en el horario (especiales `SPECIAL_10_*`, refuerzos) salen con las
 paradas en el orden en que se vieron, `seq`/`programada` nulos y
 `fuente_horario = sin_horario`.
+
+**Incidencias (versión 3).** Las 7 últimas columnas salen de lo que el job de
+ingesta guarda con `ARCHIVAR_CANCELACIONES=1` y `ARCHIVAR_AVISOS=1` (RB-014,
+apagadas por defecto). Nulo = no se sabe; `false` = se registró y no pasó. No hay
+backfill: los días anteriores a encender las banderas quedan nulos para siempre.
+Si se encienden a media jornada, `pasadas_con_incidencias` en la calidad dice
+cuántas pasadas lo traían. El feed de avisos lleva congelado desde el 7 oct
+(RB-014): con el feed así, la columna dice lo que Renfe publicaba, no la realidad.
 
 ### Definición: «retraso real en una parada» (`retraso_s`)
 El feed sólo da, cada ~20 s y por tren, un `delay` y la **próxima** parada
@@ -108,7 +121,9 @@ retraso medido y `estado`: `bueno` o `revisar` con `motivos`. Umbrales (en el
 script): día parcial (primera pasada >06:00 o última <23:30), <3.500 pasadas,
 >30 min de huecos o de feed congelado en 06-24 h, servicio mayoritario del feed ≠ esperado, sin
 horario, <85 % de trenes programados vistos, <60 % medido. `revisar` no excluye
-el día: avisa de que hay que filtrar (por hora, por `medido`).
+el día: avisa de que hay que filtrar (por hora, por `medido`). Desde la versión 3
+también `pasadas_con_incidencias`, `trenes_cancelados` (nulo sin registro) y
+`fotos_avisos` (no cambian `estado`).
 
 Informe del backfill inicial: [`docs/informes/historico-calidad-2026-09-08_2026-10-22.md`](../informes/historico-calidad-2026-09-08_2026-10-22.md).
 
@@ -173,6 +188,6 @@ Se puede regenerar mientras el crudo exista (90 días).
   no están; un tren programado no visto puede ser una supresión o un tren sin GPS.
 - `medido` exige ver al tren después: trenes que desaparecen a mitad (incidencia,
   hueco del archivo) dejan esas paradas en `sin_confirmar`.
-- El informe lleva `version` (2 = con filtro de feed congelado). Los días
+- El informe lleva `version` (2 = con filtro de feed congelado, 3 = columnas de incidencias). Los días
   construidos antes (sin `version`) se pueden rehacer con `--forzar`.
 - El código en vivo (worker) aún no corrige el desfase −86400 de medianoche.
