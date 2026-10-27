@@ -104,4 +104,5 @@ testpaths = [
   "apps/worker/tests",
   "apps/api/tests",
   "tests/contract",
+  "tests/scripts",
 ]

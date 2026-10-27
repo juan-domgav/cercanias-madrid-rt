@@ -4,7 +4,10 @@
 Lee ``gs://cercanias-madrid-rt-privado/archivo/<día>/`` (más la madrugada del día
 siguiente, donde siguen circulando trenes del día) y el horario de ese día, y
 escribe una fila por (día, tren, parada) en ``historico/<día>.parquet`` y su
-informe de calidad en ``historico/calidad/<día>.json``. Re-ejecutar un día
+informe de calidad en ``historico/calidad/<día>.json``. Si el archivo trae
+supresiones/paradas omitidas (``ARCHIVAR_CANCELACIONES=1``) o hay avisos en
+``archivo/alerts/`` (``ARCHIVAR_AVISOS=1``), se rellenan las columnas de
+incidencias; si no, quedan nulas (RB-014). Re-ejecutar un día
 sobrescribe esos dos objetos y nada más: nunca toca ``archivo/``.
 
 Horario del día, por orden:
@@ -58,6 +61,14 @@ from cercanias_domain.historico import (
     pasadas_congeladas,
     servicio_madrid,
 )
+from cercanias_domain.historico_incidencias import (
+    FotoAvisos,
+    PasadaIncidencias,
+    alerta_linea,
+    foto_desde_objeto,
+    incidencias_del_dia,
+    pasada_desde_objeto,
+)
 from cercanias_domain.trip_id import parse_trip_id
 from cercanias_worker.regenerate_schedules import build_schedules
 
@@ -65,6 +76,8 @@ MADRID = ZoneInfo("Europe/Madrid")
 BUCKET = "cercanias-madrid-rt-privado"
 ARCHIVO = f"gs://{BUCKET}/archivo"
 DESTINO = f"gs://{BUCKET}/historico"
+#: Avisos archivados sólo cuando cambian (RB-014): ``<día>/<HHMMSS>.json``.
+ALERTAS = f"{ARCHIVO}/alerts"
 HORARIOS = "gs://cercanias-madrid-rt-web/horarios"
 RAIZ = Path(__file__).resolve().parent.parent
 MANIFIESTO_GTFS = RAIZ / "data" / "mappings" / "gtfs-historico-mdb.json"
@@ -144,6 +157,49 @@ def descargar_archivo(dia: date, tmp: Path) -> tuple[list[Path], list[Path]]:
     return sorted(hoy.glob("*.json")), sorted(manana.glob("*.json"))
 
 
+def descargar_avisos(dia: date, tmp: Path) -> list[Path]:
+    """Fotos de avisos que cubren el día: la vigente al empezar y las del día.
+
+    Se archivan sólo cuando cambian, así que la vigente a las 00:00 puede ser de
+    hace semanas (feed congelado). Sin ``archivo/alerts/`` devuelve ``[]``.
+    """
+    lista = _gcloud("ls", f"{ALERTAS}/**")
+    if lista.returncode != 0:
+        if "matched no objects" in lista.stderr:
+            return []
+        raise RuntimeError(f"no se pudo listar {ALERTAS}: {lista.stderr.strip()[-300:]}")
+    fin = (dia + timedelta(days=1)).isoformat() + f"/{MADRUGADA_SIGUIENTE:02d}"
+    claves = sorted(
+        u for u in lista.stdout.split()
+        if u.endswith(".json") and u.removeprefix(f"{ALERTAS}/") < fin
+    )
+    previas = [u for u in claves if u.removeprefix(f"{ALERTAS}/") < dia.isoformat()]
+    elegidas = previas[-1:] + [u for u in claves if u not in previas]
+    if not elegidas:
+        return []
+    destino = tmp / "avisos"
+    destino.mkdir(parents=True, exist_ok=True)
+    # Dos días distintos pueden tener el mismo HHMMSS: se baja cada uno con nombre propio.
+    for u in elegidas:
+        dia_obj, nombre = u.removeprefix(f"{ALERTAS}/").split("/", 1)
+        r = _gcloud("cp", u, str(destino / f"{dia_obj}_{nombre}"))
+        if r.returncode != 0:
+            raise RuntimeError(f"no se pudo bajar {u}: {r.stderr.strip()[-300:]}")
+    return sorted(destino.glob("*.json"))
+
+
+def leer_avisos(ficheros: list[Path]) -> list[FotoAvisos]:
+    fotos: list[FotoAvisos] = []
+    for f in ficheros:
+        try:
+            foto = foto_desde_objeto(json.loads(f.read_text(encoding="utf-8")))
+        except (json.JSONDecodeError, OSError):
+            continue
+        if foto is not None:
+            fotos.append(foto)
+    return sorted(fotos, key=lambda x: x.ts)
+
+
 # --- horario ------------------------------------------------------------------
 
 
@@ -220,7 +276,7 @@ def cargar_horario(dia: date, servicio: str, cache: Path) -> Horario | None:
 
 
 #: Versión de las reglas; va en el informe para saber con qué se construyó cada día.
-VERSION = 2
+VERSION = 3
 #: Menos trenes que esto no permite distinguir un feed congelado de trenes quietos.
 MIN_TRENES_CONGELADO = 5
 
@@ -229,18 +285,29 @@ def _firma(trenes: list[list[Any]]) -> tuple[tuple[str, ...], ...]:
     return tuple(sorted(tuple(map(str, t)) for t in trenes))
 
 
-def leer_observaciones(
-    ficheros: list[Path], dia: date
-) -> tuple[dict[str, list[Observacion]], list[datetime], Counter[str], list[tuple[datetime, datetime]]]:
-    """Observaciones del día, pasadas válidas, prefijos del feed y rachas congeladas."""
-    pasadas: list[tuple[datetime, dict[str, int], list[list[Any]]]] = []
+@dataclass
+class Lectura:
+    obs: dict[str, list[Observacion]]
+    marcas: list[datetime]
+    prefijos: Counter[str]
+    congelado: list[tuple[datetime, datetime]]
+    #: ``canc``/``skip`` de cada pasada no congelada (RB-014).
+    incidencias: list[PasadaIncidencias]
+
+
+def leer_observaciones(ficheros: list[Path], dia: date) -> Lectura:
+    """Observaciones del día, pasadas válidas, prefijos del feed, rachas congeladas e incidencias."""
+    pasadas: list[tuple[datetime, dict[str, int], list[list[Any]], PasadaIncidencias]] = []
     for f in ficheros:
         try:
             a = json.loads(f.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             continue
         ts = datetime.fromisoformat(a["ts"]).astimezone(MADRID)
-        pasadas.append((ts, {c: k for k, c in enumerate(a["cols"])}, [t for t in a["trains"] if t]))
+        pasadas.append(
+            (ts, {c: k for k, c in enumerate(a["cols"])}, [t for t in a["trains"] if t],
+             pasada_desde_objeto(a, ts))
+        )
     pasadas.sort(key=lambda x: x[0])
     firmas = [
         (
@@ -249,14 +316,15 @@ def leer_observaciones(
             if len(trenes) >= MIN_TRENES_CONGELADO
             else None,
         )
-        for ts, _, trenes in pasadas
+        for ts, _, trenes, _ in pasadas
     ]
     congeladas = pasadas_congeladas(firmas)
     rachas: list[tuple[datetime, datetime]] = []
     obs: dict[str, list[Observacion]] = defaultdict(list)
     marcas: list[datetime] = []
     prefijos: Counter[str] = Counter()
-    for k, (ts, i, trenes) in enumerate(pasadas):
+    incidencias: list[PasadaIncidencias] = []
+    for k, (ts, i, trenes, inc) in enumerate(pasadas):
         if congeladas[k]:
             # La racha va desde la última pasada real (k - 1 >= 0: la primera nunca se marca).
             if k > 0 and congeladas[k - 1]:
@@ -264,6 +332,7 @@ def leer_observaciones(
             else:
                 rachas.append((pasadas[k - 1][0], ts))
             continue
+        incidencias.append(inc)
         if ts.date() == dia:
             marcas.append(ts)
         for tr in trenes:
@@ -275,7 +344,8 @@ def leer_observaciones(
             n = normalizar(tid, Observacion(ts, tr[i["delay"]], tr[i["next_stop"]], tr[i["status"]]))
             if n is not None and n.fecha_servicio == dia:
                 obs[n.trip_id].append(n.obs)
-    return obs, marcas, prefijos, [(a, b) for a, b in rachas if b.date() == dia or a.date() == dia]
+    congelado = [(a, b) for a, b in rachas if b.date() == dia or a.date() == dia]
+    return Lectura(obs, marcas, prefijos, congelado, incidencias)
 
 
 COLUMNAS = pa.schema(
@@ -314,19 +384,32 @@ COLUMNAS = pa.schema(
         ("salida_obs", pa.timestamp("s", tz="Europe/Madrid")),
         ("retraso_salida_obs_s", pa.int32()),
         ("fuente_horario", pa.string()),
+        # RB-014: nulas si ese día no se registraron (bandera apagada o sin avisos archivados).
+        ("cancelado", pa.bool_()),
+        ("parada_omitida", pa.bool_()),
+        ("recorrido_acortado", pa.bool_()),
+        ("alerta_activa_linea", pa.bool_()),
+        ("alerta_tipo", pa.string()),
+        ("min_desde_alerta", pa.int32()),
+        ("n_cancelados_linea_hora", pa.int16()),
     ]
 )
 
 
-def construir(
+def construir(  # noqa: PLR0913
     dia: date,
     ficheros_hoy: list[Path],
     ficheros_manana: list[Path],
     horario: Horario | None,
     nombres: dict[str, str],
+    *,
+    fotos_avisos: list[FotoAvisos] | None = None,
 ) -> tuple[pa.Table, dict[str, Any]]:
     servicio = servicio_madrid(dia)
-    obs, marcas, prefijos, congelado = leer_observaciones([*ficheros_hoy, *ficheros_manana], dia)
+    lectura = leer_observaciones([*ficheros_hoy, *ficheros_manana], dia)
+    obs, marcas, prefijos, congelado = lectura.obs, lectura.marcas, lectura.prefijos, lectura.congelado
+    inc = incidencias_del_dia(lectura.incidencias, dia)
+    fotos = fotos_avisos or []
     viajes = horario.viajes if horario else {}
     filas: list[tuple[FilaParada, str, str, str]] = []
     for tid in sorted(set(viajes) | set(obs)):
@@ -351,16 +434,25 @@ def construir(
         if f.seq is not None or f.trip_id not in origen_de:
             origen_de.setdefault(f.trip_id, f.stop_id)
         destino_de[f.trip_id] = f.stop_id
+    hora_salida = {
+        f.trip_id: f.programada.astimezone(MADRID).hour
+        for f, *_ in filas
+        if f.es_origen and f.programada is not None
+    }
+    cancelados_hora = inc.cancelados_por_linea_hora(hora_salida)
     for f, linea, dest, fuente in filas:
         parsed = parse_trip_id(f.trip_id)
         ref = f.programada or f.ultimo_ts or f.primero_ts
+        hora = ref.astimezone(MADRID).hour if ref else None
+        fam = familia(f.trip_id) or linea
+        aviso = alerta_linea(fotos, fam or None, ref)
         valores = {
             "fecha_servicio": dia,
             "servicio": servicio,
             "trip_id": f.trip_id,
             "tren": parsed.train_number if parsed else None,
             "linea": linea,
-            "familia": familia(f.trip_id) or linea,
+            "familia": fam,
             "es_especial": bool(parsed and parsed.is_special),
             "origen_id": origen_de[f.trip_id],
             "destino_id": destino_de[f.trip_id],
@@ -371,7 +463,7 @@ def construir(
             "es_origen": f.es_origen,
             "es_destino": f.es_destino,
             "programada": f.programada,
-            "hora": ref.astimezone(MADRID).hour if ref else None,
+            "hora": hora,
             "dia_semana": dia.isoweekday(),
             "tren_visto": f.tren_visto,
             "salio": f.salio,
@@ -389,6 +481,18 @@ def construir(
             "salida_obs": f.salida_obs,
             "retraso_salida_obs_s": f.retraso_salida_obs_s,
             "fuente_horario": fuente,
+            "cancelado": inc.cancelado(f.trip_id),
+            "parada_omitida": inc.parada_omitida(f.trip_id, f.stop_id),
+            "recorrido_acortado": inc.recorrido_acortado(
+                f.trip_id, origen_de[f.trip_id], destino_de[f.trip_id]
+            ),
+            "alerta_activa_linea": aviso.activa,
+            "alerta_tipo": aviso.tipo,
+            "min_desde_alerta": aviso.min_desde,
+            "n_cancelados_linea_hora": (
+                cancelados_hora.get((fam, hora), 0) if cancelados_hora is not None and hora is not None
+                else None
+            ),
         }
         for c, v in valores.items():
             columnas[c].append(v)
@@ -404,6 +508,9 @@ def construir(
         n_hoy=len(ficheros_hoy),
         n_manana=len(ficheros_manana),
     )
+    calidad["pasadas_con_incidencias"] = inc.pasadas_con_registro
+    calidad["trenes_cancelados"] = len(inc.cancelados) if inc.registrado else None
+    calidad["fotos_avisos"] = len(fotos)
     tabla = tabla.replace_schema_metadata({"calidad": json.dumps(calidad, ensure_ascii=False)})
     return tabla, calidad
 
@@ -512,8 +619,9 @@ def procesar_dia(dia: date, local: Path | None, tmp_base: Path, cache: Path) -> 
     tmp = Path(tempfile.mkdtemp(prefix=f"hist-{dia}-", dir=tmp_base))
     try:
         hoy, manana = descargar_archivo(dia, tmp)
+        fotos = leer_avisos(descargar_avisos(dia, tmp))
         horario = cargar_horario(dia, servicio_madrid(dia), cache)
-        tabla, calidad = construir(dia, hoy, manana, horario, nombres)
+        tabla, calidad = construir(dia, hoy, manana, horario, nombres, fotos_avisos=fotos)
         salida = (local or tmp) / f"{dia:%Y-%m-%d}.parquet"
         salida.parent.mkdir(parents=True, exist_ok=True)
         pq.write_table(tabla, salida, compression="zstd")
