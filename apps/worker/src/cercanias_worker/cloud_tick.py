@@ -27,10 +27,17 @@ import json
 import os
 import sys
 import time
-from datetime import UTC, datetime
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from cercanias_connectors_renfe.alerts import (
+    AlertsFetchError,
+    alerts_hash,
+    fetch_alerts_payload,
+    parse_madrid_alerts,
+)
 from cercanias_domain.board_status import contradicts_live, departure_status
 from cercanias_domain.departures import (
     PUBLISH_WINDOW_MINUTES as DEFAULT_PUBLISH_WINDOW_MINUTES,
@@ -71,6 +78,29 @@ PRIVATE_BUCKET = os.environ.get("PRIVATE_BUCKET", "")
 #: el cuadrado del dia.
 ARCHIVE_PREFIX = os.environ.get("ARCHIVE_PREFIX", "archivo")
 ARCHIVE_ENABLED = os.environ.get("ARCHIVE_ENABLED", "1") == "1"
+
+
+def _flag(nombre: str) -> bool:
+    """Bandera de entorno APAGADA salvo que valga exactamente ``"1"``."""
+    return os.environ.get(nombre, "0") == "1"
+
+
+#: RB-014. Anade ``canc`` (supresiones) y ``skip`` (paradas omitidas) a cada
+#: objeto de ``archivo/<dia>/``. Apagado por defecto: Juan decide cuando.
+ARCHIVAR_CANCELACIONES = _flag("ARCHIVAR_CANCELACIONES")
+#: RB-014. Descarga ``alerts.json`` una vez por invocacion y lo archiva en
+#: ``archivo/alerts/<dia>/<hhmmss>.json`` SOLO cuando cambia. Apagado por defecto.
+ARCHIVAR_AVISOS = _flag("ARCHIVAR_AVISOS")
+ALERTS_ARCHIVE_PREFIX = os.environ.get("ALERTS_ARCHIVE_PREFIX", f"{ARCHIVE_PREFIX}/alerts")
+#: Estado en el bucket privado (mismo patron que alert-state.json):
+#: ``{"hash", "key", "written_at", "stale_warned_at"}``. Si se pierde o se
+#: corrompe, lo unico que pasa es que el siguiente tick reescribe los avisos.
+ALERTS_STATE_KEY = os.environ.get("ALERTS_STATE_KEY", "alerts-state.json")
+#: El feed de avisos lleva congelado desde el 7-oct-2026: se avisa (WARNING
+#: ``alerts_feed_stale``) cuando su cabecera supera esta edad, como mucho una
+#: vez por hora para no inundar Cloud Logging con un aviso por minuto.
+ALERTS_STALE_HOURS = float(os.environ.get("ALERTS_STALE_HOURS", "6"))
+ALERTS_STALE_WARN_EVERY = timedelta(hours=1)
 
 #: Cuota minima de vehiculos para considerar que un segundo dia de servicio esta
 #: realmente en circulacion y no es ruido de material aparcado.
@@ -228,6 +258,18 @@ def _snapshot_a_publicar(
     desapariciones en el ~5 % de los sondeos, avisar por cada fallo llena la app
     de advertencias sobre datos de 80 segundos y se acaba ignorando el aviso.
     """
+    if actual.get("vehicles") and actual.get("stale_since"):
+        # La ultima pasada de ESTA invocacion vino vacia y run_cycle conservo una
+        # anterior de la misma invocacion marcandola ``degraded``. Esos datos
+        # tienen segundos: se aplica el mismo umbral que entre invocaciones para
+        # no publicar un aviso falso de datos viejos.
+        salida = dict(actual)
+        edad = _snapshot_age_seconds(salida)
+        if edad is not None and edad < STALE_WARNING_SECONDS:
+            salida.pop("degraded", None)
+            salida.pop("reason", None)
+            print(f"pasada final vacia: se conserva la anterior ({edad:.0f}s), aun vigente")
+        return salida
     if actual.get("vehicles") or not previo:
         return actual
     salida = dict(previo)
@@ -610,7 +652,13 @@ def _build_boards(
     }
 
 
-def _archive_pass(publisher: Any, snapshot: dict[str, Any], momento: datetime) -> None:
+def _archive_pass(
+    publisher: Any,
+    snapshot: dict[str, Any],
+    momento: datetime,
+    cancelled: frozenset[str] | None = None,
+    skipped: dict[str, frozenset[str]] | None = None,
+) -> None:
     """Guarda una foto compacta de la pasada para el analisis posterior.
 
     Solo lo que hace falta para responder dos preguntas que hoy no se pueden
@@ -619,6 +667,11 @@ def _archive_pass(publisher: Any, snapshot: dict[str, Any], momento: datetime) -
 
     Se escribe en el bucket PRIVADO: no es dato personal, pero es material de
     trabajo y no tiene por que servirse en la web.
+
+    Con ``ARCHIVAR_CANCELACIONES=1`` se anaden ``canc`` (trip_ids suprimidos) y
+    ``skip`` (``{trip_id: [stop_id, ...]}``). Clave presente y vacia significa
+    "se consulto y no habia"; clave ausente, "no se sabe" (bandera apagada o
+    trip_updates caido): ``None`` aqui, nunca una lista vacia inventada.
     """
     if not ARCHIVE_ENABLED:
         return
@@ -639,6 +692,9 @@ def _archive_pass(publisher: Any, snapshot: dict[str, Any], momento: datetime) -
             for v in vehiculos
         ],
     }
+    if ARCHIVAR_CANCELACIONES and cancelled is not None and skipped is not None:
+        compacto["canc"] = sorted(cancelled)
+        compacto["skip"] = {trip: sorted(paradas) for trip, paradas in sorted(skipped.items())}
     clave = f"{ARCHIVE_PREFIX}/{momento:%Y-%m-%d}/{momento:%H%M%S}.json"
     try:
         publisher.publish(
@@ -652,6 +708,108 @@ def _archive_pass(publisher: Any, snapshot: dict[str, Any], momento: datetime) -
     except Exception as exc:
         # El archivo es material de estudio: que falle no debe tumbar la ingesta.
         print(f"aviso: no se pudo archivar {clave}: {exc}", file=sys.stderr)
+
+
+def _load_alerts_state(publisher: Any) -> dict[str, Any]:
+    try:
+        raw = publisher.read(ALERTS_STATE_KEY)
+        estado = json.loads(raw) if raw else {}
+    except Exception as exc:
+        # Estado ilegible: se reescriben los avisos una vez, que es inocuo.
+        _log("WARNING", "estado de avisos ilegible; se reinicia", alert="alerts_state_unreadable",
+             error=repr(exc))
+        return {}
+    return estado if isinstance(estado, dict) else {}
+
+
+def _stale_health(
+    estado: dict[str, Any], feed_ts: datetime | None, ahora: datetime
+) -> tuple[dict[str, Any], bool]:
+    """Salud de frescura del feed y si hay que guardar el estado (aviso emitido)."""
+    if feed_ts is None:
+        return {"alerts_feed_stale": None, "alerts_feed_age_seconds": None}, False
+    edad = int((ahora - feed_ts).total_seconds())
+    stale = edad >= ALERTS_STALE_HOURS * 3600
+    avisar = False
+    if stale:
+        previo = estado.get("stale_warned_at")
+        try:
+            avisar = previo is None or ahora - datetime.fromisoformat(previo) >= ALERTS_STALE_WARN_EVERY
+        except (TypeError, ValueError):
+            avisar = True
+    if avisar:
+        _log(
+            "WARNING", "alerts_feed_stale", alert="alerts_feed_stale",
+            feed_timestamp=feed_ts.astimezone(MADRID_TZ).isoformat(), age_seconds=edad,
+            threshold_hours=ALERTS_STALE_HOURS,
+        )
+        estado["stale_warned_at"] = ahora.isoformat()
+    return {"alerts_feed_stale": stale, "alerts_feed_age_seconds": edad}, avisar
+
+
+def _archive_alerts(
+    publisher: Any,
+    ahora: datetime,
+    fetch: Callable[[], dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Archiva los avisos de Madrid si han cambiado; devuelve claves de salud.
+
+    Nunca lanza: los avisos son material de estudio y un fallo aqui no puede
+    tumbar el tick ni los tablones. Devuelve ``{}`` con ``ARCHIVAR_AVISOS``
+    apagado, de modo que boards.json sale identico a antes.
+    """
+    if not ARCHIVAR_AVISOS:
+        return {}
+    descargar = fetch or fetch_alerts_payload
+    salud: dict[str, Any] = {
+        "alerts_fetch_failed": True, "alerts_feed_stale": None,
+        "alerts_feed_age_seconds": None, "alerts_madrid": None,
+    }
+    try:
+        resultado = parse_madrid_alerts(descargar())
+    except AlertsFetchError as exc:
+        _log("WARNING", "no se pudo leer alerts.json", alert="alerts_fetch_failed", error=str(exc))
+        return salud
+    except Exception as exc:
+        _log("ERROR", "fallo inesperado leyendo alerts.json", alert="alerts_fetch_failed",
+             error=repr(exc))
+        return salud
+
+    try:
+        estado = _load_alerts_state(publisher)
+        frescura, guardar = _stale_health(estado, resultado.feed_timestamp, ahora)
+        salud.update(frescura, alerts_fetch_failed=False, alerts_madrid=len(resultado.alerts))
+        huella = alerts_hash(resultado.alerts)
+        if huella != estado.get("hash"):
+            clave = f"{ALERTS_ARCHIVE_PREFIX}/{ahora:%Y-%m-%d}/{ahora:%H%M%S}.json"
+            objeto = {
+                "ts": ahora.isoformat(),
+                "feed_ts": (resultado.feed_timestamp.astimezone(MADRID_TZ).isoformat()
+                            if resultado.feed_timestamp else None),
+                "hash": huella,
+                "n": len(resultado.alerts),
+                "alerts": list(resultado.alerts),
+            }
+            payload = json.dumps(objeto, ensure_ascii=False, separators=(",", ":")) + "\n"
+            try:
+                publisher.publish(clave, payload.encode("utf-8"), content_type="application/x-ndjson")
+            except Exception as exc:
+                # Sin actualizar el hash: el siguiente tick lo vuelve a intentar.
+                _log("ERROR", f"no se pudo archivar {clave}", alert="alerts_archive_failed",
+                     key=clave, error=repr(exc))
+            else:
+                estado.update(hash=huella, key=clave, written_at=ahora.isoformat())
+                guardar = True
+                print(f"avisos archivados: {clave} ({len(resultado.alerts)} de Madrid)")
+        if guardar:
+            _safe_publish(
+                publisher, ALERTS_STATE_KEY,
+                json.dumps(estado, ensure_ascii=False).encode("utf-8"),
+                content_type="application/json",
+            )
+    except Exception as exc:
+        _log("ERROR", "fallo archivando avisos", alert="alerts_archive_failed", error=repr(exc))
+    return salud
 
 
 def _build_notifier() -> TelegramNotifier:
@@ -677,14 +835,20 @@ def _publish_boards(
     salida: dict[str, Any],
     cancelled: frozenset[str],
     skipped: dict[str, frozenset[str]],
+    extra_health: dict[str, Any] | None = None,
 ) -> None:
     """Construye y publica los tablones; nunca lanza.
+
+    ``extra_health`` se mezcla en ``boards["health"]`` (frescura de avisos,
+    RB-014). Es informativo: no marca el snapshot como degradado.
 
     Un fallo aqui (horario corrupto, bug, GCS caido) no debe saltarse los avisos
     de Telegram que vienen despues en ``main``.
     """
     try:
         boards = _build_boards(salida, publisher, cancelled, skipped)
+        if extra_health:
+            boards["health"].update(extra_health)
     except Exception as exc:
         _log("ERROR", "fallo construyendo los tablones", error=repr(exc))
     else:
@@ -725,7 +889,11 @@ def main() -> int:
             f"salud={ultimo.health.worst} incidencias={len(ultimo.incidents)}"
         )
         if store.latest:
-            _archive_pass(estado, store.latest, datetime.now(tz=MADRID_TZ))
+            _archive_pass(
+                estado, store.latest, datetime.now(tz=MADRID_TZ),
+                cancelled=ultimo.cancelled_trips if ultimo.trip_updates_ok else None,
+                skipped=ultimo.skipped_stops if ultimo.trip_updates_ok else None,
+            )
             archivadas += 1
         if i < PASSES_PER_INVOCATION:
             time.sleep(SECONDS_BETWEEN_PASSES)
@@ -745,7 +913,10 @@ def main() -> int:
     if ref:
         print(f"snapshot publicado en {ref} ({len(salida.get('vehicles', []))} trenes)")
 
-    _publish_boards(publisher, salida, ultimo.cancelled_trips, ultimo.skipped_stops)
+    salud_avisos = _archive_alerts(estado, datetime.now(tz=MADRID_TZ), fetch=fetch_alerts_payload)
+    _publish_boards(
+        publisher, salida, ultimo.cancelled_trips, ultimo.skipped_stops, extra_health=salud_avisos
+    )
     if ARCHIVE_ENABLED:
         print(f"pasadas archivadas: {archivadas}")
 
