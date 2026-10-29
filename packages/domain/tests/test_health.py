@@ -6,6 +6,7 @@ import pytest
 
 from cercanias_domain.health import (
     FeedHealthInput,
+    Invariant,
     Severity,
     band_for,
     evaluate_feed_health,
@@ -139,3 +140,85 @@ def test_bandas_horarias_incluido_el_cruce_de_medianoche(hora: time, esperado: s
 )
 def test_horario_de_servicio_cruza_medianoche(hora: time, hay_servicio: bool) -> None:
     assert is_service_hours(hora) is hay_servicio
+
+
+# --- delay_coverage sin suprimidos (RB-015) -----------------------------------
+
+
+def _cobertura(report_input: FeedHealthInput) -> Invariant:
+    report = evaluate_feed_health(report_input)
+    return next(i for i in report.invariants if i.name == "delay_coverage")
+
+
+def test_suprimidos_no_cuentan_en_la_cobertura_de_retrasos() -> None:
+    """29/10/2026 ~12:57: 52/65 (80 %) con retraso y los 13 sin retraso eran CANCELED.
+
+    Un tren suprimido nunca publica retraso. Contarlo en el denominador daba un
+    critico falso; sin ellos la cobertura es 52/52.
+    """
+    inv = _cobertura(
+        _input(
+            local_time=time(12, 57),
+            entities_after_nucleo_filter=60,
+            trips_resolved=60,
+            trip_updates_total=65,
+            trip_updates_with_delay=52,
+            trip_updates_cancelled=13,
+        )
+    )
+    assert inv.severity is Severity.OK, inv.detail
+    assert "52/52" in inv.detail
+    assert "13" in inv.detail, "el detalle debe decir cuantos suprimidos se excluyen"
+    assert inv.metrics["n_cancelados"] == 13
+
+
+def test_cobertura_baja_entre_no_suprimidos_sigue_siendo_critica() -> None:
+    """Excluir suprimidos no debe tapar una perdida real de retrasos."""
+    inv = _cobertura(
+        _input(trip_updates_total=65, trip_updates_with_delay=30, trip_updates_cancelled=13)
+    )
+    assert inv.severity is Severity.CRITICAL
+    assert "30/52" in inv.detail
+    assert inv.metrics["n_cancelados"] == 13
+
+
+def test_retraso_de_un_suprimido_no_suma_al_numerador() -> None:
+    """Si un suprimido trae ``delay``, sale de ambos lados: 39/52, no 52/52."""
+    inv = _cobertura(
+        _input(
+            trip_updates_total=65,
+            trip_updates_with_delay=52,
+            trip_updates_cancelled=13,
+            trip_updates_cancelled_with_delay=13,
+        )
+    )
+    assert inv.severity is Severity.CRITICAL
+    assert "39/52" in inv.detail
+
+
+def test_todos_suprimidos_no_divide_por_cero_ni_es_critico() -> None:
+    """Huelga o corte total: no hay viajes en marcha cuya cobertura evaluar.
+
+    Mismo criterio que denominador 0 en el resto de tasas: OK «sin datos». Que no
+    haya trenes en circulacion ya lo vigila ``nucleo_filter_yield``.
+    """
+    inv = _cobertura(
+        _input(trip_updates_total=13, trip_updates_with_delay=0, trip_updates_cancelled=13)
+    )
+    assert inv.severity is Severity.OK
+    assert "13" in inv.detail
+    assert inv.metrics["n_cancelados"] == 13
+
+
+def test_sin_suprimidos_la_cobertura_no_cambia() -> None:
+    """Compatibilidad: sin el campo nuevo el calculo es el de siempre."""
+    inv = _cobertura(_input())
+    assert inv.severity is Severity.OK
+    assert "98/101" in inv.detail
+    assert inv.metrics["n_cancelados"] == 0
+
+
+def test_otros_invariantes_no_llevan_metricas() -> None:
+    report = evaluate_feed_health(_input())
+    otros = [i for i in report.invariants if i.name != "delay_coverage"]
+    assert all(dict(i.metrics) == {} for i in otros)

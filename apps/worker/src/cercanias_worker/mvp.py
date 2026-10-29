@@ -177,6 +177,9 @@ def run_cycle(
             trip_updates_total=delays.matched_nucleo,
             trip_updates_with_delay=delays.with_delay,
             feed_skew_seconds=0.0,
+            # Los suprimidos no publican retraso: fuera de la cobertura (RB-015).
+            trip_updates_cancelled=len(delays.cancelled_trips),
+            trip_updates_cancelled_with_delay=delays.cancelled_with_delay,
         )
     )
 
@@ -227,7 +230,9 @@ def run_cycle(
             }
             for inc in incidents
         ],
-        "health": {i.name: {"severity": str(i.severity), "detail": i.detail} for i in health.invariants},
+        "health": {
+            i.name: {"severity": str(i.severity), "detail": i.detail, **i.metrics} for i in health.invariants
+        },
     }
 
     # "Bueno" = hay trenes. Una pasada vacia con payload lleno es justo el caso

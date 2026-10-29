@@ -17,5 +17,6 @@ verificación y rollback. Los jobs viven en el proyecto `cercanias-en-hora`.
 | Reconstruir, rellenar o verificar el histórico de retrasos (`historico/<día>.parquet`) | [RB-010](RB-010-historico.md) |
 | `degraded: true` / «datos conservados» con `generated_at` de segundos (última pasada de Renfe vacía) | [RB-011](RB-011-degraded-with-fresh-data.md) |
 | Encender/verificar el archivo de supresiones, paradas omitidas y avisos; WARNING `alerts_feed_stale` | [RB-014](RB-014-archivo-incidencias.md) |
+| `health.delay_coverage` crítico con snapshot fresco y sin `degraded`; los viajes sin retraso son `CANCELED` | [RB-015](RB-015-delay-coverage-cancelados.md) |
 
 Detalle de despliegue: [`docs/DESPLIEGUE.md`](../DESPLIEGUE.md).
