@@ -15,7 +15,8 @@ poder probar la madrugada, la hora punta y el feed vacío sin tocar el reloj.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field, replace
 from datetime import time
 from enum import StrEnum
 
@@ -81,6 +82,10 @@ class Invariant:
     name: str
     severity: Severity
     detail: str
+    #: Recuentos adicionales que se publican junto a ``severity``/``detail`` en
+    #: ``snapshot.json → health.<name>`` (claves aditivas; hoy sólo
+    #: ``delay_coverage.n_cancelados``, RB-015).
+    metrics: Mapping[str, int] = field(default_factory=dict, compare=False, hash=False)
 
     @property
     def failed(self) -> bool:
@@ -98,6 +103,14 @@ class FeedHealthInput:
     trip_updates_total: int
     trip_updates_with_delay: int
     feed_skew_seconds: float
+    #: Viajes ``CANCELED`` incluidos en ``trip_updates_total`` (RB-015). Un tren
+    #: suprimido nunca publica retraso, así que no entra en la cobertura. Sólo
+    #: supresiones de viaje completo: un viaje con paradas ``SKIPPED`` (acortado)
+    #: sigue circulando y SÍ cuenta.
+    trip_updates_cancelled: int = 0
+    #: Cuántos de esos suprimidos traen aun así ``delay`` (y por tanto están en
+    #: ``trip_updates_with_delay``): se restan también del numerador.
+    trip_updates_cancelled_with_delay: int = 0
 
 
 @dataclass(frozen=True)
@@ -204,15 +217,7 @@ def evaluate_feed_health(data: FeedHealthInput) -> HealthReport:
         )
     )
 
-    invariants.append(
-        _rate_invariant(
-            name="delay_coverage",
-            observed=(data.trip_updates_with_delay, data.trip_updates_total),
-            minimum=MIN_DELAY_COVERAGE_RATE,
-            what="tripUpdate con retraso publicado",
-            hint="sin esto el producto no puede responder a su pregunta central",
-        )
-    )
+    invariants.append(_delay_coverage_invariant(data))
 
     skew = abs(data.feed_skew_seconds)
     invariants.append(
@@ -224,6 +229,30 @@ def evaluate_feed_health(data: FeedHealthInput) -> HealthReport:
     )
 
     return HealthReport(invariants=tuple(invariants))
+
+
+def _delay_coverage_invariant(data: FeedHealthInput) -> Invariant:
+    """Cobertura de retrasos sobre los viajes que circulan (sin suprimidos).
+
+    El 29/10/2026 dio crítico con 52/65 (80 %): los 13 sin retraso eran todos
+    ``CANCELED``. Un suprimido no puede publicar retraso; contarlo convertía
+    cada jornada con supresiones en una alarma falsa (RB-015). Si todos los
+    viajes están suprimidos, el denominador es 0 y se aplica el criterio común
+    de «sin datos que evaluar» (OK): la falta de trenes ya la vigila
+    ``nucleo_filter_yield``.
+    """
+    cancelados = max(data.trip_updates_cancelled, 0)
+    denominator = max(data.trip_updates_total - cancelados, 0)
+    numerator = max(data.trip_updates_with_delay - max(data.trip_updates_cancelled_with_delay, 0), 0)
+    suffix = f" ({cancelados} suprimidos excluidos)" if cancelados else ""
+    invariant = _rate_invariant(
+        name="delay_coverage",
+        observed=(numerator, denominator),
+        minimum=MIN_DELAY_COVERAGE_RATE,
+        what=f"tripUpdate con retraso publicado{suffix}",
+        hint="sin esto el producto no puede responder a su pregunta central",
+    )
+    return replace(invariant, metrics={"n_cancelados": cancelados})
 
 
 def _rate_invariant(

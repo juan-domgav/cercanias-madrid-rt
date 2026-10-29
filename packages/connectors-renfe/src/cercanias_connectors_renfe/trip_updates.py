@@ -73,6 +73,15 @@ class TripUpdatesResult:
     skipped_stops: dict[str, frozenset[str]] = field(default_factory=dict)
 
     @property
+    def cancelled_with_delay(self) -> int:
+        """Suprimidos que aun así traen ``delay`` (cuentan en ``with_delay``).
+
+        ``health.delay_coverage`` los resta del numerador al excluir los
+        suprimidos del denominador (RB-015).
+        """
+        return sum(1 for d in self.delays if d.trip_id in self.cancelled_trips)
+
+    @property
     def delay_coverage(self) -> float:
         return self.with_delay / self.matched_nucleo if self.matched_nucleo else 0.0
 
