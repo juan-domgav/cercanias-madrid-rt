@@ -132,6 +132,7 @@ def test_metadatos_del_artefacto() -> None:
     assert datos["schema"] == SCHEMA
     assert datos["history"] == {
         "from": "2026-09-14", "to": "2026-09-18", "days": 5, "festivo_days": 0,
+        "excluded_days_skipped": [], "excluded_rows": 0,
     }
     assert datos["outliers_minutes"] == {"min": -5, "max": 60}
     tabla = PredictionTable.from_json(json.loads(json.dumps(datos)))
@@ -142,7 +143,8 @@ def test_metadatos_del_artefacto() -> None:
 
 def test_tabla_vacia_sin_historico() -> None:
     datos = _tabla([])
-    assert datos["history"] == {"from": None, "to": None, "days": 0, "festivo_days": 0}
+    assert datos["history"] == {"from": None, "to": None, "days": 0, "festivo_days": 0,
+                                "excluded_days_skipped": [], "excluded_rows": 0}
     assert PredictionTable.from_json(datos).entry_count == 0
 
 

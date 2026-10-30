@@ -13,6 +13,9 @@ Reglas de producto (no negociables):
 * Solo líneas en lista blanca (``PREVISTO_ROUTES``, vacía por defecto) y solo con
   al menos ``MIN_OBSERVATIONS`` días de muestra para ese tren/estación/tipo de día.
 * Fallo seguro: un artefacto ausente o roto significa "sin previsión", nada más.
+* Días anómalos (huelgas, horario reducido) NUNCA entran en la mediana: la lista
+  versionada ``previsto_dias_excluidos.json`` (junto a este módulo) se salta por
+  completo al construir la tabla (``excluded_days``).
 
 Este módulo es Python puro (sin pyarrow): la tabla se construye offline con
 ``scripts/construir_previsto.py`` y el worker solo carga el JSON resultante.
@@ -27,6 +30,7 @@ from collections import defaultdict
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 SCHEMA = "cercanias-previsto/1"
@@ -41,10 +45,86 @@ OPERATING_DAY_START_HOUR = 4
 WITHIN_MINUTES = 2
 _SATURDAY = 5  # date.weekday(): sábado y domingo son 5 y 6
 _ENTRY_LEN = 2  # [mediana, n]
+# Lista versionada y editable a mano de días anómalos que no alimentan el previsto (RB-013).
+DEFAULT_EXCLUDED_DAYS_PATH = Path(__file__).with_name("previsto_dias_excluidos.json")
+_EXCLUDED_DAY_KEYS = frozenset({"date", "reason"})
 
 
 class PredictionTableError(ValueError):
     """El artefacto de previsión no es válido: se trata como si no existiera."""
+
+
+class ExcludedDaysError(ValueError):
+    """La lista de días excluidos está mal escrita: se para, no se adivina."""
+
+
+@dataclass(frozen=True, slots=True)
+class ExcludedDay:
+    """Un día de servicio anómalo que no debe alimentar el previsto."""
+
+    date: date
+    reason: str
+
+
+def parse_excluded_days(datos: object) -> tuple[ExcludedDay, ...]:
+    """Valida ``{"excluded_days": [{"date": "AAAA-MM-DD", "reason": "..."}]}``.
+
+    También acepta la lista sola. Cualquier entrada rara es un error explícito
+    (con su posición): una huelga mal escrita no puede colarse en la mediana
+    en silencio.
+    """
+    if isinstance(datos, dict):
+        if "excluded_days" not in datos:
+            raise ExcludedDaysError("falta 'excluded_days' en la raíz")
+        datos = datos["excluded_days"]
+    if not isinstance(datos, list):
+        raise ExcludedDaysError("'excluded_days' debe ser una lista de {date, reason}")
+    dias: dict[date, ExcludedDay] = {}
+    for i, item in enumerate(datos):
+        dia = _excluded_day(i, item)
+        if dia.date in dias:
+            raise ExcludedDaysError(f"entrada #{i}: fecha repetida {dia.date.isoformat()}")
+        dias[dia.date] = dia
+    return tuple(sorted(dias.values(), key=lambda d: d.date))
+
+
+def _excluded_day(i: int, item: object) -> ExcludedDay:
+    if not isinstance(item, dict):
+        raise ExcludedDaysError(f"entrada #{i}: debe ser un objeto {{date, reason}}, no {item!r}")
+    sobran = set(item) - _EXCLUDED_DAY_KEYS
+    if sobran:
+        raise ExcludedDaysError(f"entrada #{i}: clave desconocida {sorted(sobran)}")
+    if "date" not in item:
+        raise ExcludedDaysError(f"entrada #{i}: falta 'date' (AAAA-MM-DD)")
+    valor = item["date"]
+    try:
+        if not isinstance(valor, str):
+            raise ValueError(valor)
+        dia = date.fromisoformat(valor)
+    except ValueError as exc:
+        raise ExcludedDaysError(f"entrada #{i}: fecha inválida {valor!r} (AAAA-MM-DD)") from exc
+    motivo = item.get("reason")
+    if not isinstance(motivo, str) or not motivo.strip():
+        raise ExcludedDaysError(f"entrada #{i}: falta 'reason' (texto no vacío)")
+    return ExcludedDay(dia, motivo.strip())
+
+
+def load_excluded_days(path: Path | None = None) -> tuple[ExcludedDay, ...]:
+    """Lee la lista (por defecto la versionada). Ausente o vacía = sin exclusiones."""
+    ruta = DEFAULT_EXCLUDED_DAYS_PATH if path is None else path
+    if not ruta.exists():
+        return ()
+    texto = ruta.read_text(encoding="utf-8")
+    if not texto.strip():
+        return ()
+    try:
+        datos = json.loads(texto)
+    except json.JSONDecodeError as exc:
+        raise ExcludedDaysError(f"{ruta}: JSON ilegible: {exc}") from exc
+    try:
+        return parse_excluded_days(datos)
+    except ExcludedDaysError as exc:
+        raise ExcludedDaysError(f"{ruta}: {exc}") from exc
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,18 +174,30 @@ def _in_range(minutes: float) -> bool:
     return OUTLIER_MIN_MINUTES <= minutes <= OUTLIER_MAX_MINUTES
 
 
-def build_table(
+def build_table(  # noqa: PLR0913 - todo por nombre; excluded_days (RB-013)
     observations: Iterable[Observation],
     *,
     lines: frozenset[str],
     holidays: frozenset[date],
     generated_at: datetime,
     min_observations: int = MIN_OBSERVATIONS,
+    excluded_days: frozenset[date] = frozenset(),
 ) -> dict[str, Any]:
-    """Tabla de medianas lista para serializar a JSON (el artefacto)."""
+    """Tabla de medianas lista para serializar a JSON (el artefacto).
+
+    Las filas de ``excluded_days`` (huelgas, días anómalos) se saltan por
+    completo: no cuentan en la mediana, ni en ``n``, ni en ``history``. Se
+    anota qué días se saltaron de verdad (``history.excluded_days_skipped``).
+    """
     grupos: dict[tuple[str, str, str, str], list[float]] = defaultdict(list)
     dias: set[date] = set()
+    saltados: set[date] = set()
+    filas_saltadas = 0
     for obs in observations:
+        if obs.service_date in excluded_days:
+            saltados.add(obs.service_date)
+            filas_saltadas += 1
+            continue
         if obs.line not in lines:
             continue
         minutos = obs.delay_seconds / 60
@@ -128,6 +220,7 @@ def build_table(
         "method": "mediana del retraso por (tren, estación, tipo de día); RB-013",
         "lines": sorted(lines),
         "holidays": sorted(d.isoformat() for d in holidays),
+        "excluded_days": sorted(d.isoformat() for d in excluded_days),
         "min_observations": min_observations,
         "outliers_minutes": {"min": int(OUTLIER_MIN_MINUTES), "max": int(OUTLIER_MAX_MINUTES)},
         "history": {
@@ -135,6 +228,8 @@ def build_table(
             "to": max(dias).isoformat() if dias else None,
             "days": len(dias),
             "festivo_days": sum(1 for d in dias if day_type(d, holidays) == DAY_TYPE_FESTIVO),
+            "excluded_days_skipped": sorted(d.isoformat() for d in saltados),
+            "excluded_rows": filas_saltadas,
         },
         "entries": entries,
     }

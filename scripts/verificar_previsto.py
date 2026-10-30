@@ -13,6 +13,9 @@ defecto:
    ``cercanias_domain.prevision.evaluate``, más un ida y vuelta por JSON con
    la misma validación que usa el worker.
 
+Los días de la lista versionada de excluidos (huelgas; RB-013) no entran ni en
+el entrenamiento ni en la prueba.
+
 Uso::
 
     uv run --with pyarrow python scripts/verificar_previsto.py --origen /ruta/historico \\
@@ -41,6 +44,7 @@ from cercanias_domain.prevision import (
     build_table,
     day_type,
     evaluate,
+    load_excluded_days,
 )
 
 ESPERADO = {"C1": (1.65, 79.8), "C5": (3.14, 62.1)}
@@ -99,12 +103,13 @@ def main(argv: list[str] | None = None) -> int:
     p0, p1 = (date.fromisoformat(x) for x in args.prueba.split(".."))
     lineas = frozenset(args.lineas.split(","))
     fest = festivos("")
-    entreno = _validas(list(leer_filas(args.origen, e0, e1)))
-    prueba = _validas(list(leer_filas(args.origen, p0, p1)))
+    excluidos = frozenset(d.date for d in load_excluded_days())
+    entreno = _validas(list(leer_filas(args.origen, e0, e1, excluidos)))
+    prueba = _validas(list(leer_filas(args.origen, p0, p1, excluidos)))
 
     backtest = reproducir_backtest(entreno, prueba, fest, lineas)
     raw = json.dumps(build_table([f.observacion() for f in entreno], lines=lineas, holidays=fest,
-                                 generated_at=datetime.now(tz=UTC))).encode()
+                                 generated_at=datetime.now(tz=UTC), excluded_days=excluidos)).encode()
     tabla = PredictionTable.from_bytes(raw)
     enviado = evaluate(tabla, [f.observacion() for f in prueba if f.familia in lineas], fest)
 

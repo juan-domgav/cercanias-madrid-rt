@@ -961,11 +961,12 @@ def _build_notifier() -> TelegramNotifier:
         return TelegramNotifier(token=None, chat_id=None, options=TelegramOptions(dry_run=True))
 
 
-def _publish_boards(
+def _publish_boards(  # noqa: PLR0913 - salud de avisos (RB-014) y bucket privado (RB-013) opcionales
     publisher: Any,
     salida: dict[str, Any],
     cancelled: frozenset[str],
     skipped: dict[str, frozenset[str]],
+    *,
     extra_health: dict[str, Any] | None = None,
     estado: Any | None = None,
 ) -> None:

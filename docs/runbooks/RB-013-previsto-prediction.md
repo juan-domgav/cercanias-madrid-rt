@@ -92,6 +92,36 @@ Resolución de 8/10/2026 de la DG de Trabajo (BOE-A-2026-21254): 1/1, 6/1, 19/3,
 capital (09/11, 15/05) no, se añaden con `--festivos` o `PREVISTO_FESTIVOS`.
 Antes de octubre de 2027 hay que añadir el calendario de 2028.
 
+## Excluir un día anómalo (huelga) y regenerar
+Un día con horario reducido, huelga o supresiones masivas **no** puede alimentar
+el previsto. La lista versionada y editable a mano es
+[`packages/domain/src/cercanias_domain/previsto_dias_excluidos.json`](../../packages/domain/src/cercanias_domain/previsto_dias_excluidos.json):
+
+```json
+{"excluded_days": [
+  {"date": "2026-10-29", "reason": "huelga Renfe: horario reducido, 302 trenes suprimidos"}
+]}
+```
+
+1. Añadir una entrada `{"date": "AAAA-MM-DD", "reason": "..."}` (fecha de la
+   jornada de servicio; `reason` obligatorio). Fechas repetidas, claves
+   desconocidas o fechas mal escritas hacen fallar el script (exit 2) sin
+   escribir nada.
+2. `uv run pytest packages/domain/tests/test_prevision_dias_excluidos.py` y PR.
+3. Regenerar el artefacto (sección anterior). La salida informa
+   `excluded_days_skipped` / `excluded_days_skipped_count` y por stderr
+   `día excluido (no entra en la mediana): …`; el artefacto lleva
+   `excluded_days` y `history.excluded_days_skipped` / `excluded_rows`.
+   Comprobar: `jq '{excluded_days, history}' /tmp/previsto.json`.
+4. Subirlo como en «Habilitar» (con OK de Juan) si la previsión ya está activa.
+
+Los días excluidos ni se descargan del histórico ni entran en la mediana, en
+`n` ni en `history.days`; `verificar_previsto.py` tampoco los usa (ni en
+entrenamiento ni en prueba). **Nunca** se borra ni modifica
+`historico/<día>.parquet` (ni nada de `archivo/`): el histórico queda íntegro y
+la exclusión es sólo del previsto. Lista vacía o fichero ausente = sin
+exclusiones. Para una prueba puntual: `--dias-excluidos /ruta/otra.json`.
+
 ## Habilitar (con OK de Juan; línea a línea)
 ```bash
 gcloud storage cp /tmp/previsto.json gs://cercanias-madrid-rt-privado/prevision/previsto.json

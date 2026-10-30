@@ -1,0 +1,6 @@
+{
+  "_comentario": "Días de servicio anómalos (huelgas, horario reducido, cortes masivos) que NO alimentan el «previsto» (RB-013). Una entrada por día: {\"date\": \"AAAA-MM-DD\", \"reason\": \"...\"}. Tras añadir uno, regenerar el artefacto (ver RB-013). No borra ni toca historico/.",
+  "excluded_days": [
+    {"date": "2026-10-29", "reason": "huelga Renfe: horario reducido, 302 trenes suprimidos"}
+  ]
+}

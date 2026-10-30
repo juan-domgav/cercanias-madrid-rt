@@ -7,6 +7,10 @@ de ``gs://cercanias-madrid-rt-privado/historico/`` (SOLO lectura, con
 (línea, estación, tren, tipo de día). NO sube nada: subirla al bucket privado
 es un paso manual del runbook RB-013.
 
+Los días anómalos de ``packages/domain/src/cercanias_domain/previsto_dias_excluidos.json``
+(huelgas, horario reducido) se saltan por completo: ni se descargan ni entran en
+la mediana. Se informa de cuántos y cuáles. El histórico nunca se modifica.
+
 El repo es público: el artefacto deriva de datos privados y NO se commitea.
 
 Uso::
@@ -32,7 +36,15 @@ from pathlib import Path
 
 import pyarrow.parquet as pq  # type: ignore[import-untyped]
 
-from cercanias_domain.prevision import MIN_OBSERVATIONS, Observation, PredictionTable, build_table
+from cercanias_domain.prevision import (
+    DEFAULT_EXCLUDED_DAYS_PATH,
+    MIN_OBSERVATIONS,
+    ExcludedDaysError,
+    Observation,
+    PredictionTable,
+    build_table,
+    load_excluded_days,
+)
 
 HISTORICO_GS = "gs://cercanias-madrid-rt-privado/historico"
 # Festivos laborales de la Comunidad de Madrid (nacionales + autonómicos) desde
@@ -87,6 +99,11 @@ def dias(desde: date, hasta: date) -> list[date]:
     return [desde + timedelta(days=i) for i in range((hasta - desde).days + 1)]
 
 
+def dias_a_leer(fechas: list[date], excluidos: frozenset[date]) -> list[date]:
+    """Los días excluidos ni se piden al histórico."""
+    return [d for d in fechas if d not in excluidos]
+
+
 def _ficheros(origen: str, fechas: list[date], tmp: Path) -> list[Path]:
     if origen != "gs":
         base = Path(origen)
@@ -99,10 +116,15 @@ def _ficheros(origen: str, fechas: list[date], tmp: Path) -> list[Path]:
     return sorted(tmp.glob("*.parquet"))
 
 
-def leer_filas(origen: str, desde: date, hasta: date) -> Iterator[Fila]:
-    """Filtro del backtest: medido, no destino, con hora programada, no especial y con retraso."""
+def leer_filas(origen: str, desde: date, hasta: date,
+               excluidos: frozenset[date] = frozenset()) -> Iterator[Fila]:
+    """Filtro del backtest: medido, no destino, con hora programada, no especial y con retraso.
+
+    Los días de ``excluidos`` no se leen (y ``build_table`` vuelve a filtrarlos
+    por ``fecha_servicio``, por si una fila cae en otro fichero).
+    """
     with tempfile.TemporaryDirectory() as tmp:
-        for fichero in _ficheros(origen, dias(desde, hasta), Path(tmp)):
+        for fichero in _ficheros(origen, dias_a_leer(dias(desde, hasta), excluidos), Path(tmp)):
             for r in pq.read_table(fichero, columns=COLUMNAS).to_pylist():
                 retraso = r["retraso_s"]
                 if (not r["medido"] or r["es_destino"] or r["programada"] is None or r["es_especial"]
@@ -128,22 +150,37 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--lineas", default="C1,C5")
     ap.add_argument("--festivos", default="", help="festivos extra, AAAA-MM-DD separados por comas")
     ap.add_argument("--min-observaciones", type=int, default=MIN_OBSERVATIONS)
+    ap.add_argument("--dias-excluidos", type=Path, default=DEFAULT_EXCLUDED_DAYS_PATH,
+                    help="JSON de días anómalos que no entran (defecto: la lista versionada)")
     ap.add_argument("--out", type=Path, required=True)
     args = ap.parse_args(argv)
 
+    try:
+        lista = load_excluded_days(args.dias_excluidos)
+    except ExcludedDaysError as exc:
+        print(f"ERROR: lista de días excluidos inválida: {exc}", file=sys.stderr)
+        return 2
+    excluidos = frozenset(d.date for d in lista)
+    en_periodo = sorted(d for d in excluidos if args.desde <= d <= args.hasta)
     lineas = frozenset(x.strip() for x in args.lineas.split(",") if x.strip())
-    obs = [f.observacion() for f in leer_filas(args.origen, args.desde, args.hasta)]
+    obs = [f.observacion() for f in leer_filas(args.origen, args.desde, args.hasta, excluidos)]
     if not obs:
         print("ERROR: no hay filas en el histórico para ese periodo", file=sys.stderr)
         return 1
     tabla = build_table(obs, lines=lineas, holidays=festivos(args.festivos),
-                        generated_at=datetime.now(tz=UTC), min_observations=args.min_observaciones)
+                        generated_at=datetime.now(tz=UTC), min_observations=args.min_observaciones,
+                        excluded_days=excluidos)
+    motivos = {d.date: d.reason for d in lista}
+    for d in en_periodo:
+        print(f"día excluido (no entra en la mediana): {d.isoformat()} — {motivos[d]}", file=sys.stderr)
     raw = json.dumps(tabla, ensure_ascii=False, separators=(",", ":")).encode()
     # El worker lo validará igual: si no pasa aquí, no se escribe.
     comprobada = PredictionTable.from_bytes(raw)
     args.out.write_bytes(raw)
     print(json.dumps({"out": str(args.out), "bytes": len(raw), "entries": comprobada.entry_count,
-                      "lines": sorted(comprobada.lines), "history": tabla["history"]}, ensure_ascii=False))
+                      "lines": sorted(comprobada.lines), "history": tabla["history"],
+                      "excluded_days_skipped": [d.isoformat() for d in en_periodo],
+                      "excluded_days_skipped_count": len(en_periodo)}, ensure_ascii=False))
     return 0
 
 
