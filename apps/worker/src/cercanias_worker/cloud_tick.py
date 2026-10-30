@@ -28,7 +28,8 @@ import os
 import sys
 import time
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from dataclasses import dataclass, field
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -51,6 +52,13 @@ from cercanias_domain.departures import (
     now_in_operating_day,
 )
 from cercanias_domain.incidents import AlertCooldown, AlertPolicy, format_incident_message
+from cercanias_domain.prevision import (
+    Prediction,
+    PredictionTable,
+    day_type,
+    load_prediction_table,
+    operating_date,
+)
 from cercanias_domain.trip_id import parse_trip_id
 from cercanias_notifiers_telegram.telegram_notifier import (
     TelegramConfigError,
@@ -139,6 +147,21 @@ INBOUND_ESTIMATE_EXCLUDED_ROUTES = frozenset(
 ORIGIN_ESTIMATE_ROUTES = frozenset(
     r.strip() for r in os.environ.get("ORIGIN_ESTIMATE_ROUTES", "").split(",") if r.strip()
 )
+#: Retraso PREVISTO por el historico (RB-013) para trenes que Renfe aun no publica.
+#: Lista PERMITIDA de familias, vacia por defecto: sin configurar no cambia nada.
+#: Backtest del 26/10/2026 (prueba 19-25/10): C1 MAE 1,65 vs 3,03 y 79,8 % a
+#: +-2 min; C5 3,14 vs 5,70 y 62,1 %. El resto no llega al 60 % a +-2 min.
+PREVISTO_ROUTES = frozenset(
+    r.strip() for r in os.environ.get("PREVISTO_ROUTES", "").split(",") if r.strip()
+)
+#: Artefacto (tabla de medianas) en el bucket PRIVADO; se genera offline con
+#: ``scripts/construir_previsto.py`` y se sube a mano (RB-013).
+PREVISTO_KEY = os.environ.get("PREVISTO_KEY", "prevision/previsto.json")
+#: Un artefacto mas viejo que esto no se usa: los horarios y el comportamiento
+#: de la red cambian y una mediana antigua deja de describir al tren de hoy.
+PREVISTO_MAX_AGE_DAYS = float(os.environ.get("PREVISTO_MAX_AGE_DAYS", "21"))
+#: Festivos adicionales a los del artefacto (``2026-11-09,2026-12-07``).
+PREVISTO_FESTIVOS_ENV = os.environ.get("PREVISTO_FESTIVOS", "")
 #: Los horarios viven en el bucket, un fichero por dia de servicio
 #: (``horarios/1030J.json``). Estaban empaquetados en la imagen y caducaron sin
 #: que nadie lo viera: cada regeneracion exigia reconstruir el contenedor, asi
@@ -165,6 +188,77 @@ def _log(severity: str, message: str, **fields: Any) -> None:
     """
     entry = {"severity": severity, "message": message, "component": "cloud-tick", **fields}
     print(json.dumps(entry, ensure_ascii=False, default=str), file=sys.stderr, flush=True)
+
+
+def _parse_holidays(raw: str) -> frozenset[date]:
+    fechas: set[date] = set()
+    for bruto in raw.split(","):
+        trozo = bruto.strip()
+        if not trozo:
+            continue
+        try:
+            fechas.add(date.fromisoformat(trozo))
+        except ValueError:
+            _log("WARNING", f"PREVISTO_FESTIVOS: fecha ignorada {trozo!r}", alert="prediction_bad_holiday")
+    return frozenset(fechas)
+
+
+PREVISTO_EXTRA_HOLIDAYS = _parse_holidays(PREVISTO_FESTIVOS_ENV)
+
+
+@dataclass(frozen=True)
+class _Prevision:
+    """Resultado de cargar el artefacto de prevision. ``table`` None = sin prevision."""
+
+    table: PredictionTable | None = None
+    routes: frozenset[str] = frozenset()
+    health: dict[str, Any] = field(default_factory=lambda: {"status": "disabled", "routes": []})
+
+
+def _prevision_error(alert: str, message: str, **fields: Any) -> _Prevision:
+    _log("ERROR", f"prevision desactivada: {message} (RB-013)", alert=alert, key=PREVISTO_KEY, **fields)
+    return _Prevision(health={
+        "status": "error", "alert": alert, "routes": sorted(PREVISTO_ROUTES),
+    })
+
+
+def _load_prevision(estado: Any, ahora: datetime) -> _Prevision:
+    """Carga el artefacto de prevision del bucket PRIVADO. Nunca lanza (RB-013).
+
+    Fallo seguro: ausente, ilegible, invalido o caducado -> ERROR estructurado y
+    SIN prevision; el resto del tablon no cambia.
+    """
+    if not PREVISTO_ROUTES:
+        return _Prevision()
+    try:
+        raw = estado.read(PREVISTO_KEY)
+    except Exception as exc:
+        return _prevision_error("prediction_artifact_unreadable", "no se pudo leer el artefacto",
+                                error=repr(exc))
+    table, error = load_prediction_table(raw)
+    if table is None:
+        if error == "missing":
+            return _prevision_error("prediction_artifact_missing", "no existe el artefacto")
+        return _prevision_error("prediction_artifact_invalid", "artefacto invalido", error=error)
+    edad = ahora - table.generated_at
+    if edad > timedelta(days=PREVISTO_MAX_AGE_DAYS):
+        return _prevision_error(
+            "prediction_artifact_stale", "artefacto caducado",
+            generated_at=table.generated_at.isoformat(), max_age_days=PREVISTO_MAX_AGE_DAYS,
+        )
+    rutas = PREVISTO_ROUTES & table.lines
+    health: dict[str, Any] = {
+        "status": "ok",
+        "routes": sorted(rutas),
+        "artifact_generated_at": table.generated_at.isoformat(),
+        "history_to": table.history.get("to"),
+    }
+    faltan = PREVISTO_ROUTES - table.lines
+    if faltan:
+        health["routes_missing_in_artifact"] = sorted(faltan)
+        _log("WARNING", "lineas habilitadas que el artefacto no trae: sin prevision en ellas",
+             alert="prediction_routes_missing", routes=sorted(faltan), key=PREVISTO_KEY)
+    return _Prevision(table=table, routes=rutas, health=health)
 
 
 def _safe_publish(publisher: Any, key: str, payload: bytes, **kwargs: Any) -> str | None:
@@ -446,11 +540,35 @@ def _service_days(vehiculos: list[dict[str, Any]]) -> tuple[str, list[str]]:
     return servicio, candidatos
 
 
+def _prevision_del_tick(
+    prevision: _Prevision, fresco: bool, ahora: datetime,
+) -> tuple[Callable[[str], dict[str, Prediction]], dict[str, Any]]:
+    """RB-013: previsiones por estacion para este tick y su bloque de salud.
+
+    SOLO con snapshot fresco (con datos viejos no sabemos que trenes estan en el
+    feed) y solo en las lineas permitidas (PREVISTO_ROUTES).
+    """
+    salud = dict(prevision.health)
+    tabla = prevision.table if fresco else None
+    tipo_dia = ""
+    if prevision.table is not None:
+        tipo_dia = day_type(operating_date(ahora), prevision.table.holidays | PREVISTO_EXTRA_HOLIDAYS)
+        salud.update(applied=tabla is not None, day_type=tipo_dia)
+
+    def _previsiones(stop_id: str) -> dict[str, Prediction]:
+        if tabla is None:
+            return {}
+        return tabla.for_station(stop_id, tipo_dia, prevision.routes)
+
+    return _previsiones, salud
+
+
 def _build_boards(
     snapshot: dict[str, Any],
     publisher: Any,
     cancelled: frozenset[str] = frozenset(),
     skipped: dict[str, frozenset[str]] | None = None,
+    prevision: _Prevision | None = None,
 ) -> dict[str, Any]:
     """Precalcula el tablon de salidas de cada estacion.
 
@@ -495,6 +613,8 @@ def _build_boards(
     if len(candidatos) > 1:
         print(f"transicion de jornada: se cargan {candidatos}")
 
+    _previsiones, salud_prevision = _prevision_del_tick(prevision or _Prevision(), fresco, ahora)
+
     # Los especiales (SPECIAL_10_*) no estan en el horario: su parada actual o
     # proxima tiene tablon aunque el horario del dia no la incluya. Ver RB-006.
     paradas_especiales = {
@@ -516,6 +636,7 @@ def _build_boards(
                 # Sin snapshot fresco no sabemos que hay en el feed: no se
                 # afirma "no publicado".
                 publish_window_minutes=PUBLISH_WINDOW_MINUTES if fresco else None,
+                predictions=_previsiones(stop_id),
             ),
             stop_id,
             specials_observed_minutes=minuto_visto,
@@ -533,7 +654,7 @@ def _build_boards(
                     "delay": d.delay_minutes,
                     # RB-007: retraso ESTIMADO desde el entrante, ya incluido en
                     # "eta". "delay_source" dice de donde sale el retraso:
-                    # "live", "inbound_estimate" o null.
+                    # "live", "inbound_estimate", "predicted" (RB-013) o null.
                     "estimated_delay": d.estimated_delay_minutes,
                     "delay_source": d.delay_source,
                     # live > inbound_estimate > not_published > no_data (RB-007).
@@ -554,6 +675,11 @@ def _build_boards(
                     "at_terminus": d.at_terminus,
                     # RB-009: en el feed pero aun en cabecera sin salir.
                     "pending_departure": d.pending_departure,
+                    # RB-013: retraso PREVISTO por el historico (mediana, n dias,
+                    # tipo de dia). No toca "eta" ni "delay": no es dato en vivo.
+                    "predicted_delay": d.predicted_delay_minutes,
+                    "predicted_samples": d.prediction.observations if d.prediction else None,
+                    "predicted_day_type": d.prediction.day_type if d.prediction else None,
                 }
                 for d in salidas
             ],
@@ -647,6 +773,11 @@ def _build_boards(
             "departures_pending_departure": sum(
                 1 for e in estaciones.values() for d in e["departures"] if d["pending_departure"]
             ),
+            "departures_predicted": sum(
+                1 for e in estaciones.values() for d in e["departures"]
+                if d["predicted_delay"] is not None
+            ),
+            "prediction": salud_prevision,
         },
         "stations": estaciones,
     }
@@ -830,12 +961,14 @@ def _build_notifier() -> TelegramNotifier:
         return TelegramNotifier(token=None, chat_id=None, options=TelegramOptions(dry_run=True))
 
 
-def _publish_boards(
+def _publish_boards(  # noqa: PLR0913 - salud de avisos (RB-014) y bucket privado (RB-013) opcionales
     publisher: Any,
     salida: dict[str, Any],
     cancelled: frozenset[str],
     skipped: dict[str, frozenset[str]],
+    *,
     extra_health: dict[str, Any] | None = None,
+    estado: Any | None = None,
 ) -> None:
     """Construye y publica los tablones; nunca lanza.
 
@@ -843,10 +976,13 @@ def _publish_boards(
     RB-014). Es informativo: no marca el snapshot como degradado.
 
     Un fallo aqui (horario corrupto, bug, GCS caido) no debe saltarse los avisos
-    de Telegram que vienen despues en ``main``.
+    de Telegram que vienen despues en ``main``. El artefacto de prevision
+    (RB-013) se lee de ``estado`` (bucket privado).
     """
     try:
-        boards = _build_boards(salida, publisher, cancelled, skipped)
+        prevision = _load_prevision(estado if estado is not None else publisher,
+                                    datetime.now(tz=MADRID_TZ))
+        boards = _build_boards(salida, publisher, cancelled, skipped, prevision=prevision)
         if extra_health:
             boards["health"].update(extra_health)
     except Exception as exc:
@@ -915,7 +1051,12 @@ def main() -> int:
 
     salud_avisos = _archive_alerts(estado, datetime.now(tz=MADRID_TZ), fetch=fetch_alerts_payload)
     _publish_boards(
-        publisher, salida, ultimo.cancelled_trips, ultimo.skipped_stops, extra_health=salud_avisos
+        publisher,
+        salida,
+        ultimo.cancelled_trips,
+        ultimo.skipped_stops,
+        extra_health=salud_avisos,
+        estado=estado,
     )
     if ARCHIVE_ENABLED:
         print(f"pasadas archivadas: {archivadas}")

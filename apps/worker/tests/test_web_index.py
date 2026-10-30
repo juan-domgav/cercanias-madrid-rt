@@ -33,3 +33,11 @@ def test_el_fallback_de_la_web_nunca_contradice_el_dato_en_vivo() -> None:
     fallback = html[html.index("const s = d.display ||"):html.index("const cls =")]
     assert "notices: []" in fallback
     assert "inbound" not in fallback
+
+
+def test_el_tono_previsto_tiene_estilo_propio() -> None:
+    """RB-013: una previsión se distingue a simple vista del dato en vivo."""
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    assert ".delay.predicted" in html
+    # La web no decide el texto: lo pinta de display (sin cascada de "previsto").
+    assert '"previsto' not in html
