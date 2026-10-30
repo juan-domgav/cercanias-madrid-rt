@@ -126,6 +126,10 @@ class CycleResult:
     skipped_stops: dict[str, frozenset[str]]
     published: bool
     note: str
+    #: False si trip_updates no se pudo leer en esta pasada. Entonces
+    #: ``cancelled_trips``/``skipped_stops`` vienen vacios por defecto, no porque
+    #: no haya supresiones, y el archivo no debe registrarlos como "cero" (RB-014).
+    trip_updates_ok: bool = True
 
 
 def run_cycle(
@@ -154,12 +158,14 @@ def run_cycle(
         min_displacement_meters=config.bearing_min_displacement_meters,
     )
 
+    trip_updates_ok = True
     try:
         tu_payload = fetch_trip_updates_payload()
         delays = parse_trip_updates(tu_payload, nucleo_prefixes=prefixes)
     except TripUpdatesFetchError as exc:
         print(f"  ERROR retrasos: {exc}", file=sys.stderr)
         delays = parse_trip_updates({"entity": []}, nucleo_prefixes=prefixes)
+        trip_updates_ok = False
 
     health = evaluate_feed_health(
         FeedHealthInput(
@@ -171,6 +177,9 @@ def run_cycle(
             trip_updates_total=delays.matched_nucleo,
             trip_updates_with_delay=delays.with_delay,
             feed_skew_seconds=0.0,
+            # Los suprimidos no publican retraso: fuera de la cobertura (RB-015).
+            trip_updates_cancelled=len(delays.cancelled_trips),
+            trip_updates_cancelled_with_delay=delays.cancelled_with_delay,
         )
     )
 
@@ -221,7 +230,9 @@ def run_cycle(
             }
             for inc in incidents
         ],
-        "health": {i.name: {"severity": str(i.severity), "detail": i.detail} for i in health.invariants},
+        "health": {
+            i.name: {"severity": str(i.severity), "detail": i.detail, **i.metrics} for i in health.invariants
+        },
     }
 
     # "Bueno" = hay trenes. Una pasada vacia con payload lleno es justo el caso
@@ -237,6 +248,7 @@ def run_cycle(
         skipped_stops=dict(delays.skipped_stops),
         published=published,
         note=note,
+        trip_updates_ok=trip_updates_ok,
     )
 
 

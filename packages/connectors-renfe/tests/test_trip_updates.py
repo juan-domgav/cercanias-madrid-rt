@@ -186,3 +186,34 @@ def test_un_viaje_suprimido_no_aporta_retraso_utilizable() -> None:
     r = parse_trip_updates(_sin_madrid(), nucleo_prefixes=("3010",))
     for d in r.delays:
         assert d.trip_id not in r.cancelled_trips
+
+
+def test_cuenta_suprimidos_con_retraso_y_no_confunde_acortados() -> None:
+    """RB-015: health necesita saber cuantos suprimidos traen ``delay``.
+
+    Un viaje con paradas SKIPPED sigue circulando: NO es suprimido y su
+    cobertura de retraso cuenta como la de cualquier otro.
+    """
+    payload = {
+        "entity": [
+            {"id": "a", "tripUpdate": {"trip": {"tripId": "1010V1C1", "scheduleRelationship": "CANCELED"}}},
+            {
+                "id": "b",
+                "tripUpdate": {
+                    "trip": {"tripId": "1010V2C1", "scheduleRelationship": "CANCELED"},
+                    "delay": 60,
+                },
+            },
+            {
+                "id": "c",
+                "tripUpdate": {
+                    "trip": {"tripId": "1010V3C3"},
+                    "stopTimeUpdate": [{"stopId": "17005", "scheduleRelationship": "SKIPPED"}],
+                },
+            },
+        ]
+    }
+    result = parse_trip_updates(payload, nucleo_prefixes=("1010",))
+    assert result.cancelled_trips == frozenset({"1010V1C1", "1010V2C1"})
+    assert result.cancelled_with_delay == 1
+    assert "1010V3C3" not in result.cancelled_trips

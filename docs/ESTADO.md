@@ -1,7 +1,7 @@
 # Estado del proyecto y traspaso
 
 Documento de continuidad. Se escribe para que otra sesión pueda seguir sin
-reconstruir el contexto. **Última actualización: 2026-10-25.**
+reconstruir el contexto. **Última actualización: 2026-10-29.**
 
 ## Modo de trabajo
 
@@ -70,7 +70,76 @@ Todo esto está **medido**, no supuesto. Cada uno costó una avería o una revis
   cada enlace, no a una mediana de población. Un aviso que no aporta enseña a
   ignorar los que sí.
 
-## Despliegue actual (2026-10-25, RB-011 / PR #11)
+## Despliegue actual (2026-10-29, RB-015 / PR #18)
+
+Con el OK de Juan (29/10): PR #18 («fix(health): delay_coverage excluye viajes
+suprimidos (RB-015)», commit `3009d3c`) mergeado como `8964b0c` (18:21:50
+Madrid), con merge commit como los PR anteriores. `cercanias-ingesta`
+reconstruido desde un `git archive` limpio de `8964b0c` con
+`gcloud run jobs deploy cercanias-ingesta --source . --region europe-southwest1`,
+**sin** banderas de configuración (listo a las 18:24:17 Madrid, generación 20).
+Diff del `describe` antes/después: sólo la imagen y metadatos
+(generación, `resourceVersion`, `lastUpdatedTime`, operación); env idéntico
+(`ARCHIVAR_CANCELACIONES=1` y `ARCHIVAR_AVISOS=1` siguen), secreto de Telegram,
+SA, recursos y Scheduler iguales. API, web, `cercanias-horarios` y
+`cercanias-telegram-ops` sin cambios (siguen con su imagen anterior).
+
+| Pieza | Ahora | Rollback |
+|---|---|---|
+| Job `cercanias-ingesta` | `cercanias-ingesta@sha256:e5ae9de9…ed10a781` (PR #18, `8964b0c`), `ARCHIVAR_CANCELACIONES=1`, `ARCHIVAR_AVISOS=1` | `gcloud run jobs update cercanias-ingesta --region europe-southwest1 --project cercanias-en-hora --image europe-southwest1-docker.pkg.dev/cercanias-en-hora/cloud-run-source-deploy/cercanias-ingesta@sha256:b747dd76934340ef44373aa29c8f79d361115aee8ce0105de7156adabdebc9e8` (PR #15, `374c116`) |
+
+Ingesta: `europe-southwest1-docker.pkg.dev/cercanias-en-hora/cloud-run-source-deploy/cercanias-ingesta@sha256:e5ae9de9fb0ea7efd9a3e1232cde65a19d33002c214e62a7cafef4a8ed10a781`.
+
+**Cambio (RB-015):** `snapshot.json → health.delay_coverage` ya no cuenta los
+viajes suprimidos enteros (`CANCELED`) ni en el numerador ni en el denominador;
+los acortados (`SKIPPED`) sí cuentan. El bloque gana `n_cancelados` (aditivo).
+Quita el crítico falso del 29/10 (52/65, 80 %, con los 13 sin retraso
+suprimidos). Runbook: `docs/runbooks/RB-015-delay-coverage-cancelados.md`.
+
+Verificación: ejecuciones de la generación 20 de 18:25 a 18:30 (seis) OK, sin
+ninguna línea `severity>=ERROR`. Entre ~18:18:30 y ~18:31 Renfe publicó Madrid
+a ratos (servicio 1001J; RB-002, empezó antes del despliegue): las pasadas vacías
+conservaron el último bueno (`stale_since` temporal, nunca `degraded`). Ya con
+Madrid estable, snapshot de 18:30:50 (<60 s) sin `degraded` ni `stale_since`,
+toda la salud `ok`, y `delay_coverage` = `ok`, «48/48 (100.0%) tripUpdate con
+retraso publicado (32 suprimidos excluidos)», `n_cancelados: 32`. `boards.json`
+fresco (90 estaciones con salidas, `schedule_days_left = 29`,
+`departures_contradicting_live = 0`).
+
+## Despliegue anterior (2026-10-27, RB-014 / PR #15)
+
+Con el OK de Juan (27/10, 20:02 Madrid): PR #15 mergeado como `374c116`
+(20:04), `cercanias-ingesta` reconstruido desde un `git archive` limpio de
+`374c116` con `gcloud run jobs deploy cercanias-ingesta --source .
+--update-env-vars ARCHIVAR_CANCELACIONES=1,ARCHIVAR_AVISOS=1` (listo a las
+20:07). Diff del `describe` antes/después: sólo la imagen y las dos banderas;
+resto de env, secreto de Telegram, SA, recursos y Scheduler iguales. Después se
+mergearon PR #10 (`21c2188`, 20:15) y PR #16 (`6f8169b`, 20:17): sólo histórico
+(`scripts/construir_historico.py`, `cercanias_domain/historico*.py`), no tocan
+la ingesta, así que no hubo que reconstruirla. API y web sin cambios.
+
+| Pieza | Ahora | Rollback |
+|---|---|---|
+| Job `cercanias-ingesta` | `cercanias-ingesta@sha256:b747dd76…bc9e8` (PR #15, `374c116`), `ARCHIVAR_CANCELACIONES=1`, `ARCHIVAR_AVISOS=1` | Banderas: `gcloud run jobs update cercanias-ingesta --region europe-southwest1 --project cercanias-en-hora --remove-env-vars ARCHIVAR_CANCELACIONES,ARCHIVAR_AVISOS` (RB-014). Imagen: `--image …/cercanias-ingesta@sha256:ee6d9dadcb7b5795d162f9580d8ae2895cdb44d2a9dd17eada96ea81981934f2` (PR #11, `0a6dc68`); antes `…@sha256:646a4d8b871226afb99de7f7d15a72a9f9196ae6397d776161227bfb84083294` |
+
+Ingesta: `europe-southwest1-docker.pkg.dev/cercanias-en-hora/cloud-run-source-deploy/cercanias-ingesta@sha256:b747dd76934340ef44373aa29c8f79d361115aee8ce0105de7156adabdebc9e8`.
+Env de rollback (antes del 27/10): `SNAPSHOT_BUCKET_GCS=cercanias-madrid-rt-web`,
+`PRIVATE_BUCKET=cercanias-madrid-rt-privado`, `RENFE_NUCLEO_CODES=10`,
+`TELEGRAM_CHAT_ID=@cercanias_madrid_rt`, `TELEGRAM_BOT_TOKEN_SECRET=…/telegram-bot-token/versions/latest`,
+`ARCHIVE_ENABLED=1`; 512Mi, 1 CPU, timeout 300 s, `maxRetries` 1.
+
+Verificación (RB-014): ejecuciones de 20:07 a 20:16 OK con la imagen nueva,
+sin ERROR; snapshot <60 s, sin `degraded`, salud toda `ok`; `boards.json`
+fresco con 95 estaciones y ~830 salidas. Primera copia de avisos en
+`archivo/alerts/2026-10-27/200802.json` (15 avisos de Madrid) y
+`alerts-state.json` creado; ninguna más (feed congelado desde el 07/10: un
+WARNING `alerts_feed_stale`, esperado; `boards.json → health.alerts_feed_stale: true`).
+Las pasadas de `archivo/<día>/` llevan `canc` y `skip`.
+
+El incremental diario del histórico se lanza ahora desde `main`
+(`/workspace/cercanias-madrid-rt`), no desde la rama de PR #10.
+
+## Despliegue de 2026-10-25 (RB-011 / PR #11)
 
 `main` = producción para la ingesta: PR #11 mergeado como `0a6dc68` (CI verde) y
 `cercanias-ingesta` reconstruido desde un `git archive` limpio de `0a6dc68` el
@@ -110,13 +179,22 @@ emparejamiento validado (hoy C1). Ver `docs/runbooks/RB-008-bot-boards-inconsist
 
 ## Estado actual
 
-- 429 tests, cobertura 97,54 %. `make ci` verde.
+- 561 tests, cobertura 98,23 % (27/10, tras PR #16). `make ci` verde.
 - Horarios: los regenera cada noche `cercanias-horarios` (Scheduler
   `cercanias-horarios-nightly`). El GTFS de Renfe trae ~30 días por delante.
   **Incidente:** los subidos a mano en agosto caducaron hacia el 29/08 y los
   tablones estuvieron vacíos hasta el 14/10 sin que ningún job fallara.
-- Archivo histórico: >5.700 pasadas desde el 20/08, en el bucket privado, con
-  regla de borrado a 45 días. `make analizar` lo resume.
+- Archivo histórico: >5.700 pasadas desde el 20/08, en el bucket privado.
+  **Retención: 90 días** desde el 23/10/2026 (lo pidió Juan; antes, regla de
+  borrado `age 45` sobre el prefijo `archivo/`). Rollback:
+  `gcloud storage buckets update gs://cercanias-madrid-rt-privado --lifecycle-file=/workspace/historico/lifecycle_before.json`.
+  `make analizar` lo resume.
+- **Histórico de retrasos** (23/10/2026): `historico/<día>.parquet` + `historico/calidad/<día>.json`
+  en el bucket privado, una fila por (día, tren, parada), **sin regla de borrado**.
+  Rellenado del 08/09 al 22/10. Se construye con `scripts/construir_historico.py`;
+  definición de «retraso real», calidad y rollback en
+  `docs/runbooks/RB-010-historico.md`. Aún sin job programado: el incremental
+  diario (`... construir_historico.py ayer`) se lanza a mano o desde el box.
 - Feedback del bot: bucket **privado**, `make feedback`.
 
 ## Trabajo pendiente, por prioridad
