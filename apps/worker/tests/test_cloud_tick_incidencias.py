@@ -310,7 +310,8 @@ def test_publish_boards_anade_la_salud_de_avisos(tmp_path: Path) -> None:
 
 
 def _main(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, alerts: Any
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, alerts: Any,
+    publisher: LocalSnapshotPublisher | None = None,
 ) -> tuple[int, Path]:
     web = tmp_path / "web"
     vp = json.loads((FIXTURES / "vehicle_positions_madrid.json").read_text())
@@ -319,7 +320,8 @@ def _main(
     ]}
     monkeypatch.setattr(mvp, "fetch_vehicle_positions_payload", lambda _url: vp)
     monkeypatch.setattr(mvp, "fetch_trip_updates_payload", lambda: tu)
-    monkeypatch.setattr(cloud_tick, "publisher_from_env", lambda: LocalSnapshotPublisher(web))
+    pub = publisher or LocalSnapshotPublisher(web)
+    monkeypatch.setattr(cloud_tick, "publisher_from_env", lambda: pub)
     monkeypatch.setattr(cloud_tick, "PRIVATE_BUCKET", "")
     monkeypatch.setattr(cloud_tick, "PASSES_PER_INVOCATION", 1)
     monkeypatch.setattr(cloud_tick, "fetch_alerts_payload", alerts)
@@ -378,3 +380,29 @@ def test_main_con_banderas_apagadas_no_toca_nada_nuevo(
     assert pasadas
     assert all(set(o) == {"ts", "n", "cols", "trains"} for _, o in pasadas)
     assert not (web / cloud_tick.ALERTS_STATE_KEY).exists()
+
+
+class _Grabador(LocalSnapshotPublisher):
+    def __init__(self, base: Path) -> None:
+        super().__init__(base)
+        self.opciones: dict[str, dict[str, Any]] = {}
+
+    def publish(self, key: str, payload: bytes, **kwargs: Any) -> str:
+        self.opciones[key] = kwargs
+        return super().publish(key, payload, **kwargs)
+
+
+def test_main_publica_snapshot_y_boards_comprimidos_con_su_cache(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    grabador = _Grabador(tmp_path / "web")
+    monkeypatch.setattr(cloud_tick, "ARCHIVAR_AVISOS", False)
+    codigo, _ = _main(monkeypatch, tmp_path, _congelado, grabador)
+    assert codigo == 0
+    for clave in (cloud_tick.SNAPSHOT_KEY, cloud_tick.BOARDS_KEY):
+        assert grabador.opciones[clave]["gzip"] is True
+        assert grabador.opciones[clave]["content_type"] == "application/json"
+        # Sin cache_control explícito: se queda el de siempre (max-age=30).
+        assert "cache_control" not in grabador.opciones[clave]
+    # Lo privado/archivo no cambia.
+    assert not any(o.get("gzip") for k, o in grabador.opciones.items() if k.startswith("archivo/"))

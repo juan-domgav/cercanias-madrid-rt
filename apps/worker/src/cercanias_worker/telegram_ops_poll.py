@@ -4,6 +4,11 @@ Lo lanza Cloud Scheduler cada minuto como el job ``cercanias-telegram-ops``
 (misma imagen que la ingesta). Es deliberadamente tonto: comandos con guion,
 sin IA y sin ejecutar nada destructivo. Ver RB-005.
 
+La misma lógica por update (:func:`process_update`) la usa también el webhook
+``/telegram/ops-webhook`` de ``cercanias-api``. Este job se conserva para poder
+volver al sondeo (rollback) sin desplegar nada: ``deleteWebhook`` y reanudar
+el planificador.
+
 - Token: ``TELEGRAM_OPS_BOT_TOKEN`` (secreto ``telegram-ops-bot-token``). Nunca
   se registra: los errores se limpian antes de loguearse.
 - Solo responde a los chats de ``ALLOWED_CHAT_IDS``; el resto se ignora y solo
@@ -73,7 +78,9 @@ COMMANDS: dict[str, str] = {
 class Store(Protocol):
     def read(self, key: str) -> bytes | None: ...
 
-    def publish(self, key: str, payload: bytes, *, content_type: str, cache_control: str = ...) -> str: ...
+    def publish(
+        self, key: str, payload: bytes, *, content_type: str, cache_control: str = ..., gzip: bool = ...
+    ) -> str: ...
 
 
 def log(severity: str, message: str, **fields: Any) -> None:
@@ -177,6 +184,7 @@ def append_inbox(store: Store, item: dict[str, Any]) -> None:
         json.dumps(payload, ensure_ascii=False).encode("utf-8"),
         content_type="application/json",
         cache_control="no-store",
+        gzip=True,
     )
 
 
@@ -284,28 +292,49 @@ def poll_once(  # noqa: PLR0913 - dependencias inyectables para los tests
         offset = update_id + 1
         save_offset(private, offset)
         procesados += 1
-        message = update.get("message")
-        if not isinstance(message, dict):
-            continue
-        chat = message.get("chat")
-        chat_id = chat.get("id") if isinstance(chat, dict) else None
-        if not isinstance(chat_id, int) or isinstance(chat_id, bool) or chat_id not in allowed:
-            log("WARNING", "chat no permitido, se ignora", update_id=update_id, chat_id=chat_id)
-            continue
-        text = message.get("text")
-        if not isinstance(text, str) or not text.strip():
-            continue
-        command = parse_command(text)
-        try:
-            if command is None:
-                append_inbox(web, {"ts": now().isoformat(), "update_id": update_id, "text": text})
-                api.send_message(chat_id, ACK_UNKNOWN)
-            else:
-                api.send_message(chat_id, reply_for(command, web, now()))
-            log("INFO", "mensaje procesado", update_id=update_id, command=command or "inbox")
-        except Exception as exc:
-            log("ERROR", "fallo procesando mensaje", update_id=update_id, error=str(exc))
+        process_update(api, web, allowed, update, now=now)
     return procesados
+
+
+def process_update(
+    api: TelegramApi,
+    web: Any,
+    allowed: set[int],
+    update: dict[str, Any],
+    *,
+    now: Callable[[], datetime] = lambda: datetime.now(tz=UTC),
+) -> None:
+    """Atiende UN update: allowlist, comando o buzón, y respuesta.
+
+    Compartido por el sondeo (:func:`poll_once`) y el webhook de
+    ``cercanias-api``. Nunca lanza: un fallo se registra y el update se da por
+    atendido (como mucho una vez). Solo lee el bucket, escribe el buzón y
+    contesta; no hay comando que despliegue, mergee ni borre nada.
+    """
+    update_id = update.get("update_id")
+    if not isinstance(update_id, int) or isinstance(update_id, bool):
+        return
+    message = update.get("message")
+    if not isinstance(message, dict):
+        return
+    chat = message.get("chat")
+    chat_id = chat.get("id") if isinstance(chat, dict) else None
+    if not isinstance(chat_id, int) or isinstance(chat_id, bool) or chat_id not in allowed:
+        log("WARNING", "chat no permitido, se ignora", update_id=update_id, chat_id=chat_id)
+        return
+    text = message.get("text")
+    if not isinstance(text, str) or not text.strip():
+        return
+    command = parse_command(text)
+    try:
+        if command is None:
+            append_inbox(web, {"ts": now().isoformat(), "update_id": update_id, "text": text})
+            api.send_message(chat_id, ACK_UNKNOWN)
+        else:
+            api.send_message(chat_id, reply_for(command, web, now()))
+        log("INFO", "mensaje procesado", update_id=update_id, command=command or "inbox")
+    except Exception as exc:
+        log("ERROR", "fallo procesando mensaje", update_id=update_id, error=str(exc))
 
 
 def main() -> int:

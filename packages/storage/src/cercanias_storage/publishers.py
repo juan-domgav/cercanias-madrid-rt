@@ -8,6 +8,7 @@ no arrastra el SDK de la otra.
 
 from __future__ import annotations
 
+import gzip as gzip_lib
 import os
 import tempfile
 from pathlib import Path
@@ -32,6 +33,24 @@ except ImportError:  # pragma: no cover - depende del extra instalado
 #: una generación de antigüedad.
 DEFAULT_CACHE_CONTROL = "public, max-age=30"
 
+#: Cabecera de cualquier flujo gzip (RFC 1952). Ningún JSON ni NDJSON empieza
+#: por 0x1f, así que sirve para distinguir sin ambigüedad un cuerpo comprimido.
+GZIP_MAGIC = b"\x1f\x8b"
+
+
+def gunzip_if_compressed(data: bytes) -> bytes:
+    """Descomprime solo si ``data`` es un flujo gzip; si no, lo devuelve tal cual.
+
+    Defensa ante la doble descompresión: Cloud Storage descomprime al servir
+    (``decompressive transcoding``) y la librería de Python también, así que lo
+    normal es recibir ya el JSON en claro. Si algún día llega comprimido (p. ej.
+    ``raw_download=True`` o ``Cache-Control: no-transform``), se descomprime una
+    vez; si llega en claro, NO se intenta descomprimir otra vez.
+    """
+    if data[:2] == GZIP_MAGIC:
+        return gzip_lib.decompress(data)
+    return data
+
 
 class LocalSnapshotPublisher:
     """Escribe en disco. Para desarrollo y para los tests."""
@@ -46,7 +65,11 @@ class LocalSnapshotPublisher:
         *,
         content_type: str,
         cache_control: str = DEFAULT_CACHE_CONTROL,
+        gzip: bool = False,
     ) -> str:
+        # ``gzip`` se ignora: en disco no hay transcodificación que lo
+        # descomprima al leer, así que se guarda en claro.
+        del gzip
         target = self._base / key
         target.parent.mkdir(parents=True, exist_ok=True)
         # Escritura atómica: rename dentro del mismo sistema de ficheros.
@@ -88,7 +111,12 @@ class S3SnapshotPublisher:
         *,
         content_type: str,
         cache_control: str = DEFAULT_CACHE_CONTROL,
+        gzip: bool = False,
     ) -> str:
+        # ``gzip`` se ignora a propósito: S3 no descomprime al servir a clientes
+        # sin ``Accept-Encoding`` ni ``get_object`` al leer. Sin desplegar en AWS,
+        # no compensa; se guarda en claro como hasta ahora.
+        del gzip
         self._client.put_object(
             Bucket=self._bucket,
             Key=key,
@@ -129,18 +157,38 @@ class GcsSnapshotPublisher:
         *,
         content_type: str,
         cache_control: str = DEFAULT_CACHE_CONTROL,
+        gzip: bool = False,
     ) -> str:
+        """Sube el objeto; con ``gzip=True`` lo guarda comprimido.
+
+        Comprimido significa ``Content-Encoding: gzip`` con el ``Content-Type``
+        real (p. ej. ``application/json``). Cloud Storage lo sirve comprimido a
+        quien manda ``Accept-Encoding: gzip`` (navegadores) y descomprimido al
+        resto (decompressive transcoding). Por eso ``cache_control`` nunca debe
+        llevar ``no-transform``: rompería a los clientes que no aceptan gzip.
+        """
         blob = self._bucket.blob(key)
         blob.cache_control = cache_control
+        if gzip:
+            # mtime=0: misma entrada, mismos bytes (y mismo md5) en cada subida.
+            payload = gzip_lib.compress(payload, mtime=0)
+            blob.content_encoding = "gzip"
         blob.upload_from_string(payload, content_type=content_type)
         return f"gs://{self._bucket_name}/{key}"
 
     def read(self, key: str) -> bytes | None:
+        """Contenido en claro, esté o no guardado con ``Content-Encoding: gzip``.
+
+        ``download_as_bytes`` (``raw_download=False``) ya descomprime: pide
+        ``Accept-Encoding: gzip``, valida el checksum sobre los bytes
+        comprimidos y devuelve el cuerpo descomprimido. ``gunzip_if_compressed``
+        solo actúa si aun así llegara un flujo gzip, nunca dos veces.
+        """
         blob = self._bucket.blob(key)
         if not blob.exists():
             return None
         data: bytes = blob.download_as_bytes()
-        return data
+        return gunzip_if_compressed(data)
 
     def list_keys(self, prefix: str) -> list[str]:
         """Nombres de objeto bajo ``prefix``; una sola llamada de listado."""

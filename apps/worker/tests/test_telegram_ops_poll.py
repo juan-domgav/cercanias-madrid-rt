@@ -226,3 +226,40 @@ def test_buzon_trunca_texto_largo(tmp_path: Path) -> None:
     _, _, web = _run(tmp_path, [_msg(3, "x" * 50_000)])
     data = json.loads(web.read(bot.INBOX_KEY))
     assert len(data["items"][0]["text"]) == bot.INBOX_MAX_CHARS
+
+
+class _Grabador(LocalSnapshotPublisher):
+    """Guarda en disco y anota con qué opciones se publicó cada clave."""
+
+    def __init__(self, base: Path) -> None:
+        super().__init__(base)
+        self.opciones: dict[str, dict[str, Any]] = {}
+
+    def publish(self, key: str, payload: bytes, **kwargs: Any) -> str:
+        self.opciones[key] = kwargs
+        return super().publish(key, payload, **kwargs)
+
+
+def test_buzon_se_publica_comprimido_y_sin_cache(tmp_path: Path) -> None:
+    web = _Grabador(tmp_path)
+    bot.append_inbox(web, {"ts": NOW.isoformat(), "update_id": 1, "text": "hola"})
+    assert web.opciones[bot.INBOX_KEY] == {
+        "content_type": "application/json",
+        "cache_control": "no-store",
+        "gzip": True,
+    }
+
+
+def test_process_update_es_la_misma_logica_que_el_sondeo(tmp_path: Path) -> None:
+    """El webhook de la API llama directamente a process_update."""
+    fake = FakeTelegram([])
+    web = LocalSnapshotPublisher(tmp_path)
+    client = httpx.Client(transport=httpx.MockTransport(fake.handler))
+    api = bot.TelegramApi(TOKEN, client)
+    bot.process_update(api, web, {ALLOWED}, _msg(9, "nota libre"), now=lambda: NOW)
+    bot.process_update(api, web, {ALLOWED}, _msg(10, "hola", chat_id=1), now=lambda: NOW)
+    bot.process_update(api, web, {ALLOWED}, _msg(11, "/regenerar"), now=lambda: NOW)
+    assert [b["text"] for b in fake.sent()] == [bot.ACK_UNKNOWN, bot.RUNBOOK_REGENERAR]
+    items = json.loads(web.read(bot.INBOX_KEY) or b"")["items"]
+    assert [i["update_id"] for i in items] == [9]
+    assert all(m == "sendMessage" for m, _ in fake.calls)
