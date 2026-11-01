@@ -48,13 +48,52 @@ lleva su propio puntero (`update_id`); el bot no marca procesados.
 - Token: `TELEGRAM_OPS_BOT_TOKEN` (mismo secreto `telegram-ops-bot-token`).
 - Allowlist: `OPS_ALLOWED_CHAT_IDS` (por defecto `5830900654`; vacío = nadie).
 - Buzón y lecturas: el bucket de `SNAPSHOT_BUCKET_GCS` de la API (el web).
-- Sin offset: Telegram da el update por entregado al recibir el 200, y la ruta
-  responde 200 siempre que el secreto sea bueno (aunque falle algo dentro) para
-  evitar reintentos que dupliquen respuestas. Un reintento de Telegram (p. ej.
-  timeout) puede, como mucho, repetir una respuesta; el buzón no se duplica
-  (dedupe por `update_id`).
-- `max_connections=1` en `setWebhook`: los updates llegan de uno en uno y dos
-  escrituras del buzón no se pisan.
+- Sin offset: Telegram da el update por entregado al recibir el 200.
+  - **200** cuando el update quedó atendido, aunque falle la respuesta al chat
+    (un reintento duplicaría respuestas).
+  - **503** cuando el mensaje **no** quedó guardado: falta
+    `TELEGRAM_OPS_BOT_TOKEN`, no hay almacén o falló la escritura del buzón. No
+    se manda el «Recibido»; Telegram lo reentrega (hasta 24 h) y el dedupe por
+    `update_id` evita duplicados. Se ve en `last_error_message` de
+    `getWebhookInfo`.
+  - Un reintento de Telegram (p. ej. timeout) puede, como mucho, repetir una
+    respuesta; el buzón no se duplica.
+- El buzón se escribe con precondición de generación (`ifGenerationMatch`): si
+  dos updates (o el job de sondeo solapado durante el cambio) escriben a la
+  vez, el segundo relee y reintenta en vez de pisar al primero.
+  `max_connections=1` en `setWebhook` sigue recomendado (menos conflictos),
+  pero ya no es lo que garantiza que no se pierdan mensajes.
+
+### Paso a webhook (Juan, en su Mac)
+
+`$TOKEN` = token del **bot de ops**. No pegar tokens en ningún sitio.
+
+1. `cercanias-api` desplegada con `TELEGRAM_OPS_WEBHOOK_SECRET`,
+   `TELEGRAM_OPS_BOT_TOKEN` (`--update-secrets`, nunca `--set-secrets`) y
+   `SNAPSHOT_BUCKET_GCS=cercanias-madrid-rt-web`; su SA puede leer y escribir
+   objetos del bucket web. Humo: `POST /telegram/ops-webhook` sin cabecera → 403.
+2. Pausar el planificador y esperar a que no quede ninguna ejecución en curso:
+   ```bash
+   gcloud scheduler jobs pause cercanias-telegram-ops-tick --location europe-west1 --project cercanias-en-hora
+   gcloud run jobs executions list --job cercanias-telegram-ops --region europe-southwest1 \
+     --project cercanias-en-hora --limit 3   # ninguna en "Running"
+   ```
+3. Registrar el webhook y **comprobar** que Telegram responde `ok: true`
+   (`jq -e` sale con error si no):
+   ```bash
+   OPS_SECRET="$(gcloud secrets versions access latest --secret telegram-ops-webhook-secret --project cercanias-en-hora)"
+   curl -s "https://api.telegram.org/bot$TOKEN/setWebhook" \
+     -d url=https://cercanias-api-549278575802.europe-southwest1.run.app/telegram/ops-webhook \
+     -d secret_token="$OPS_SECRET" -d max_connections=1 \
+     --data-urlencode 'allowed_updates=["message"]' | jq -e '.ok == true'
+   unset OPS_SECRET
+   ```
+4. Verificar con `getWebhookInfo` (abajo): URL correcta, `max_connections` 1,
+   `allowed_updates` `["message"]`, sin `last_error_message`. Desde el chat
+   permitido: `estado` contesta; un texto libre devuelve el ACK y aparece en
+   `ops/inbox.json`.
+
+Si algo falla en 3 o 4: rollback (abajo).
 
 Checks:
 ```bash
@@ -62,12 +101,16 @@ curl -s "https://api.telegram.org/bot$TOKEN/getWebhookInfo" | jq '.result | {url
 gcloud logging read 'resource.labels.service_name="cercanias-api" AND jsonPayload.component="telegram-ops"' \
   --project cercanias-en-hora --limit 20 --format 'value(jsonPayload.severity,jsonPayload.message)'
 ```
-`last_error_message` con `403` = secreto distinto entre Telegram y la API.
+`last_error_message` con `403` = secreto distinto entre Telegram y la API;
+con `503` = falta el token o falla el buzón (ver logs).
 
 Rollback al sondeo (sin desplegar nada; **sin** `drop_pending_updates` para no
-perder lo pendiente):
+perder lo pendiente). Reanudar el planificador **solo** si `deleteWebhook`
+devolvió `ok: true` y la URL quedó vacía; si no, el job fallaría con
+`getUpdates: HTTP 409`:
 ```bash
-curl -s "https://api.telegram.org/bot$TOKEN/deleteWebhook"
+curl -s "https://api.telegram.org/bot$TOKEN/deleteWebhook" | jq -e '.ok == true'
+curl -s "https://api.telegram.org/bot$TOKEN/getWebhookInfo" | jq -e '.result.url == ""'
 gcloud scheduler jobs resume cercanias-telegram-ops-tick --location europe-west1 --project cercanias-en-hora
 ```
 

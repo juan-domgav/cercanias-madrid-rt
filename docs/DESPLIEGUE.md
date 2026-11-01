@@ -178,8 +178,8 @@ bot de ops y responde con comandos de guion (`estado`, `horarios`, `regenerar`,
 
 Desde la PR del webhook, el bot puede entrar por `POST /telegram/ops-webhook`
 de `cercanias-api` (misma lógica) y el planificador queda en pausa: ver
-«Modo webhook» en RB-005. Los pasos de abajo siguen valiendo para el sondeo,
-que es el rollback.
+«Modo webhook» y «Paso a webhook» en RB-005 (pasos, comprobaciones y rollback).
+Los pasos de abajo siguen valiendo para el sondeo, que es el rollback.
 
 > **Privacidad:** los mensajes no reconocidos se guardan en
 > `gs://cercanias-madrid-rt-web/ops/inbox.json`, bucket **público**, porque
