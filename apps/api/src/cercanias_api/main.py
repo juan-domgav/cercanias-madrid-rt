@@ -43,7 +43,9 @@ PRIVATE_BUCKET = os.environ.get("PRIVATE_BUCKET", "")
 
 #: Bot de operaciones. Secreto DISTINTO del bot público: filtrar uno no abre el
 #: otro. Sin secreto configurado el endpoint rechaza todo (403).
-OPS_WEBHOOK_SECRET = os.environ.get("TELEGRAM_OPS_WEBHOOK_SECRET", "")
+#: ``strip``: un salto de línea al crear el secreto no debe dejar el bot en 403
+#: (Telegram solo admite ``A-Za-z0-9_-`` en ``secret_token``).
+OPS_WEBHOOK_SECRET = os.environ.get("TELEGRAM_OPS_WEBHOOK_SECRET", "").strip()
 OPS_BOT_TOKEN = os.environ.get("TELEGRAM_OPS_BOT_TOKEN", "").strip()
 #: Misma allowlist que el job (``ALLOWED_CHAT_IDS`` allí). Nombre propio aquí
 #: para que nadie crea que restringe el bot público. Vacía = nadie (cierra).
