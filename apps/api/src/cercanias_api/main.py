@@ -199,23 +199,34 @@ async def telegram_webhook(
     return {"ok": True}
 
 
-def handle_ops_update(update: dict[str, Any]) -> None:
+def handle_ops_update(update: dict[str, Any]) -> bool:
     """Atiende un update del bot de ops con la lógica del job de sondeo.
 
-    Nunca lanza: Telegram reintenta lo que no recibe 200, y un reintento
-    duplicaría respuestas. No hay offset: con webhook, Telegram da el update
-    por entregado al recibir el 200.
+    Devuelve ``False`` si el update NO quedó guardado y conviene que Telegram lo
+    reentregue (no hay almacén, o falló la escritura del buzón antes de
+    contestar). Cualquier otro fallo (p. ej. al responder) se registra y
+    devuelve ``True``: un reintento duplicaría respuestas. No hay offset: con
+    webhook, Telegram da el update por entregado al recibir el 200.
     """
+    try:
+        web = publisher_from_env()
+    except Exception as exc:
+        ops.log("ERROR", "fallo en el webhook de ops", error=ops.redact(repr(exc), OPS_BOT_TOKEN))
+        return False
     try:
         with httpx.Client() as client:
             ops.process_update(
                 ops.TelegramApi(OPS_BOT_TOKEN, client),
-                publisher_from_env(),
+                web,
                 OPS_ALLOWED_CHAT_IDS,
                 update,
+                raise_on_inbox_error=True,
             )
+    except ops.InboxWriteError:
+        return False
     except Exception as exc:
         ops.log("ERROR", "fallo en el webhook de ops", error=ops.redact(repr(exc), OPS_BOT_TOKEN))
+    return True
 
 
 @app.post("/telegram/ops-webhook")
@@ -232,12 +243,15 @@ async def telegram_ops_webhook(
     if not isinstance(update, dict):
         raise HTTPException(status_code=400, detail="update invalido")
     if not OPS_BOT_TOKEN:
-        # Sin token no se puede contestar; 200 igualmente para que Telegram no
-        # acumule reintentos. El log basta para detectarlo.
+        # Sin token no se puede contestar. 503: Telegram guarda el update y lo
+        # reintenta (hasta 24 h), y getWebhookInfo muestra el error; con un 200
+        # el mensaje se perdería sin que nadie lo viera.
         ops.log("ERROR", "falta TELEGRAM_OPS_BOT_TOKEN en cercanias-api")
-        return {"ok": True}
+        raise HTTPException(status_code=503, detail="bot de ops sin configurar")
     # E/S bloqueante (GCS, Telegram): fuera del bucle de eventos.
-    await run_in_threadpool(handle_ops_update, update)
+    if await run_in_threadpool(handle_ops_update, update) is False:
+        # Sin guardar en el buzón: que Telegram lo reentregue (dedupe por update_id).
+        raise HTTPException(status_code=503, detail="reintentar")
     return {"ok": True}
 
 

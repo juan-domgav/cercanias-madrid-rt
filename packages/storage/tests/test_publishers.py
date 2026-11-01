@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import gzip
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -10,6 +11,7 @@ from cercanias_storage.publishers import (
     DEFAULT_CACHE_CONTROL,
     GcsSnapshotPublisher,
     LocalSnapshotPublisher,
+    PreconditionFailedError,
     S3SnapshotPublisher,
     gunzip_if_compressed,
     publisher_from_env,
@@ -117,8 +119,12 @@ class _FakeBlob:
         self.cache_control: str | None = None
         self.content_encoding: str | None = None
 
-    def upload_from_string(self, data: bytes, content_type: str) -> None:
+    def upload_from_string(
+        self, data: bytes, content_type: str, if_generation_match: int | None = None
+    ) -> None:
+        self._client.check(self._name, if_generation_match)
         self._client.store[self._name] = data
+        self._client.gen[self._name] = self._client.gen.get(self._name, 0) + 1
         self._client.meta[self._name] = {
             "content_type": content_type,
             "content_encoding": self.content_encoding,
@@ -128,7 +134,12 @@ class _FakeBlob:
     def exists(self) -> bool:
         return self._name in self._client.store
 
-    def download_as_bytes(self) -> bytes:
+    @property
+    def generation(self) -> int:
+        return self._client.gen[self._name]
+
+    def download_as_bytes(self, if_generation_match: int | None = None) -> bytes:
+        self._client.check(self._name, if_generation_match)
         data = self._client.store[self._name]
         if self._client.meta[self._name]["content_encoding"] == "gzip" and not self._client.raw:
             return gzip.decompress(data)
@@ -139,7 +150,12 @@ class _FakeGcsClient:
     def __init__(self, raw: bool = False) -> None:
         self.store: dict[str, bytes] = {}
         self.meta: dict[str, dict[str, str | None]] = {}
+        self.gen: dict[str, int] = {}
         self.raw = raw
+
+    def check(self, name: str, if_generation_match: int | None) -> None:
+        if if_generation_match is not None and self.gen.get(name, 0) != if_generation_match:
+            raise _HttpError(412)
 
     def bucket(self, name: str) -> Any:
         client = self
@@ -148,7 +164,18 @@ class _FakeGcsClient:
             def blob(self, key: str) -> _FakeBlob:
                 return _FakeBlob(client, key)
 
+            def get_blob(self, key: str) -> _FakeBlob | None:
+                return _FakeBlob(client, key) if key in client.store else None
+
         return _Bucket()
+
+
+class _HttpError(Exception):
+    """Como ``google.api_core.exceptions``: lleva el código HTTP en ``code``."""
+
+    def __init__(self, code: int) -> None:
+        super().__init__(f"HTTP {code}")
+        self.code = code
 
 
 def test_gcs_publica_y_lee() -> None:
@@ -267,3 +294,79 @@ def test_seleccion_por_entorno_prefiere_s3(monkeypatch: pytest.MonkeyPatch) -> N
         lambda self, bucket, client=None: None,
     )
     assert isinstance(publisher_from_env(), S3SnapshotPublisher)
+
+
+# --- escritura condicional (if_generation_match) -----------------------------
+
+
+def test_gcs_read_versioned_y_publish_condicional() -> None:
+    client = _FakeGcsClient()
+    pub = GcsSnapshotPublisher("b", client=client)
+    assert pub.read_versioned("i.json") == (None, 0)
+    # 0 = solo si no existe.
+    pub.publish("i.json", PAYLOAD, content_type="application/json", gzip=True, if_generation_match=0)
+    data, gen = pub.read_versioned("i.json")
+    assert data == PAYLOAD
+    assert gen == 1
+    pub.publish("i.json", b"{}", content_type="application/json", if_generation_match=gen)
+    # Una generación vieja ya no vale: 412 -> PreconditionFailedError.
+    with pytest.raises(PreconditionFailedError):
+        pub.publish("i.json", b"[]", content_type="application/json", if_generation_match=gen)
+    with pytest.raises(PreconditionFailedError):
+        pub.publish("i.json", b"[]", content_type="application/json", if_generation_match=0)
+    assert pub.read("i.json") == b"{}"
+
+
+def test_gcs_read_versioned_descomprime_bytes_en_crudo() -> None:
+    pub = GcsSnapshotPublisher("b", client=_FakeGcsClient(raw=True))
+    pub.publish("i.json", PAYLOAD, content_type="application/json", gzip=True)
+    assert pub.read_versioned("i.json") == (PAYLOAD, 1)
+
+
+def test_gcs_read_versioned_si_cambia_durante_la_descarga() -> None:
+    client = _FakeGcsClient()
+    pub = GcsSnapshotPublisher("b", client=client)
+    pub.publish("i.json", PAYLOAD, content_type="application/json")
+    blob = client.bucket("b").get_blob("i.json")
+    assert blob is not None
+    viejo = _Desfasado(blob, generation=1)
+    client.gen["i.json"] = 2  # otro escribió entre los metadatos y la descarga
+    pub._bucket = SimpleNamespace(get_blob=lambda _k: viejo)
+    with pytest.raises(PreconditionFailedError):
+        pub.read_versioned("i.json")
+
+
+class _Desfasado:
+    def __init__(self, blob: _FakeBlob, generation: int) -> None:
+        self._blob, self.generation = blob, generation
+
+    def download_as_bytes(self, if_generation_match: int | None = None) -> bytes:
+        return self._blob.download_as_bytes(if_generation_match=if_generation_match)
+
+
+def test_gcs_otros_errores_de_subida_no_se_disfrazan() -> None:
+    client = _FakeGcsClient()
+    pub = GcsSnapshotPublisher("b", client=client)
+
+    def _denegado(*_a: Any, **_k: Any) -> None:
+        raise _HttpError(403)
+
+    client.check = _denegado  # type: ignore[method-assign]
+    with pytest.raises(_HttpError):
+        pub.publish("i.json", b"{}", content_type="application/json", if_generation_match=0)
+
+
+def test_local_publish_condicional(tmp_path: Path) -> None:
+    pub = LocalSnapshotPublisher(tmp_path)
+    data, gen = pub.read_versioned("ops/i.json")
+    assert (data, gen) == (None, 0)
+    pub.publish("ops/i.json", b"{}", content_type="application/json", if_generation_match=0)
+    with pytest.raises(PreconditionFailedError):
+        pub.publish("ops/i.json", b"[]", content_type="application/json", if_generation_match=0)
+    data, gen = pub.read_versioned("ops/i.json")
+    assert data == b"{}"
+    assert gen != 0
+    pub.publish("ops/i.json", b"[1]", content_type="application/json", if_generation_match=gen)
+    with pytest.raises(PreconditionFailedError):
+        pub.publish("ops/i.json", b"[2]", content_type="application/json", if_generation_match=gen)
+    assert pub.read("ops/i.json") == b"[1]"

@@ -109,12 +109,13 @@ def test_cuerpo_invalido_con_secreto_correcto_es_400(
     assert handled == []
 
 
-def test_sin_token_responde_200_sin_procesar(
+def test_sin_token_responde_503_sin_procesar(
     client: TestClient, handled: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # 503: Telegram guarda el update y lo reintenta; con 200 se perdería.
     monkeypatch.setattr(main, "OPS_BOT_TOKEN", "")
     r = client.post(URL, json=_update(1, "estado"), headers=_h(OPS_SECRET))
-    assert r.status_code == 200
+    assert r.status_code == 503
     assert handled == []
 
 
@@ -224,7 +225,7 @@ def test_fallo_de_telegram_responde_200_y_no_filtra_el_token(
     assert "fallo procesando mensaje" in salida.err
 
 
-def test_fallo_inesperado_responde_200_y_no_filtra_el_token(
+def test_sin_almacen_responde_503_y_no_filtra_el_token(
     client: TestClient, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     def _boom() -> Any:
@@ -232,10 +233,69 @@ def test_fallo_inesperado_responde_200_y_no_filtra_el_token(
 
     monkeypatch.setattr(main, "publisher_from_env", _boom)
     r = client.post(URL, json=_update(48, "estado"), headers=_h(OPS_SECRET))
+    assert r.status_code == 503
+    err = capsys.readouterr().err
+    assert TOKEN not in err
+    assert "fallo en el webhook de ops" in err
+
+
+def test_fallo_inesperado_al_procesar_responde_200_y_no_filtra_el_token(
+    e2e: tuple[TestClient, _FakeTelegram, LocalSnapshotPublisher],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    client, _, _ = e2e
+
+    def _boom(*_a: Any, **_k: Any) -> None:
+        raise RuntimeError(f"https://api.telegram.org/bot{TOKEN}/x")
+
+    monkeypatch.setattr(main.ops, "process_update", _boom)
+    r = client.post(URL, json=_update(49, "estado"), headers=_h(OPS_SECRET))
     assert r.status_code == 200
     err = capsys.readouterr().err
     assert TOKEN not in err
     assert "fallo en el webhook de ops" in err
+
+
+class _BuzonIntermitente(LocalSnapshotPublisher):
+    def __init__(self, base: Path, fallos: int) -> None:
+        super().__init__(base)
+        self.fallos = fallos
+
+    def publish(self, key: str, payload: bytes, **kwargs: Any) -> str:
+        if key == ops.INBOX_KEY and self.fallos > 0:
+            self.fallos -= 1
+            raise RuntimeError("503 GCS no disponible")
+        return super().publish(key, payload, **kwargs)
+
+
+def test_fallo_del_buzon_pide_reintento_y_la_reentrega_no_duplica(
+    e2e: tuple[TestClient, _FakeTelegram, LocalSnapshotPublisher],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    client, fake, _ = e2e
+    web = _BuzonIntermitente(tmp_path / "web", fallos=1)
+    monkeypatch.setattr(main, "publisher_from_env", lambda: web)
+    r = client.post(URL, json=_update(50, "nota importante"), headers=_h(OPS_SECRET))
+    assert r.status_code == 503
+    assert fake.sent() == []  # sin "Recibido" si no se guardó
+    # Telegram reentrega el mismo update: ahora se guarda y se contesta una vez.
+    for _ in range(2):
+        r = client.post(URL, json=_update(50, "nota importante"), headers=_h(OPS_SECRET))
+        assert r.status_code == 200
+    items = json.loads(web.read(ops.INBOX_KEY) or b"")["items"]
+    assert [i["update_id"] for i in items] == [50]
+
+
+def test_fallo_del_ack_tras_guardar_responde_200(
+    e2e: tuple[TestClient, _FakeTelegram, LocalSnapshotPublisher],
+) -> None:
+    # Ya está en el buzón: no se pide reintento aunque falle la respuesta.
+    client, fake, web = e2e
+    fake.fail = True
+    assert client.post(URL, json=_update(51, "nota"), headers=_h(OPS_SECRET)).status_code == 200
+    assert [i["update_id"] for i in json.loads(web.read(ops.INBOX_KEY) or b"")["items"]] == [51]
 
 
 @pytest.mark.parametrize(
