@@ -43,6 +43,19 @@ que el coste no crece con el número de usuarios (C-7).
 | `estaciones.json` | 1 h | Cambia unas pocas veces al año |
 | `index.html` | 60 s | Permite corregir la app sin esperar un día |
 
+### Compresión
+
+`snapshot.json`, `boards.json`, `horarios/*.json` y `ops/inbox.json` se suben
+comprimidos (`Content-Encoding: gzip`, `Content-Type: application/json`).
+Cloud Storage los sirve comprimidos a quien manda `Accept-Encoding: gzip`
+(navegadores; `fetch` + `r.json()` lo descomprime solo) y descomprimidos al
+resto (`curl` sin `--compressed`, `jq`...). Los lectores Python
+(`GcsSnapshotPublisher.read`) devuelven siempre JSON en claro y aceptan objetos
+viejos sin comprimir. **Nunca** añadir `no-transform` al `Cache-Control` de
+estos objetos (por eso no se usa `gcloud storage cp --gzip-local`, que lo pone):
+los clientes sin gzip recibirían bytes comprimidos. `estaciones.json` e
+`index.html` se suben a mano y siguen en claro.
+
 ## Telegram en la nube
 
 El token **no está en el repositorio ni en la configuración del job**. Para
@@ -162,6 +175,11 @@ severity>=ERROR
 Job `cercanias-telegram-ops` (misma imagen) que cada minuto lee los mensajes del
 bot de ops y responde con comandos de guion (`estado`, `horarios`, `regenerar`,
 `ayuda`). Detalle, privacidad del buzón y fallos: [RB-005](runbooks/RB-005-telegram-ops-bot.md).
+
+Desde la PR del webhook, el bot puede entrar por `POST /telegram/ops-webhook`
+de `cercanias-api` (misma lógica) y el planificador queda en pausa: ver
+«Modo webhook» y «Paso a webhook» en RB-005 (pasos, comprobaciones y rollback).
+Los pasos de abajo siguen valiendo para el sondeo, que es el rollback.
 
 > **Privacidad:** los mensajes no reconocidos se guardan en
 > `gs://cercanias-madrid-rt-web/ops/inbox.json`, bucket **público**, porque

@@ -4,6 +4,11 @@ Lo lanza Cloud Scheduler cada minuto como el job ``cercanias-telegram-ops``
 (misma imagen que la ingesta). Es deliberadamente tonto: comandos con guion,
 sin IA y sin ejecutar nada destructivo. Ver RB-005.
 
+La misma lógica por update (:func:`process_update`) la usa también el webhook
+``/telegram/ops-webhook`` de ``cercanias-api``. Este job se conserva para poder
+volver al sondeo (rollback) sin desplegar nada: ``deleteWebhook`` y reanudar
+el planificador.
+
 - Token: ``TELEGRAM_OPS_BOT_TOKEN`` (secreto ``telegram-ops-bot-token``). Nunca
   se registra: los errores se limpian antes de loguearse.
 - Solo responde a los chats de ``ALLOWED_CHAT_IDS``; el resto se ignora y solo
@@ -22,11 +27,11 @@ import sys
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 import httpx
 
-from cercanias_storage.publishers import GcsSnapshotPublisher
+from cercanias_storage.publishers import GcsSnapshotPublisher, PreconditionFailedError
 from cercanias_worker.cloud_tick import _next_service_id, _schedule_days_left
 
 COMPONENT = "telegram-ops"
@@ -41,6 +46,8 @@ RUN_BUDGET_S = 35.0
 DEFAULT_ALLOWED_CHAT_IDS = "5830900654"
 SCHEDULES_PREFIX = "horarios"
 ACK_UNKNOWN = "Recibido, lo paso a Cercanías Ops"
+#: Reintentos de la escritura condicional del buzón si otro escribe a la vez.
+INBOX_CAS_ATTEMPTS = 5
 
 RUNBOOK_REGENERAR = (
     "Regenerar horarios (RB-003). No lo ejecuto yo; lánzalo tú:\n"
@@ -73,7 +80,31 @@ COMMANDS: dict[str, str] = {
 class Store(Protocol):
     def read(self, key: str) -> bytes | None: ...
 
-    def publish(self, key: str, payload: bytes, *, content_type: str, cache_control: str = ...) -> str: ...
+    def publish(
+        self, key: str, payload: bytes, *, content_type: str, cache_control: str = ..., gzip: bool = ...
+    ) -> str: ...
+
+
+@runtime_checkable
+class VersionedStore(Protocol):
+    """Almacén con escritura condicional (GCS y disco; S3 no)."""
+
+    def read_versioned(self, key: str) -> tuple[bytes | None, int]: ...
+
+    def publish(  # noqa: PLR0913 - misma firma que los publicadores
+        self,
+        key: str,
+        payload: bytes,
+        *,
+        content_type: str,
+        cache_control: str = ...,
+        gzip: bool = ...,
+        if_generation_match: int | None = ...,
+    ) -> str: ...
+
+
+class InboxWriteError(RuntimeError):
+    """No se pudo guardar un mensaje en el buzón (el webhook pide reintento)."""
 
 
 def log(severity: str, message: str, **fields: Any) -> None:
@@ -133,7 +164,10 @@ class TelegramApi:
 
 
 def _read_json(store: Store, key: str) -> Any:
-    raw = store.read(key)
+    return _parse_json(store.read(key), key)
+
+
+def _parse_json(raw: bytes | None, key: str) -> Any:
     if not raw:
         return None
     try:
@@ -161,23 +195,53 @@ def save_offset(store: Store, offset: int) -> None:
     )
 
 
-def append_inbox(store: Store, item: dict[str, Any]) -> None:
-    """Añade al buzón público, conservando los últimos ``INBOX_MAX_ITEMS``."""
-    data = _read_json(store, INBOX_KEY)
+def _inbox_with(raw: bytes | None, item: dict[str, Any]) -> bytes | None:
+    """Buzón con ``item`` añadido, o ``None`` si ya estaba (dedupe por ``update_id``)."""
+    data = _parse_json(raw, INBOX_KEY)
     items = data.get("items") if isinstance(data, dict) else None
     lista = [i for i in items if isinstance(i, dict)] if isinstance(items, list) else []
     if any(i.get("update_id") == item["update_id"] for i in lista):
-        return
+        return None
     lista.append(
         {"ts": item["ts"], "update_id": item["update_id"], "text": str(item["text"])[:INBOX_MAX_CHARS]}
     )
-    payload = {"items": lista[-INBOX_MAX_ITEMS:]}
-    store.publish(
-        INBOX_KEY,
-        json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        content_type="application/json",
-        cache_control="no-store",
-    )
+    return json.dumps({"items": lista[-INBOX_MAX_ITEMS:]}, ensure_ascii=False).encode("utf-8")
+
+
+def append_inbox(store: Store, item: dict[str, Any]) -> None:
+    """Añade al buzón público, conservando los últimos ``INBOX_MAX_ITEMS``.
+
+    Con un almacén versionado (GCS, disco) la escritura es condicional a la
+    generación leída: si otro update escribió entre medias (dos entregas del
+    webhook a la vez, o el job de sondeo solapado durante el cambio), se relee
+    y se reintenta en vez de pisar su mensaje.
+    """
+    if not isinstance(store, VersionedStore):
+        payload = _inbox_with(store.read(INBOX_KEY), item)
+        if payload is not None:
+            store.publish(
+                INBOX_KEY, payload, content_type="application/json", cache_control="no-store", gzip=True
+            )
+        return
+    for intento in range(1, INBOX_CAS_ATTEMPTS + 1):
+        try:
+            raw, generation = store.read_versioned(INBOX_KEY)
+            payload = _inbox_with(raw, item)
+            if payload is None:
+                return
+            store.publish(
+                INBOX_KEY,
+                payload,
+                content_type="application/json",
+                cache_control="no-store",
+                gzip=True,
+                if_generation_match=generation,
+            )
+        except PreconditionFailedError:
+            log("WARNING", "buzón modificado a la vez, se reintenta", intento=intento)
+            continue
+        return
+    raise PreconditionFailedError(f"{INBOX_KEY}: conflicto tras {INBOX_CAS_ATTEMPTS} intentos")
 
 
 def _age_seconds(marca: Any, now: datetime) -> int | None:
@@ -284,28 +348,61 @@ def poll_once(  # noqa: PLR0913 - dependencias inyectables para los tests
         offset = update_id + 1
         save_offset(private, offset)
         procesados += 1
-        message = update.get("message")
-        if not isinstance(message, dict):
-            continue
-        chat = message.get("chat")
-        chat_id = chat.get("id") if isinstance(chat, dict) else None
-        if not isinstance(chat_id, int) or isinstance(chat_id, bool) or chat_id not in allowed:
-            log("WARNING", "chat no permitido, se ignora", update_id=update_id, chat_id=chat_id)
-            continue
-        text = message.get("text")
-        if not isinstance(text, str) or not text.strip():
-            continue
-        command = parse_command(text)
-        try:
-            if command is None:
-                append_inbox(web, {"ts": now().isoformat(), "update_id": update_id, "text": text})
-                api.send_message(chat_id, ACK_UNKNOWN)
-            else:
-                api.send_message(chat_id, reply_for(command, web, now()))
-            log("INFO", "mensaje procesado", update_id=update_id, command=command or "inbox")
-        except Exception as exc:
-            log("ERROR", "fallo procesando mensaje", update_id=update_id, error=str(exc))
+        process_update(api, web, allowed, update, now=now)
     return procesados
+
+
+def process_update(  # noqa: PLR0913 - dependencias inyectables y opciones con nombre
+    api: TelegramApi,
+    web: Any,
+    allowed: set[int],
+    update: dict[str, Any],
+    *,
+    now: Callable[[], datetime] = lambda: datetime.now(tz=UTC),
+    raise_on_inbox_error: bool = False,
+) -> None:
+    """Atiende UN update: allowlist, comando o buzón, y respuesta.
+
+    Compartido por el sondeo (:func:`poll_once`) y el webhook de
+    ``cercanias-api``. Por defecto nunca lanza: un fallo se registra y el update
+    se da por atendido (como mucho una vez, la semántica del sondeo). Con
+    ``raise_on_inbox_error`` (webhook), si el mensaje NO se pudo guardar en el
+    buzón se lanza :class:`InboxWriteError` antes de contestar, para que la API
+    responda 5xx y Telegram lo reentregue (el dedupe por ``update_id`` evita
+    duplicados). Solo lee el bucket, escribe el buzón y contesta; no hay comando
+    que despliegue, mergee ni borre nada.
+    """
+    update_id = update.get("update_id")
+    if not isinstance(update_id, int) or isinstance(update_id, bool):
+        return
+    message = update.get("message")
+    if not isinstance(message, dict):
+        return
+    chat = message.get("chat")
+    chat_id = chat.get("id") if isinstance(chat, dict) else None
+    if not isinstance(chat_id, int) or isinstance(chat_id, bool) or chat_id not in allowed:
+        log("WARNING", "chat no permitido, se ignora", update_id=update_id, chat_id=chat_id)
+        return
+    text = message.get("text")
+    if not isinstance(text, str) or not text.strip():
+        return
+    command = parse_command(text)
+    if command is None:
+        try:
+            append_inbox(web, {"ts": now().isoformat(), "update_id": update_id, "text": text})
+        except Exception as exc:
+            log("ERROR", "fallo guardando en el buzón", update_id=update_id, error=str(exc))
+            if raise_on_inbox_error:
+                raise InboxWriteError(f"update {update_id} sin guardar en el buzón") from None
+            return
+    try:
+        if command is None:
+            api.send_message(chat_id, ACK_UNKNOWN)
+        else:
+            api.send_message(chat_id, reply_for(command, web, now()))
+        log("INFO", "mensaje procesado", update_id=update_id, command=command or "inbox")
+    except Exception as exc:
+        log("ERROR", "fallo procesando mensaje", update_id=update_id, error=str(exc))
 
 
 def main() -> int:

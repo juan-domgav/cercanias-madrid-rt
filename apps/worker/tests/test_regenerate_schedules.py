@@ -119,10 +119,12 @@ def test_main_fails_when_too_few_service_days(
         version_dir = tmp_path
 
     published: list[str] = []
+    opciones: list[dict[str, object]] = []
 
     class Publisher:
-        def publish(self, key: str, *_args: object, **_kwargs: object) -> str:
+        def publish(self, key: str, *_args: object, **kwargs: object) -> str:
             published.append(key)
+            opciones.append(kwargs)
             return key
 
     monkeypatch.setattr(module, "download_gtfs_static", lambda *_a, **_k: Outcome())
@@ -133,6 +135,9 @@ def test_main_fails_when_too_few_service_days(
 
     assert module.main() == module.EXIT_TOO_FEW_DAYS
     assert published == ["horarios/1085X.json"]
+    assert opciones == [
+        {"content_type": "application/json", "cache_control": "public, max-age=3600", "gzip": True}
+    ]
     assert '"severity": "ERROR"' in capsys.readouterr().err
 
 

@@ -46,7 +46,8 @@ curl -s "$WEB/boards.json" | jq '{service,stations_with_departures,specials_on_b
 curl -s "$WEB/boards.json" | jq --arg s 17009 '.stations[$s].departures[]
   | {t,eta,train,route,live,unconfirmed,special,status,at_terminus}'
 # ¿Lo conoce el horario? (debe dar 0: los especiales no están)
-gcloud storage cat "gs://cercanias-madrid-rt-web/horarios/${SERVICIO}.json" | grep -c 91887
+# (gzip -dcf: los horarios se guardan con gzip; si llegan en claro pasan tal cual)
+gcloud storage cat "gs://cercanias-madrid-rt-web/horarios/${SERVICIO}.json" | gzip -dcf | grep -c 91887
 # Recorrido del especial en el archivo privado (una entrada por pasada):
 gcloud storage cat "gs://cercanias-madrid-rt-privado/archivo/$(date +%F)/08*.json" \
   | jq -c '.ts as $t | .trains[] | select(.[0]=="SPECIAL_10_91887C4B") | [$t,.[2],.[3],.[4]]'

@@ -857,6 +857,7 @@ def _publish_boards(
             BOARDS_KEY,
             json.dumps(boards, ensure_ascii=False, separators=(",", ":")).encode("utf-8"),
             content_type="application/json",
+            gzip=True,
         ):
             print(f"tablones publicados: {len(boards['stations'])} estaciones "
                   f"(servicio {boards['service']})")
@@ -909,6 +910,7 @@ def main() -> int:
         SNAPSHOT_KEY,
         json.dumps(salida, ensure_ascii=False).encode("utf-8"),
         content_type="application/json",
+        gzip=True,
     )
     if ref:
         print(f"snapshot publicado en {ref} ({len(salida.get('vehicles', []))} trenes)")

@@ -7,6 +7,8 @@ dependencies = [
   "cercanias-domain",
   "cercanias-storage",
   "cercanias-notifiers-telegram",
+  # Bot de ops por webhook: reutiliza la lógica del job telegram-ops-poll.
+  "cercanias-worker",
   "fastapi>=0.115",
   "uvicorn[standard]>=0.32",
   "httpx>=0.27",
@@ -26,3 +28,4 @@ packages = ["src/cercanias_api"]
 cercanias-domain = { workspace = true }
 cercanias-storage = { workspace = true }
 cercanias-notifiers-telegram = { workspace = true }
+cercanias-worker = { workspace = true }

@@ -10,7 +10,7 @@ from typing import Any
 import httpx
 import pytest
 
-from cercanias_storage.publishers import LocalSnapshotPublisher
+from cercanias_storage.publishers import LocalSnapshotPublisher, PreconditionFailedError
 from cercanias_worker import telegram_ops_poll as bot
 
 TOKEN = "123456:SECRETO-NO-LOGUEAR"
@@ -226,3 +226,127 @@ def test_buzon_trunca_texto_largo(tmp_path: Path) -> None:
     _, _, web = _run(tmp_path, [_msg(3, "x" * 50_000)])
     data = json.loads(web.read(bot.INBOX_KEY))
     assert len(data["items"][0]["text"]) == bot.INBOX_MAX_CHARS
+
+
+class _Grabador(LocalSnapshotPublisher):
+    """Guarda en disco y anota con qué opciones se publicó cada clave."""
+
+    def __init__(self, base: Path) -> None:
+        super().__init__(base)
+        self.opciones: dict[str, dict[str, Any]] = {}
+
+    def publish(self, key: str, payload: bytes, **kwargs: Any) -> str:
+        self.opciones[key] = kwargs
+        return super().publish(key, payload, **kwargs)
+
+
+def test_buzon_se_publica_comprimido_y_sin_cache(tmp_path: Path) -> None:
+    web = _Grabador(tmp_path)
+    bot.append_inbox(web, {"ts": NOW.isoformat(), "update_id": 1, "text": "hola"})
+    assert web.opciones[bot.INBOX_KEY] == {
+        "content_type": "application/json",
+        "cache_control": "no-store",
+        "gzip": True,
+        # Escritura condicional: 0 = el buzón aún no existía.
+        "if_generation_match": 0,
+    }
+
+
+def test_process_update_es_la_misma_logica_que_el_sondeo(tmp_path: Path) -> None:
+    """El webhook de la API llama directamente a process_update."""
+    fake = FakeTelegram([])
+    web = LocalSnapshotPublisher(tmp_path)
+    client = httpx.Client(transport=httpx.MockTransport(fake.handler))
+    api = bot.TelegramApi(TOKEN, client)
+    bot.process_update(api, web, {ALLOWED}, _msg(9, "nota libre"), now=lambda: NOW)
+    bot.process_update(api, web, {ALLOWED}, _msg(10, "hola", chat_id=1), now=lambda: NOW)
+    bot.process_update(api, web, {ALLOWED}, _msg(11, "/regenerar"), now=lambda: NOW)
+    assert [b["text"] for b in fake.sent()] == [bot.ACK_UNKNOWN, bot.RUNBOOK_REGENERAR]
+    items = json.loads(web.read(bot.INBOX_KEY) or b"")["items"]
+    assert [i["update_id"] for i in items] == [9]
+    assert all(m == "sendMessage" for m, _ in fake.calls)
+
+
+# --- buzón: escrituras concurrentes y fallos de almacenamiento ---------------
+
+
+class _Carrera(LocalSnapshotPublisher):
+    """Simula otro escritor que se cuela entre la lectura y la escritura."""
+
+    def __init__(self, base: Path, colados: list[dict[str, Any]]) -> None:
+        super().__init__(base)
+        self.colados = colados
+        self.conflictos = 0
+
+    def publish(self, key: str, payload: bytes, **kwargs: Any) -> str:
+        if key == bot.INBOX_KEY and self.colados:
+            otro = self.colados.pop(0)
+            super().publish(key, json.dumps({"items": [otro]}).encode(), content_type="application/json")
+            self.conflictos += 1
+        return super().publish(key, payload, **kwargs)
+
+
+def test_buzon_concurrente_no_pierde_mensajes(tmp_path: Path) -> None:
+    web = _Carrera(tmp_path, [{"ts": "t", "update_id": 1, "text": "del otro"}])
+    bot.append_inbox(web, {"ts": NOW.isoformat(), "update_id": 2, "text": "mío"})
+    items = json.loads(web.read(bot.INBOX_KEY) or b"")["items"]
+    assert [i["update_id"] for i in items] == [1, 2]
+    assert web.conflictos == 1
+
+
+def test_buzon_reintentos_agotados_lanza(tmp_path: Path) -> None:
+    colados = [{"ts": "t", "update_id": 100 + n, "text": "x"} for n in range(bot.INBOX_CAS_ATTEMPTS)]
+    web = _Carrera(tmp_path, colados)
+    with pytest.raises(PreconditionFailedError):
+        bot.append_inbox(web, {"ts": NOW.isoformat(), "update_id": 2, "text": "mío"})
+
+
+def test_buzon_en_almacen_sin_versiones(tmp_path: Path) -> None:
+    """S3 (sin escritura condicional) sigue usando leer-modificar-escribir."""
+
+    class _SinVersiones:
+        def __init__(self) -> None:
+            self._local = LocalSnapshotPublisher(tmp_path)
+
+        def read(self, key: str) -> bytes | None:
+            return self._local.read(key)
+
+        def publish(self, key: str, payload: bytes, **kwargs: Any) -> str:
+            assert "if_generation_match" not in kwargs
+            return self._local.publish(key, payload, **kwargs)
+
+    web = _SinVersiones()
+    assert not isinstance(web, bot.VersionedStore)
+    for _ in range(2):
+        bot.append_inbox(web, {"ts": NOW.isoformat(), "update_id": 3, "text": "hola"})
+    assert len(json.loads(web.read(bot.INBOX_KEY) or b"")["items"]) == 1
+
+
+class _BuzonRoto(LocalSnapshotPublisher):
+    def publish(self, key: str, payload: bytes, **kwargs: Any) -> str:
+        if key == bot.INBOX_KEY:
+            raise RuntimeError("503 GCS no disponible")
+        return super().publish(key, payload, **kwargs)
+
+
+def test_fallo_del_buzon_no_contesta_y_por_defecto_no_lanza(tmp_path: Path) -> None:
+    fake = FakeTelegram([])
+    api = bot.TelegramApi(TOKEN, httpx.Client(transport=httpx.MockTransport(fake.handler)))
+    bot.process_update(api, _BuzonRoto(tmp_path), {ALLOWED}, _msg(5, "nota"), now=lambda: NOW)
+    # Sin ACK: "Recibido" sería mentira si no se guardó.
+    assert fake.sent() == []
+
+
+def test_fallo_del_buzon_lanza_si_se_pide(tmp_path: Path) -> None:
+    fake = FakeTelegram([])
+    api = bot.TelegramApi(TOKEN, httpx.Client(transport=httpx.MockTransport(fake.handler)))
+    with pytest.raises(bot.InboxWriteError):
+        bot.process_update(
+            api, _BuzonRoto(tmp_path), {ALLOWED}, _msg(5, "nota"), now=lambda: NOW, raise_on_inbox_error=True
+        )
+    assert fake.sent() == []
+    # Los comandos no tocan el buzón: no lanzan aunque esté roto.
+    bot.process_update(
+        api, _BuzonRoto(tmp_path), {ALLOWED}, _msg(6, "ayuda"), now=lambda: NOW, raise_on_inbox_error=True
+    )
+    assert [b["text"] for b in fake.sent()] == [bot.AYUDA]

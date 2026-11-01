@@ -341,6 +341,7 @@ def main() -> int:
             json.dumps(schedule, ensure_ascii=False, separators=(",", ":")).encode("utf-8"),
             content_type="application/json",
             cache_control=SCHEDULE_CACHE_CONTROL,
+            gzip=True,
         )
     print(f"horarios publicados: {len(schedules)} días de servicio")
     if len(schedules) < MIN_SERVICE_DAYS:

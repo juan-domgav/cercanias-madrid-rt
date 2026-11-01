@@ -5,6 +5,12 @@ es: un endpoint que cualquiera en internet puede intentar invocar. Telegram
 permite fijar un secreto que viaja en la cabecera
 ``X-Telegram-Bot-Api-Secret-Token``; sin comprobarlo, cualquiera podría enviar
 updates falsos y hacer que el bot conteste cosas que nadie ha preguntado.
+
+El bot de operaciones (``@CercaniasRTOPS_bot``) entra por ``/telegram/ops-webhook``
+con su PROPIO secreto (``TELEGRAM_OPS_WEBHOOK_SECRET``) y su propio token
+(``TELEGRAM_OPS_BOT_TOKEN``). La lógica es la del job ``telegram-ops-poll``
+(:func:`cercanias_worker.telegram_ops_poll.process_update`): misma allowlist,
+mismos comandos de solo lectura y mismo buzón ``ops/inbox.json``. Ver RB-005.
 """
 
 from __future__ import annotations
@@ -18,11 +24,13 @@ from typing import Any
 import httpx
 import uvicorn
 from fastapi import FastAPI, Header, HTTPException, Request
+from starlette.concurrency import run_in_threadpool
 
 from cercanias_api.bot import BotContext, BotResult, Feedback, handle_update
 from cercanias_domain.departures import LiveTrain
 from cercanias_domain.station_view import Station
 from cercanias_storage.publishers import GcsSnapshotPublisher, publisher_from_env
+from cercanias_worker import telegram_ops_poll as ops
 
 TELEGRAM_API = "https://api.telegram.org"
 WEBHOOK_SECRET = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "")
@@ -32,6 +40,18 @@ FEEDBACK_KEY = os.environ.get("FEEDBACK_KEY", "feedback.jsonl")
 #: bucket de la web es publico por definicion: cualquiera podia leerlo en una URL
 #: adivinable. Se separan por eso, no por orden.
 PRIVATE_BUCKET = os.environ.get("PRIVATE_BUCKET", "")
+
+#: Bot de operaciones. Secreto DISTINTO del bot público: filtrar uno no abre el
+#: otro. Sin secreto configurado el endpoint rechaza todo (403).
+#: ``strip``: un salto de línea al crear el secreto no debe dejar el bot en 403
+#: (Telegram solo admite ``A-Za-z0-9_-`` en ``secret_token``).
+OPS_WEBHOOK_SECRET = os.environ.get("TELEGRAM_OPS_WEBHOOK_SECRET", "").strip()
+OPS_BOT_TOKEN = os.environ.get("TELEGRAM_OPS_BOT_TOKEN", "").strip()
+#: Misma allowlist que el job (``ALLOWED_CHAT_IDS`` allí). Nombre propio aquí
+#: para que nadie crea que restringe el bot público. Vacía = nadie (cierra).
+OPS_ALLOWED_CHAT_IDS = ops.parse_allowed_chat_ids(
+    os.environ.get("OPS_ALLOWED_CHAT_IDS", ops.DEFAULT_ALLOWED_CHAT_IDS)
+)
 
 #: Los datos cambian cada minuto; cachearlos unos segundos evita releer el bucket
 #: en cada mensaje sin llegar a servir nada rancio.
@@ -135,6 +155,17 @@ def send_message(chat_id: int, result: BotResult) -> None:
         client.post(f"{TELEGRAM_API}/bot{BOT_TOKEN}/sendMessage", json=payload)
 
 
+def _secret_ok(received: str, expected: str) -> bool:
+    """Compara el secreto de Telegram en tiempo constante; sin secreto, rechaza.
+
+    Se comparan bytes: ``hmac.compare_digest`` con ``str`` lanza ``TypeError``
+    si hay caracteres no ASCII, y una cabecera así acabaría en un 500.
+    """
+    if not expected:
+        return False
+    return hmac.compare_digest(received.encode("utf-8"), expected.encode("utf-8"))
+
+
 @app.get("/health")
 def health() -> dict[str, Any]:
     live, prefix = load_live()
@@ -147,9 +178,7 @@ async def telegram_webhook(
     x_telegram_bot_api_secret_token: str = Header(default=""),
 ) -> dict[str, bool]:
     # compare_digest: la comparacion normal filtra informacion por tiempo.
-    if not WEBHOOK_SECRET or not hmac.compare_digest(
-        x_telegram_bot_api_secret_token, WEBHOOK_SECRET
-    ):
+    if not _secret_ok(x_telegram_bot_api_secret_token, WEBHOOK_SECRET):
         raise HTTPException(status_code=403, detail="secreto invalido")
 
     update = await request.json()
@@ -167,6 +196,62 @@ async def telegram_webhook(
         send_message(chat["id"], result)
     # Telegram reintenta si no recibe 200: siempre se responde OK aunque el
     # envio haya fallado, para no entrar en un bucle de reintentos.
+    return {"ok": True}
+
+
+def handle_ops_update(update: dict[str, Any]) -> bool:
+    """Atiende un update del bot de ops con la lógica del job de sondeo.
+
+    Devuelve ``False`` si el update NO quedó guardado y conviene que Telegram lo
+    reentregue (no hay almacén, o falló la escritura del buzón antes de
+    contestar). Cualquier otro fallo (p. ej. al responder) se registra y
+    devuelve ``True``: un reintento duplicaría respuestas. No hay offset: con
+    webhook, Telegram da el update por entregado al recibir el 200.
+    """
+    try:
+        web = publisher_from_env()
+    except Exception as exc:
+        ops.log("ERROR", "fallo en el webhook de ops", error=ops.redact(repr(exc), OPS_BOT_TOKEN))
+        return False
+    try:
+        with httpx.Client() as client:
+            ops.process_update(
+                ops.TelegramApi(OPS_BOT_TOKEN, client),
+                web,
+                OPS_ALLOWED_CHAT_IDS,
+                update,
+                raise_on_inbox_error=True,
+            )
+    except ops.InboxWriteError:
+        return False
+    except Exception as exc:
+        ops.log("ERROR", "fallo en el webhook de ops", error=ops.redact(repr(exc), OPS_BOT_TOKEN))
+    return True
+
+
+@app.post("/telegram/ops-webhook")
+async def telegram_ops_webhook(
+    request: Request,
+    x_telegram_bot_api_secret_token: str = Header(default=""),
+) -> dict[str, bool]:
+    if not _secret_ok(x_telegram_bot_api_secret_token, OPS_WEBHOOK_SECRET):
+        raise HTTPException(status_code=403, detail="secreto invalido")
+    try:
+        update = await request.json()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="update invalido") from None
+    if not isinstance(update, dict):
+        raise HTTPException(status_code=400, detail="update invalido")
+    if not OPS_BOT_TOKEN:
+        # Sin token no se puede contestar. 503: Telegram guarda el update y lo
+        # reintenta (hasta 24 h), y getWebhookInfo muestra el error; con un 200
+        # el mensaje se perdería sin que nadie lo viera.
+        ops.log("ERROR", "falta TELEGRAM_OPS_BOT_TOKEN en cercanias-api")
+        raise HTTPException(status_code=503, detail="bot de ops sin configurar")
+    # E/S bloqueante (GCS, Telegram): fuera del bucle de eventos.
+    if await run_in_threadpool(handle_ops_update, update) is False:
+        # Sin guardar en el buzón: que Telegram lo reentregue (dedupe por update_id).
+        raise HTTPException(status_code=503, detail="reintentar")
     return {"ok": True}
 
 
