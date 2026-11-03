@@ -18,5 +18,6 @@ verificación y rollback. Los jobs viven en el proyecto `cercanias-en-hora`.
 | `degraded: true` / «datos conservados» con `generated_at` de segundos (última pasada de Renfe vacía) | [RB-011](RB-011-degraded-with-fresh-data.md) |
 | Encender/verificar el archivo de supresiones, paradas omitidas y avisos; WARNING `alerts_feed_stale` | [RB-014](RB-014-archivo-incidencias.md) |
 | `health.delay_coverage` crítico con snapshot fresco y sin `degraded`; los viajes sin retraso son `CANCELED` | [RB-015](RB-015-delay-coverage-cancelados.md) |
+| Histórico nocturno falla con `'utf-8' codec can't decode byte 0x8b`; falta `historico/<día>.parquet` | [RB-016](RB-016-historico-gzip.md) |
 
 Detalle de despliegue: [`docs/DESPLIEGUE.md`](../DESPLIEGUE.md).
