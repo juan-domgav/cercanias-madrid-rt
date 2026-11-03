@@ -70,6 +70,7 @@ from cercanias_domain.historico_incidencias import (
     pasada_desde_objeto,
 )
 from cercanias_domain.trip_id import parse_trip_id
+from cercanias_storage.publishers import gunzip_if_compressed
 from cercanias_worker.regenerate_schedules import build_schedules
 
 MADRID = ZoneInfo("Europe/Madrid")
@@ -105,7 +106,25 @@ REINTENTOS_GCLOUD = 3
 
 
 def _gcloud(*args: str, entrada: str | None = None) -> subprocess.CompletedProcess[str]:
+    """``gcloud storage …`` en texto (listados, copias). Ver :func:`_gcloud_binario`.
+
+    La salida de ``ls``/``cp`` es ASCII; ``errors="replace"`` sólo evita que un
+    byte raro en stderr tape el error real. Para leer CONTENIDO de un objeto
+    (``cat``) hay que usar :func:`_gcloud_binario`: puede venir con gzip.
+    """
+    r = _gcloud_binario(*args, entrada=entrada.encode() if entrada is not None else None)
+    return subprocess.CompletedProcess(
+        r.args, r.returncode, r.stdout.decode("utf-8", "replace"), r.stderr.decode("utf-8", "replace")
+    )
+
+
+def _gcloud_binario(*args: str, entrada: bytes | None = None) -> subprocess.CompletedProcess[bytes]:
     """``gcloud storage …`` con límite de tiempo; si se cuelga, mata el grupo y reintenta.
+
+    Devuelve bytes: ``gcloud storage cat`` entrega el objeto TAL CUAL está
+    guardado, y desde el PR #20 ``horarios/*.json`` (y snapshot/boards) llevan
+    ``Content-Encoding: gzip``. Decodificar eso como UTF-8 era el
+    ``'utf-8' codec can't decode byte 0x8b`` de RB-016.
 
     Todo lo que se lanza es idempotente (copias que sobrescriben, listados).
     """
@@ -116,7 +135,6 @@ def _gcloud(*args: str, entrada: str | None = None) -> subprocess.CompletedProce
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
             start_new_session=True,
         ) as proc:
             try:
@@ -129,7 +147,32 @@ def _gcloud(*args: str, entrada: str | None = None) -> subprocess.CompletedProce
                 )
                 continue
             return subprocess.CompletedProcess(cmd, proc.returncode, out, err)
-    return subprocess.CompletedProcess(cmd, 124, "", f"gcloud colgado {REINTENTOS_GCLOUD} veces")
+    return subprocess.CompletedProcess(cmd, 124, b"", f"gcloud colgado {REINTENTOS_GCLOUD} veces".encode())
+
+
+#: Lo que puede lanzar leer un JSON guardado roto: JSON inválido o bytes que no
+#: son UTF-8 (``ValueError``), gzip corrupto (``BadGzipFile`` es ``OSError``) o
+#: truncado (``EOFError``), fichero ilegible (``OSError``).
+ERRORES_JSON = (ValueError, OSError, EOFError)
+
+
+def json_guardado(datos: bytes) -> Any:
+    """JSON de un objeto guardado, venga o no comprimido con gzip (RB-016).
+
+    Único punto por el que pasa todo lo que el script lee del bucket. Si los
+    bytes empiezan por la cabecera gzip (``1f 8b``) se descomprimen una vez; si
+    no, se usan tal cual. Así da igual que el objeto se guardara en claro (el
+    ``archivo/`` de siempre), con ``Content-Encoding: gzip`` y llegue crudo
+    (``gcloud storage cat``), o ya descomprimido por la transcodificación de
+    GCS (cliente Python, ``gcloud storage cp``, ``curl`` sin ``--compressed``):
+    nunca se descomprime dos veces.
+    """
+    return json.loads(gunzip_if_compressed(datos))
+
+
+def leer_json_guardado(fichero: Path) -> Any:
+    """:func:`json_guardado` de un fichero bajado del bucket."""
+    return json_guardado(fichero.read_bytes())
 
 
 # --- descarga -----------------------------------------------------------------
@@ -192,8 +235,8 @@ def leer_avisos(ficheros: list[Path]) -> list[FotoAvisos]:
     fotos: list[FotoAvisos] = []
     for f in ficheros:
         try:
-            foto = foto_desde_objeto(json.loads(f.read_text(encoding="utf-8")))
-        except (json.JSONDecodeError, OSError):
+            foto = foto_desde_objeto(leer_json_guardado(f))
+        except ERRORES_JSON:
             continue
         if foto is not None:
             fotos.append(foto)
@@ -258,9 +301,9 @@ def _horarios_desde_gtfs_sin_cerrojo(
 
 
 def cargar_horario(dia: date, servicio: str, cache: Path) -> Horario | None:
-    r = _gcloud("cat", f"{HORARIOS}/{servicio}.json")
+    r = _gcloud_binario("cat", f"{HORARIOS}/{servicio}.json")
     if r.returncode == 0 and r.stdout.strip():
-        return _horario_desde_json(json.loads(r.stdout), f"horarios/{servicio}.json")
+        return _horario_desde_json(json_guardado(r.stdout), f"horarios/{servicio}.json")
     manifiesto: dict[str, str] = json.loads(MANIFIESTO_GTFS.read_text())["datasets"]
     # El GTFS descargado el propio día (o el anterior más cercano que lo cubra).
     candidatos = sorted((d for d in manifiesto if d <= dia.isoformat()), reverse=True)
@@ -300,8 +343,8 @@ def leer_observaciones(ficheros: list[Path], dia: date) -> Lectura:
     pasadas: list[tuple[datetime, dict[str, int], list[list[Any]], PasadaIncidencias]] = []
     for f in ficheros:
         try:
-            a = json.loads(f.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
+            a = leer_json_guardado(f)
+        except ERRORES_JSON:
             continue
         ts = datetime.fromisoformat(a["ts"]).astimezone(MADRID)
         pasadas.append(
