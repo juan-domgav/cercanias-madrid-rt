@@ -28,6 +28,7 @@ Reglas que no son evidentes y que costaron descubrir:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from cercanias_domain.trip_id import parse_trip_id
@@ -329,6 +330,14 @@ class DepartureQuery:
     #: por defecto: la validación del 19-22/10/2026 no alcanzó el umbral (>= 80 %
     #: a +-3 min con 5 y 10 min de antelación, n >= 30) en ninguna línea.
     origin_estimate_routes: frozenset[str] = frozenset()
+    #: Tablón por ventana (RB-017). ``None`` = corte clásico: las ``limit``
+    #: salidas más próximas. Con un valor entran TODAS las salidas cuya hora
+    #: prevista cae en los próximos ``board_window_minutes`` y, además, la
+    #: próxima salida de cada destino aunque caiga más lejos (dentro del
+    #: horizonte ``window_minutes``); ``limit`` pasa a ser un tope duro. En una
+    #: estación como Chamartín 10 salidas cubren ~7 minutos: el 04/11/2026 el
+    #: 20460 a Parla quedaba fuera del tablón minutos antes de salir.
+    board_window_minutes: int | None = None
 
 
 #: Estados del feed que significan "todavía en el andén de origen". Tras salir,
@@ -463,13 +472,59 @@ def next_departures(
     live: dict[str, LiveTrain],
     query: DepartureQuery,
 ) -> tuple[Departure, ...]:
-    """Próximas salidas, ordenadas por hora prevista."""
+    """Próximas salidas, ordenadas por hora prevista.
+
+    Cuántas: las ``query.limit`` primeras o, con ``query.board_window_minutes``,
+    la ventana más la próxima por destino (ver :func:`_board_cut`).
+    """
+    return _board_cut(_all_departures(scheduled, live, query), query, query.limit)
+
+
+def _board_cut(salidas: Sequence[Departure], query: DepartureQuery, cupo: int) -> tuple[Departure, ...]:
+    """Qué salidas de ``salidas`` (ya ordenadas) entran en el tablón, sin reordenar.
+
+    Sin ventana: las ``cupo`` primeras, como siempre. Con ventana (RB-017):
+
+    1. La próxima salida de cada destino, para que el filtro por sentido de la
+       web siempre tenga algo que enseñar si hay tren en el horizonte. Se salta
+       un suprimido: lo útil es la próxima que SÍ sale (si un destino solo tiene
+       suprimidos, se garantiza el primero, que dice SUPRIMIDO).
+    2. Todas las que caen en la ventana, de la más próxima a la más lejana,
+       hasta llenar el ``cupo``, que es duro.
+    """
+    if cupo <= 0:
+        return ()
+    ventana = query.board_window_minutes
+    if ventana is None:
+        return tuple(salidas[:cupo])
+
+    proxima: dict[str, int] = {}
+    for i, d in enumerate(salidas):
+        if d.destination is None:
+            continue
+        actual = proxima.get(d.destination)
+        if actual is None or (salidas[actual].cancelled and not d.cancelled):
+            proxima[d.destination] = i
+    elegidas = set(sorted(proxima.values())[:cupo])
+    for i, d in enumerate(salidas):
+        if len(elegidas) >= cupo:
+            break
+        if d.minutes_until <= ventana:
+            elegidas.add(i)
+    return tuple(d for i, d in enumerate(salidas) if i in elegidas)
+
+
+def _all_departures(
+    scheduled: list[ScheduledStop],
+    live: dict[str, LiveTrain],
+    query: DepartureQuery,
+) -> list[Departure]:
+    """Todas las salidas del horizonte ``window_minutes``, ordenadas por hora prevista."""
     now_minutes = query.now_minutes
     service_prefix = query.service_prefix
     destination = query.destination
     window_minutes = query.window_minutes
     grace_minutes = query.grace_minutes
-    limit = query.limit
     salidas: list[Departure] = []
 
     for stop in scheduled:
@@ -567,7 +622,7 @@ def next_departures(
         )
 
     salidas.sort(key=lambda d: parse_hhmm_to_minutes(d.expected_hhmm))
-    return tuple(salidas[:limit])
+    return salidas
 
 
 def _route_groups_ending_here(scheduled: list[ScheduledStop]) -> frozenset[str]:
@@ -657,8 +712,9 @@ def board_departures(
 
     Sin especiales en la estación devuelve exactamente :func:`next_departures`.
     Con ellos, los especiales tienen prioridad (están en el andén o llegando: es
-    el dato más inmediato del tablón) y el resto del cupo lo llena el horario;
-    nunca se pasa de ``query.limit``.
+    el dato más inmediato del tablón) y el resto del cupo lo llena el horario
+    con el mismo criterio (corte clásico o ventana + próxima por destino,
+    RB-017); nunca se pasa de ``query.limit``.
 
     Con ``query.destination`` no se incluye ningún especial: su destino es
     desconocido y el dominio no afirma que vaya hacia donde se ha pedido. (La web
@@ -668,7 +724,8 @@ def board_departures(
     aparte (normalmente ``unconfirmed``): el feed no los relaciona y no hay forma
     segura de deduplicarlos. Ver RB-006.
     """
-    programadas = next_departures(scheduled, live, query)
+    todas = _all_departures(scheduled, live, query)
+    programadas = _board_cut(todas, query, query.limit)
     if query.destination:
         return programadas
     especiales = live_special_departures(
@@ -678,7 +735,7 @@ def board_departures(
     if not especiales:
         return programadas
     hueco = max(query.limit - len(especiales), 0)
-    combinadas = [*especiales, *programadas[:hueco]]
+    combinadas = [*especiales, *_board_cut(todas, query, hueco)]
     combinadas.sort(key=lambda d: d.minutes_until)
     return tuple(combinadas)
 

@@ -143,6 +143,13 @@ ORIGIN_ESTIMATE_ROUTES = frozenset(
 #: (``horarios/1030J.json``). Estaban empaquetados en la imagen y caducaron sin
 #: que nadie lo viera: cada regeneracion exigia reconstruir el contenedor, asi
 #: que en la practica no se regeneraban. Desde el bucket basta con subirlos.
+#: Tablón por ventana (RB-017): todas las salidas previstas en los próximos
+#: BOARD_WINDOW_MINUTES, más la próxima de cada destino hasta el horizonte de
+#: 2 h, con un tope duro de BOARD_MAX_DEPARTURES por estación. El corte fijo de
+#: 10 cubría ~7 minutos en Chamartín y dejaba fuera trenes a punto de salir
+#: (04/11/2026: el 20460 a Parla de las 13:47).
+BOARD_WINDOW_MINUTES = 60
+BOARD_MAX_DEPARTURES = 60
 SCHEDULES_PREFIX = os.environ.get("SCHEDULES_PREFIX", "horarios")
 MADRID_TZ = ZoneInfo("Europe/Madrid")
 
@@ -508,7 +515,8 @@ def _build_boards(
         salidas = board_departures(
             horario, live_tablon,
             DepartureQuery(
-                now_minutes=minutos, service_prefix=servicio, limit=10,
+                now_minutes=minutos, service_prefix=servicio,
+                limit=BOARD_MAX_DEPARTURES, board_window_minutes=BOARD_WINDOW_MINUTES,
                 # Estimar desde el entrante SOLO con datos frescos (RB-007).
                 estimate_from_inbound=fresco,
                 estimate_excluded_routes=INBOUND_ESTIMATE_EXCLUDED_ROUTES,
