@@ -194,3 +194,44 @@ def test_viaje_no_publicado_no_dice_sin_datos() -> None:
     assert "programado · Renfe aún no lo publica" in l20478
     assert "sin datos en vivo" not in l20478
     assert "sin datos en vivo" in l20476, "dentro de la ventana, faltar SI es anomalia"
+
+
+# --- RB-017: la lista corta no esconde la próxima salida de ningún sentido ------
+
+
+def _chamartin_bot() -> dict:
+    otros = ["Alcalá de Henares", "Madrid-Aeropuerto T4", "Aranjuez"]
+    salidas = [
+        {"t": f"13:{43 + i // 3}", "eta": f"13:{43 + i // 3}", "route": "C3", "dest": otros[i % 3],
+         "train": f"2200{i}", "delay": 0, "platform": "3", "in": i // 3, "live": True}
+        for i in range(8)
+    ]
+    salidas.append({"t": "13:47", "eta": "13:47", "route": "C4b", "dest": "Parla", "train": "20460",
+                    "delay": 0, "platform": "6", "in": 4, "live": True})
+    salidas.append({"t": "13:48", "eta": "13:48", "route": "C3", "dest": "Aranjuez", "train": "22099",
+                    "delay": 0, "platform": "3", "in": 5, "live": True})
+    salidas.append({"t": "14:55", "eta": "14:55", "route": "C4b", "dest": "Colmenar Viejo",
+                    "train": "20555", "delay": None, "platform": None, "in": 72, "live": False})
+    return {"stations": {"17000": {"destinations": [*otros, "Colmenar Viejo", "Parla"],
+                                   "departures": salidas}}}
+
+
+CHAMARTIN = Station("17000", "Madrid-Chamartín-Clara Campoamor", 40.4721, -3.6825)
+
+
+def test_proximos_en_chamartin_no_esconde_el_20460_a_parla() -> None:
+    r = handle_update(_msg("/proximos chamartin"),
+                      BotContext(stations=[CHAMARTIN], boards=_chamartin_bot()))
+    assert r.reply is not None
+    t = r.reply.text
+    assert "20460" in t and "Parla" in t
+    assert "20555" in t, "la próxima a Colmenar, aunque salga en 72 min"
+    assert "22099" not in t, "Aranjuez ya tiene su próxima en la lista corta"
+    # La lista detallada sigue siendo corta: 6 salidas con su línea de andén.
+    assert t.count("Andén <b>") == 6
+
+
+def test_sin_sentidos_ocultos_no_se_anade_nada() -> None:
+    r = _run(_msg("/proximos Tres Cantos"))
+    assert r.reply is not None
+    assert "Siguiente por sentido" not in r.reply.text

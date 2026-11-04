@@ -15,6 +15,10 @@ from cercanias_domain.station_view import Station, nearest_stations
 
 MAX_FEEDBACK_CHARS = 1000
 
+#: Salidas que el bot pinta con detalle (andén, estado, avisos). Lista corta a
+#: propósito: es un mensaje de Telegram, no el tablón entero.
+BOT_DETAILED_DEPARTURES = 6
+
 AYUDA = (
     "<b>Cercanías Madrid</b>\n\n"
     "• <b>/proximos <i>estación</i></b> — próximas salidas con andén y destino\n"
@@ -112,6 +116,33 @@ def format_departure(d: dict[str, Any]) -> str:
     return "\n".join([cabecera, *avisos])
 
 
+def _next_per_destination_hidden(salidas: list[dict[str, Any]], shown: int) -> list[dict[str, Any]]:
+    """Próxima salida de cada destino que NO entra en las ``shown`` primeras (RB-017).
+
+    En Chamartín seis salidas cubren unos 4 minutos: sin esto, el 20460 a Parla
+    de las 13:47 no salía en el bot aunque fuese el próximo a Parla. Se salta un
+    suprimido si hay otra salida después, igual que el tablón.
+    """
+    vistos = {d.get("dest") for d in salidas[:shown] if not d.get("cancelled")}
+    proxima: dict[str, dict[str, Any]] = {}
+    for d in salidas[shown:]:
+        dest = d.get("dest")
+        if not dest or dest in vistos or d.get("special"):
+            continue
+        actual = proxima.get(dest)
+        if actual is None or (actual.get("cancelled") and not d.get("cancelled")):
+            proxima[dest] = d
+    return [d for d in salidas[shown:] if any(d is p for p in proxima.values())]
+
+
+def _format_compact(d: dict[str, Any]) -> str:
+    status = departure_status(d)
+    hora = f"{'≈ ' if status.approximate else ''}{d['eta']}"
+    anden = f" · andén {d['platform']}" if d.get("platform") else ""
+    return (f"• <b>{hora}</b> → {d.get('dest')} · {d.get('route', '')} tren "
+            f"{d.get('train', '')}{anden} · {status.label}")
+
+
 def format_departures(station: Station, salidas: list[dict[str, Any]], destinos: list[str]) -> str:
     if not salidas:
         return f"<b>{station.name}</b>\nNo hay salidas programadas en las próximas 2 horas."
@@ -119,7 +150,11 @@ def format_departures(station: Station, salidas: list[dict[str, Any]], destinos:
     if len(destinos) > 1:
         lineas.append(f"<i>Sentidos: {' · '.join(destinos)}</i>")
     lineas.append("")
-    lineas.extend(format_departure(d) for d in salidas[:6])
+    lineas.extend(format_departure(d) for d in salidas[:BOT_DETAILED_DEPARTURES])
+    ocultas = _next_per_destination_hidden(salidas, BOT_DETAILED_DEPARTURES)
+    if ocultas:
+        lineas.append("\n<i>Siguiente por sentido:</i>")
+        lineas.extend(_format_compact(d) for d in ocultas)
     lineas.append("\n<i>Andén y retraso vienen del feed en vivo; si el tren aún no "
                   "está localizado, no se muestran.</i>")
     return "\n".join(lineas)

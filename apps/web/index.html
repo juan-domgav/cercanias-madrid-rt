@@ -232,6 +232,9 @@ function renderTrains() {
     : "";
 
   const salidas = (est.departures || []).filter(d => d.special || !sentidoFiltro || d.dest === sentidoFiltro);
+  // RB-017: boards.json trae la ventana de la próxima hora MÁS la próxima salida
+  // de cada destino dentro de las 2 h. Por eso, con un sentido elegido, una lista
+  // vacía sí significa que no hay salida a ese destino en las próximas 2 h.
   if (!salidas.length) {
     box.innerHTML = chips + `<div class="empty">No hay salidas programadas en las próximas 2 h.</div>`;
   } else {
