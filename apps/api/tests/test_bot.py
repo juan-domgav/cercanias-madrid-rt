@@ -235,3 +235,67 @@ def test_sin_sentidos_ocultos_no_se_anade_nada() -> None:
     r = _run(_msg("/proximos Tres Cantos"))
     assert r.reply is not None
     assert "Siguiente por sentido" not in r.reply.text
+
+# --- RB-018: un tren ya salido no cubre el sentido en «Siguiente por sentido» ---
+
+
+def _tres_cantos_con_colmenar_ya_salido() -> dict:
+    """Caso real 2026-11-05 15:46, Tres Cantos (17001).
+
+    Las 6 primeras incluyen el 20481 a Colmenar con ``in=-1`` (ya salió; el
+    margen de gracia lo deja en el tablón). El próximo a Colmenar, 20483
+    (16:04, ``in=18``), está en la posición 7: sin el arreglo, Colmenar contaba
+    como «visto» y «Siguiente por sentido» lo omitía.
+    """
+    salidas = [
+        {"t": "15:45", "eta": "15:45", "route": "C4a", "dest": "Parla", "train": "20284",
+         "delay": 0, "platform": "1", "in": 0, "live": True},
+        {"t": "15:45", "eta": "15:45", "route": "C4b", "dest": "Parla", "train": "20472",
+         "delay": 0, "platform": "2", "in": 0, "live": True},
+        {"t": "15:45", "eta": "15:45", "route": "C4b", "dest": "Colmenar Viejo", "train": "20481",
+         "delay": 0, "platform": "3", "in": -1, "live": True},
+        {"t": "15:57", "eta": "15:57", "route": "C4a",
+         "dest": "Alcobendas-San Sebastián de los Reyes", "train": "20279",
+         "delay": 0, "platform": "1", "in": 11, "live": True},
+        {"t": "15:58", "eta": "15:58", "route": "C4a", "dest": "Parla", "train": "20286",
+         "delay": 0, "platform": "2", "in": 12, "live": True},
+        {"t": "16:00", "eta": "16:00", "route": "C4b", "dest": "Parla", "train": "20474",
+         "delay": 0, "platform": "2", "in": 14, "live": True},
+        {"t": "16:04", "eta": "16:04", "route": "C4b", "dest": "Colmenar Viejo", "train": "20483",
+         "delay": 0, "platform": "3", "in": 18, "live": True},
+    ]
+    return {"stations": {"17001": {
+        "destinations": ["Alcobendas-San Sebastián de los Reyes", "Colmenar Viejo", "Parla"],
+        "departures": salidas,
+    }}}
+
+
+TRES_CANTOS_17001 = Station("17001", "Tres Cantos", 40.6011, -3.7098)
+
+
+def test_siguiente_por_sentido_no_omite_colmenar_si_el_de_las_6_ya_salio() -> None:
+    r = handle_update(
+        _msg("/proximos tres cantos"),
+        BotContext(stations=[TRES_CANTOS_17001], boards=_tres_cantos_con_colmenar_ya_salido()),
+    )
+    assert r.reply is not None
+    t = r.reply.text
+    assert "Siguiente por sentido" in t
+    assert "20483" in t and "Colmenar Viejo" in t
+    # El 20481 (ya salido) sigue en la lista detallada; no cuenta como cobertura.
+    assert "20481" in t
+    assert t.count("Andén <b>") == 6
+
+
+def test_saliendo_ahora_in_0_sigue_cubriendo_el_sentido() -> None:
+    """``in == 0`` («saliendo ahora») sí cubre: no hay que enseñar el siguiente."""
+    boards = _tres_cantos_con_colmenar_ya_salido()
+    boards["stations"]["17001"]["departures"][2]["in"] = 0
+    r = handle_update(
+        _msg("/proximos tres cantos"),
+        BotContext(stations=[TRES_CANTOS_17001], boards=boards),
+    )
+    assert r.reply is not None
+    assert "20483" not in r.reply.text
+    assert "Siguiente por sentido" not in r.reply.text
+

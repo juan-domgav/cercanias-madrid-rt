@@ -152,3 +152,35 @@ def test_con_destino_pedido_la_ventana_tambien_aplica() -> None:
     horario, vivos = _chamartin()
     salidas = board_departures(horario, vivos, _consulta(destination="Colmenar Viejo"), CHAMARTIN)
     assert [d.train_number for d in salidas] == ["20555"]
+
+def test_la_proxima_por_destino_salta_un_tren_ya_salido() -> None:
+    """Un tren con ``minutes_until < 0`` no cubre el sentido (RB-018).
+
+    El margen de gracia lo deja en el tablón, pero la garantía de «próxima por
+    destino» debe apuntar a la siguiente útil. ``minutes_until == 0`` sí cubre.
+    """
+    horario, vivos = _chamartin()
+    primero = next(s for s in horario if s.destination == "Colmenar Viejo")
+    assert primero.trip_id.endswith("20555C4b")
+    # Hora prevista hace 1 min → minutes_until = -1 (dentro del margen de gracia).
+    horario[horario.index(primero)] = ScheduledStop(
+        primero.trip_id, f"{AHORA // 60:02d}:{(AHORA % 60) - 1:02d}:00",
+        primero.route, primero.destination, False,
+    )
+    vivos[primero.trip_id] = LiveTrain(primero.trip_id, 0, "3", CHAMARTIN)
+
+    salidas = board_departures(horario, vivos, _consulta(), CHAMARTIN)
+    colmenar = [d for d in salidas if d.destination == "Colmenar Viejo"]
+    nums = [d.train_number for d in colmenar]
+    assert "20555" in nums and next(d.minutes_until for d in colmenar if d.train_number == "20555") < 0
+    assert "20557" in nums, "la próxima útil queda garantizada aunque caiga fuera de la ventana"
+
+    # ``minutes_until == 0`` sí cubre: no hace falta garantizar la siguiente.
+    horario[horario.index(next(s for s in horario if s.trip_id.endswith("20555C4b")))] = ScheduledStop(
+        primero.trip_id, f"{AHORA // 60:02d}:{AHORA % 60:02d}:00",
+        primero.route, primero.destination, False,
+    )
+    salidas0 = board_departures(horario, vivos, _consulta(), CHAMARTIN)
+    col0 = [d.train_number for d in salidas0 if d.destination == "Colmenar Viejo"]
+    assert col0 == ["20555"]
+
