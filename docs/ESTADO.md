@@ -1,7 +1,7 @@
 # Estado del proyecto y traspaso
 
 Documento de continuidad. Se escribe para que otra sesión pueda seguir sin
-reconstruir el contexto. **Última actualización: 2026-10-29.**
+reconstruir el contexto. **Última actualización: 2026-11-04.**
 
 ## Modo de trabajo
 
@@ -70,7 +70,57 @@ Todo esto está **medido**, no supuesto. Cada uno costó una avería o una revis
   cada enlace, no a una mediana de población. Un aviso que no aporta enseña a
   ignorar los que sí.
 
-## Despliegue actual (2026-10-29, RB-015 / PR #18)
+## Despliegue actual (2026-11-04, RB-017 / PR #22)
+
+Con el OK de Juan (04/11, 20:48 Madrid): PR #22 («fix(tablones): ventana de
+60 min + próxima salida por destino (RB-017)», head `02bac84`, CI verde, ya al
+día con `main`) marcado listo y mergeado como `e25a41d` (20:50:04 Madrid), con
+merge commit como los PR anteriores. En el merge: ruff, mypy y pytest verdes
+(631 passed, 2 skipped, cobertura 98 %).
+
+Desde un `git archive` limpio de `e25a41d`, **sin** banderas de configuración:
+- `cercanias-ingesta`: `gcloud run jobs deploy cercanias-ingesta --source .`
+  (listo a las 20:51:50 Madrid, generación 22).
+- `cercanias-api`: `gcloud run deploy cercanias-api --source .` (revisión
+  `cercanias-api-00009-tft`, 100 % del tráfico desde las 20:53:55 Madrid).
+
+Diff del `describe` antes/después en los dos: sólo la imagen y metadatos
+(generación, `resourceVersion`, operación, build). Env, secretos (Telegram y
+webhooks), SA, recursos, comando y Scheduler iguales. `cercanias-horarios` y
+`cercanias-telegram-ops` **no** se tocan (siguen en `277af301`, PR #20): RB-017
+no los necesita. `cercanias-telegram-ops-tick` sigue en pausa (modo webhook).
+Web sin cambios (el PR sólo añade un comentario en `index.html`).
+
+| Pieza | Ahora | Rollback |
+|---|---|---|
+| Job `cercanias-ingesta` | `cercanias-ingesta@sha256:b7a36fd0…daee806d` (PR #22, `e25a41d`), `ARCHIVAR_CANCELACIONES=1`, `ARCHIVAR_AVISOS=1` | `gcloud run jobs update cercanias-ingesta --region europe-southwest1 --project cercanias-en-hora --image europe-southwest1-docker.pkg.dev/cercanias-en-hora/cloud-run-source-deploy/cercanias-ingesta@sha256:277af301d2ea95b5ac1cdaf96583c24344b174c898039f90e3060c34946a7d92` (PR #20) |
+| API `cercanias-api` | revisión `cercanias-api-00009-tft` (`cercanias-api@sha256:3323656b…7f243f92b9`) | `gcloud run services update-traffic cercanias-api --region europe-southwest1 --project cercanias-en-hora --to-revisions cercanias-api-00008-k9s=100` (imagen `cercanias-api@sha256:d571e0dde3b698f66b5297acb9006e84f9cba5d8e55c1faa7f6657731fdff4dd`, PR #20) |
+| Jobs `cercanias-horarios`, `cercanias-telegram-ops` | `cercanias-ingesta@sha256:277af301…46a7d92` (PR #20), sin cambios | — |
+
+Ingesta: `europe-southwest1-docker.pkg.dev/cercanias-en-hora/cloud-run-source-deploy/cercanias-ingesta@sha256:b7a36fd000c1d6857d79059ce004c8713b75cc606b920d7fef020dd9daee806d`.
+API: `europe-southwest1-docker.pkg.dev/cercanias-en-hora/cloud-run-source-deploy/cercanias-api@sha256:3323656b49245c5680a96b94b7f495d7bb971fd1cd82e454018758f7243f92b9`.
+
+**Cambio (RB-017):** los tablones de `boards.json` ya no se cortan en 10
+salidas: todas las previstas en los próximos 60 min más la próxima no suprimida
+de cada destino dentro de 2 h, con tope duro de 60 por estación. El bot sigue
+con 6 salidas detalladas y añade «Siguiente por sentido:». Runbook:
+`docs/runbooks/RB-017-tablon-cortado.md`.
+
+Verificación (20:51–20:57 Madrid): ejecuciones con la imagen nueva OK, sin
+ninguna línea `severity>=ERROR` en la ingesta ni en la API. `boards.json` fresco
+(20:56:59), 93 estaciones, ~1.200 salidas (antes ~850); Chamartín (17000) 44
+salidas (ventana hasta +59 min y la próxima a Atocha y a Getafe a +87/+88 min),
+Atocha Cercanías (18000) 60 (tope; ventana hasta +52 min y Getafe a +102 min).
+Todos los destinos con tren en <2 h según `horarios/1007X.json` están en el
+tablón; en Atocha faltan sólo T4 y Nuevos Ministerios, sin tren en 2 h.
+Tamaño publicado 21,3–21,8 KB gzip (≈ 667 KB en claro). Snapshot <60 s, sin
+`degraded` ni `stale_since`, salud toda `ok`. `GET /health` → 200
+`{"ok": true}`. Webhook de ops (`getWebhookInfo`) sigue en
+`…/telegram/ops-webhook`, sin errores ni pendientes. `/proximos chamartin`
+pintado en local con el `boards.json` en vivo acaba en «Siguiente por sentido:»
+con los 9 destinos que no caben en las 6 primeras.
+
+## Despliegue de 2026-10-29 (RB-015 / PR #18)
 
 Con el OK de Juan (29/10): PR #18 («fix(health): delay_coverage excluye viajes
 suprimidos (RB-015)», commit `3009d3c`) mergeado como `8964b0c` (18:21:50
@@ -106,7 +156,7 @@ retraso publicado (32 suprimidos excluidos)», `n_cancelados: 32`. `boards.json`
 fresco (90 estaciones con salidas, `schedule_days_left = 29`,
 `departures_contradicting_live = 0`).
 
-## Despliegue anterior (2026-10-27, RB-014 / PR #15)
+## Despliegue de 2026-10-27 (RB-014 / PR #15)
 
 Con el OK de Juan (27/10, 20:02 Madrid): PR #15 mergeado como `374c116`
 (20:04), `cercanias-ingesta` reconstruido desde un `git archive` limpio de
