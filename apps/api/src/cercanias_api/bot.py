@@ -116,14 +116,28 @@ def format_departure(d: dict[str, Any]) -> str:
     return "\n".join([cabecera, *avisos])
 
 
+def _covers_destination(d: dict[str, Any]) -> bool:
+    """¿Esta salida cubre su destino para «Siguiente por sentido»?
+
+    Un suprimido no cubre (RB-017). Un tren que ya ha salido (``in < 0``) tampoco
+    (RB-018): sigue en el tablón por el margen de gracia, pero el andén ya no lo
+    ofrece. ``in == 0`` («saliendo ahora») sí cubre: aún es la próxima útil.
+    """
+    if d.get("cancelled"):
+        return False
+    minutos = d.get("in")
+    return not isinstance(minutos, (int, float)) or minutos >= 0
+
+
 def _next_per_destination_hidden(salidas: list[dict[str, Any]], shown: int) -> list[dict[str, Any]]:
     """Próxima salida de cada destino que NO entra en las ``shown`` primeras (RB-017).
 
     En Chamartín seis salidas cubren unos 4 minutos: sin esto, el 20460 a Parla
     de las 13:47 no salía en el bot aunque fuese el próximo a Parla. Se salta un
-    suprimido si hay otra salida después, igual que el tablón.
+    suprimido si hay otra salida después, igual que el tablón. Un tren ya
+    salido (``in < 0``) tampoco cubre el sentido (RB-018).
     """
-    vistos = {d.get("dest") for d in salidas[:shown] if not d.get("cancelled")}
+    vistos = {d.get("dest") for d in salidas[:shown] if _covers_destination(d)}
     proxima: dict[str, dict[str, Any]] = {}
     for d in salidas[shown:]:
         dest = d.get("dest")

@@ -487,8 +487,9 @@ def _board_cut(salidas: Sequence[Departure], query: DepartureQuery, cupo: int) -
 
     1. La próxima salida de cada destino, para que el filtro por sentido de la
        web siempre tenga algo que enseñar si hay tren en el horizonte. Se salta
-       un suprimido: lo útil es la próxima que SÍ sale (si un destino solo tiene
-       suprimidos, se garantiza el primero, que dice SUPRIMIDO).
+       un tren ya salido (``minutes_until < 0``, RB-018) y un suprimido: lo útil
+       es la próxima que SÍ sale (si un destino solo tiene suprimidos, se
+       garantiza el primero, que dice SUPRIMIDO).
     2. Todas las que caen en la ventana, de la más próxima a la más lejana,
        hasta llenar el ``cupo``, que es duro.
     """
@@ -498,9 +499,12 @@ def _board_cut(salidas: Sequence[Departure], query: DepartureQuery, cupo: int) -
     if ventana is None:
         return tuple(salidas[:cupo])
 
+    # La «próxima» útil por destino: no cuenta un tren ya salido (minutes_until
+    # < 0; el margen de gracia lo deja en el tablón, RB-018) ni, si hay otra, un
+    # suprimido. ``minutes_until == 0`` («saliendo ahora») sí cubre el sentido.
     proxima: dict[str, int] = {}
     for i, d in enumerate(salidas):
-        if d.destination is None:
+        if d.destination is None or d.minutes_until < 0:
             continue
         actual = proxima.get(d.destination)
         if actual is None or (salidas[actual].cancelled and not d.cancelled):
