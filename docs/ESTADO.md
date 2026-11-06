@@ -1,7 +1,7 @@
 # Estado del proyecto y traspaso
 
 Documento de continuidad. Se escribe para que otra sesión pueda seguir sin
-reconstruir el contexto. **Última actualización: 2026-10-29.**
+reconstruir el contexto. **Última actualización: 2026-11-06.**
 
 ## Modo de trabajo
 
@@ -70,7 +70,57 @@ Todo esto está **medido**, no supuesto. Cada uno costó una avería o una revis
   cada enlace, no a una mediana de población. Un aviso que no aporta enseña a
   ignorar los que sí.
 
-## Despliegue actual (2026-10-29, RB-015 / PR #18)
+## Despliegue actual (2026-11-06, RB-018 / PR #24)
+
+Con el OK de Juan (06/11, 07:40 Madrid): PR #24 («fix(bot): un tren ya salido
+no cubre el sentido en Siguiente por sentido (RB-018)», head `b389afe`, CI
+verde, ya al día con `main`) marcado listo y mergeado como `c3948b4` (07:41:58
+Madrid), con merge commit como los PR anteriores.
+
+Desde un `git archive` limpio de `c3948b4`, **sin** banderas de configuración:
+- `cercanias-ingesta`: `gcloud run jobs deploy cercanias-ingesta --source .`
+  (listo a las 07:44:08 Madrid, generación 23).
+- `cercanias-api`: `gcloud run deploy cercanias-api --source .` (revisión
+  `cercanias-api-00010-gdd`, 100 % del tráfico desde las 07:46:04 Madrid).
+
+Diff del `describe` antes/después en los dos: sólo la imagen y metadatos
+(generación, `resourceVersion`, operación, build). Env, secretos (Telegram y
+webhooks), SA, recursos, comando y Scheduler iguales. `cercanias-horarios` y
+`cercanias-telegram-ops` **no** se tocan (siguen en `277af301`, PR #20).
+`cercanias-telegram-ops-tick` sigue en pausa (modo webhook). Web sin cambios.
+
+| Pieza | Ahora | Rollback |
+|---|---|---|
+| Job `cercanias-ingesta` | `cercanias-ingesta@sha256:8391cba9…489fcd00c` (PR #24, `c3948b4`), `ARCHIVAR_CANCELACIONES=1`, `ARCHIVAR_AVISOS=1` | `gcloud run jobs update cercanias-ingesta --region europe-southwest1 --project cercanias-en-hora --image europe-southwest1-docker.pkg.dev/cercanias-en-hora/cloud-run-source-deploy/cercanias-ingesta@sha256:b7a36fd000c1d6857d79059ce004c8713b75cc606b920d7fef020dd9daee806d` (PR #22) |
+| API `cercanias-api` | revisión `cercanias-api-00010-gdd` (`cercanias-api@sha256:57711bac…a6d2a64f`) | `gcloud run services update-traffic cercanias-api --region europe-southwest1 --project cercanias-en-hora --to-revisions cercanias-api-00009-tft=100` (imagen `cercanias-api@sha256:3323656b49245c5680a96b94b7f495d7bb971fd1cd82e454018758f7243f92b9`, PR #22) |
+| Jobs `cercanias-horarios`, `cercanias-telegram-ops` | `cercanias-ingesta@sha256:277af301…46a7d92` (PR #20), sin cambios | — |
+
+Ingesta: `europe-southwest1-docker.pkg.dev/cercanias-en-hora/cloud-run-source-deploy/cercanias-ingesta@sha256:8391cba91205bc0c06c101bb868b2f339f00e6ac3de91d8698b91cf489fcd00c`.
+API: `europe-southwest1-docker.pkg.dev/cercanias-en-hora/cloud-run-source-deploy/cercanias-api@sha256:57711baca1b1d4ecb42da5e47b522321cb7155c01ecb72087b18ff7fa6d2a64f`.
+
+**Cambio (RB-018):** el bot y `_board_cut` del dominio dejan de contar una
+salida con `in < 0` (ya salió) como cobertura de su destino. `in == 0`
+(«saliendo ahora») sí cubre. Así «Siguiente por sentido» muestra el próximo tren
+útil (p. ej. Tres Cantos → Colmenar) cuando entre las 6 detalladas hay uno ya
+salido al mismo destino. Runbook:
+`docs/runbooks/RB-018-siguiente-por-sentido-ya-salido.md`.
+
+Verificación (07:46–07:48 Madrid): API `/health` 200 `ok` (113 trenes, servicio
+1009V). Webhook ops sigue en
+`…/telegram/ops-webhook` (`getWebhookInfo` pending 0, sin `last_error`).
+Ejecuciones gen 23 OK (`4p8l6`, `k5zmr`, `fbh8c`). `boards.json` fresco; 0
+destinos del tablón con solo trenes `in < 0` cuando hay futuro. En Tres Cantos
+(17001), con el 20423 → Colmenar a `in=-2` entre las 6, el formateo local del
+bot lista el 20425 bajo «Siguiente por sentido». Configs en
+`/workspace/rollout-pr24/`.
+
+Nota: el PR de docs #23 (ESTADO de RB-017 / PR #22) sigue abierto y sin mergear;
+este documento salta al despliegue de PR #24. El rollback de API/ingesta apunta
+a las imágenes de PR #22 (`00009-tft` / `b7a36fd0…`), que son las que había en
+producción justo antes de este despliegue.
+
+## Despliegue anterior (2026-10-29, RB-015 / PR #18)
+
 
 Con el OK de Juan (29/10): PR #18 («fix(health): delay_coverage excluye viajes
 suprimidos (RB-015)», commit `3009d3c`) mergeado como `8964b0c` (18:21:50
