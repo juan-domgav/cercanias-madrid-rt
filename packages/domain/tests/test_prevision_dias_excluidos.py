@@ -150,9 +150,11 @@ def test_entrada_malformada_en_fichero_dice_el_fichero(tmp_path: Path) -> None:
 
 # --- la lista versionada ------------------------------------------------------
 
-def test_la_lista_versionada_carga_y_contiene_la_huelga_del_29_10() -> None:
+def test_la_lista_versionada_carga_y_contiene_las_huelgas() -> None:
     assert DEFAULT_EXCLUDED_DAYS_PATH.name == "previsto_dias_excluidos.json"
     assert DEFAULT_EXCLUDED_DAYS_PATH.is_file()
     dias = load_excluded_days()
     assert ExcludedDay(HUELGA, "huelga Renfe: horario reducido, 302 trenes suprimidos") in dias
+    assert ExcludedDay(date(2026, 11, 10), "huelga Renfe") in dias
+    assert ExcludedDay(date(2026, 11, 12), "huelga Renfe") in dias
     assert list(dias) == sorted(dias, key=lambda d: d.date)
