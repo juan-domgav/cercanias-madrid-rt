@@ -13,6 +13,7 @@ from cercanias_api import main
 from fastapi.testclient import TestClient
 
 from cercanias_storage.publishers import LocalSnapshotPublisher
+from cercanias_worker import ops_reports as rep
 from cercanias_worker import telegram_ops_poll as ops
 
 OPS_SECRET = "ops-secreto-de-prueba"
@@ -345,3 +346,90 @@ def test_foto_sin_pie_usa_marcador(
     item = json.loads(web.read(ops.INBOX_KEY) or b"")["items"][0]
     assert (item["text"], item["type"], item["file_id"]) == ("[foto]", "photo", "AgACsolo")
     assert len(fake.sent()) == 1
+
+
+# --- reportes de viajeros (RB-020) -------------------------------------------
+
+RIDER = 111222333
+GROUP = -1001234567890
+
+
+@pytest.fixture
+def con_reportes(
+    e2e: tuple[TestClient, _FakeTelegram, LocalSnapshotPublisher],
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> tuple[TestClient, _FakeTelegram, LocalSnapshotPublisher, LocalSnapshotPublisher]:
+    client, fake, web = e2e
+    privado = LocalSnapshotPublisher(tmp_path / "privado")
+    monkeypatch.setattr(main, "PRIVATE_BUCKET", "bucket-privado-de-prueba")
+    monkeypatch.setattr(main, "GcsSnapshotPublisher", lambda _bucket: privado)
+    return client, fake, web, privado
+
+
+def _reportes(privado: LocalSnapshotPublisher) -> list[dict[str, Any]]:
+    return [json.loads(privado.read(k) or b"") for k in sorted(privado.list_keys(rep.REPORTS_PREFIX))]
+
+
+def test_viajero_por_privado_queda_en_el_bucket_privado(
+    con_reportes: tuple[TestClient, _FakeTelegram, LocalSnapshotPublisher, LocalSnapshotPublisher],
+) -> None:
+    client, fake, web, privado = con_reportes
+    upd = {"update_id": 90, "message": {"message_id": 7, "chat": {"id": RIDER, "type": "private"},
+                                        "from": {"id": RIDER, "username": "ana"}, "text": "estado"}}
+    assert client.post(URL, json=upd, headers=_h(OPS_SECRET)).status_code == 200
+    [r] = _reportes(privado)
+    assert (r["from_username"], r["text"], r["source"]) == ("ana", "estado", "private")
+    assert web.read(ops.INBOX_KEY) is None, "nada de viajeros en el bucket público"
+    [enviado] = fake.sent()
+    assert enviado["text"] == rep.ACK_RIDER and enviado["chat_id"] == RIDER
+
+
+def test_mencion_en_grupo_y_bot_id_del_token(
+    con_reportes: tuple[TestClient, _FakeTelegram, LocalSnapshotPublisher, LocalSnapshotPublisher],
+) -> None:
+    """La respuesta al bot se reconoce por su id, que sale del token (sin registrarlo)."""
+    client, fake, _, privado = con_reportes
+    bot_id = int(TOKEN.split(":", maxsplit=1)[0])
+    upd = {"update_id": 91, "message": {
+        "message_id": 8, "chat": {"id": GROUP, "type": "supergroup", "title": "Comunidad"},
+        "from": {"id": RIDER}, "text": "sigue igual",
+        "reply_to_message": {"message_id": 1, "from": {"id": bot_id, "is_bot": True}}}}
+    assert client.post(URL, json=upd, headers=_h(OPS_SECRET)).status_code == 200
+    assert _reportes(privado)[0]["chat_title"] == "Comunidad"
+    assert fake.sent()[0]["reply_parameters"]["message_id"] == 8
+
+
+def test_charla_de_grupo_se_ignora(
+    con_reportes: tuple[TestClient, _FakeTelegram, LocalSnapshotPublisher, LocalSnapshotPublisher],
+) -> None:
+    client, fake, _, privado = con_reportes
+    upd = {"update_id": 92, "message": {"message_id": 9, "chat": {"id": GROUP, "type": "supergroup"},
+                                        "from": {"id": RIDER}, "text": "buenos días"}}
+    assert client.post(URL, json=upd, headers=_h(OPS_SECRET)).status_code == 200
+    assert fake.calls == [] and _reportes(privado) == []
+
+
+def test_fallo_del_almacen_privado_pide_reintento(
+    con_reportes: tuple[TestClient, _FakeTelegram, LocalSnapshotPublisher, LocalSnapshotPublisher],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, fake, _, privado = con_reportes
+
+    def roto(*_a: Any, **_k: Any) -> str:
+        raise RuntimeError("GCS caído")
+
+    monkeypatch.setattr(privado, "publish", roto)
+    upd = {"update_id": 93, "message": {"message_id": 10, "chat": {"id": RIDER, "type": "private"},
+                                        "from": {"id": RIDER}, "text": "hola"}}
+    assert client.post(URL, json=upd, headers=_h(OPS_SECRET)).status_code == 503
+    assert fake.sent() == []
+
+
+@pytest.mark.parametrize(("bucket", "flag"), [("", True), ("privado", False)],
+                         ids=["sin-bucket-privado", "apagado"])
+def test_sin_bucket_privado_o_apagado_no_hay_reportes(
+    monkeypatch: pytest.MonkeyPatch, bucket: str, flag: bool,
+) -> None:
+    monkeypatch.setattr(main, "PRIVATE_BUCKET", bucket)
+    monkeypatch.setattr(main, "OPS_RIDER_REPORTS", flag)
+    assert main._reports_config() is None

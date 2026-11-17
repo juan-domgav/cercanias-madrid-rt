@@ -21,6 +21,8 @@ el planificador.
   o un marcador (``[foto]``), y se añaden ``type`` y ``file_id`` (el de mayor
   resolución). Antes se descartaban en silencio con un 200. Un ``file_id`` no
   sirve sin el token del bot. Los items de texto no cambian de forma.
+- Viajeros (solo webhook, con bucket privado): ver :mod:`cercanias_worker.ops_reports`
+  (RB-020). Sus mensajes nunca van al buzón público ni ejecutan comandos.
 """
 
 from __future__ import annotations
@@ -30,13 +32,16 @@ import os
 import sys
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol, runtime_checkable
 
 import httpx
 
 from cercanias_storage.publishers import GcsSnapshotPublisher, PreconditionFailedError
+from cercanias_worker import ops_reports as rep
 from cercanias_worker.cloud_tick import _next_service_id, _schedule_days_left
+from cercanias_worker.ops_reports import ATTACHMENT_PLACEHOLDERS
 
 COMPONENT = "telegram-ops"
 OFFSET_KEY = "ops/telegram-offset.json"
@@ -50,18 +55,6 @@ RUN_BUDGET_S = 35.0
 DEFAULT_ALLOWED_CHAT_IDS = "5830900654"
 SCHEDULES_PREFIX = "horarios"
 ACK_UNKNOWN = "Recibido, lo paso a Cercanías Ops"
-#: Adjuntos que se guardan en el buzón: tipo de mensaje -> marcador sin pie.
-#: El orden importa: un mensaje sólo trae uno de ellos.
-ATTACHMENT_PLACEHOLDERS = {
-    "photo": "[foto]",
-    "document": "[documento]",
-    "video": "[vídeo]",
-    "animation": "[animación]",
-    "voice": "[nota de voz]",
-    "audio": "[audio]",
-    "video_note": "[vídeo]",
-    "sticker": "[sticker]",
-}
 #: Claves opcionales de un item del buzón (además de ts, update_id y text).
 INBOX_OPTIONAL_KEYS = ("type", "file_id")
 #: Reintentos de la escritura condicional del buzón si otro escribe a la vez.
@@ -177,8 +170,16 @@ class TelegramApi:
         result = self._call("getUpdates", payload)
         return [u for u in result or [] if isinstance(u, dict)]
 
-    def send_message(self, chat_id: int, text: str) -> None:
-        self._call("sendMessage", {"chat_id": chat_id, "text": text, "disable_web_page_preview": True})
+    def send_message(
+        self, chat_id: int, text: str, *, reply_to: int | None = None, thread_id: int | None = None
+    ) -> None:
+        payload: dict[str, Any] = {"chat_id": chat_id, "text": text, "disable_web_page_preview": True}
+        if reply_to is not None:
+            # Contestar EN el hilo: en un grupo, que se vea a qué mensaje responde.
+            payload["reply_parameters"] = {"message_id": reply_to, "allow_sending_without_reply": True}
+        if thread_id is not None:
+            payload["message_thread_id"] = thread_id
+        self._call("sendMessage", payload)
 
 
 def _read_json(store: Store, key: str) -> Any:
@@ -260,21 +261,6 @@ def append_inbox(store: Store, item: dict[str, Any]) -> None:
             continue
         return
     raise PreconditionFailedError(f"{INBOX_KEY}: conflicto tras {INBOX_CAS_ATTEMPTS} intentos")
-
-
-def _attachment(message: dict[str, Any]) -> tuple[str, str | None] | None:
-    """``(tipo, file_id)`` del adjunto del mensaje, o ``None`` si no trae ninguno.
-
-    De una foto Telegram manda varias resoluciones: la última es la mayor.
-    """
-    for tipo in ATTACHMENT_PLACEHOLDERS:
-        valor = message.get(tipo)
-        if isinstance(valor, list):
-            valor = valor[-1] if valor else None
-        if isinstance(valor, dict):
-            file_id = valor.get("file_id")
-            return tipo, file_id if isinstance(file_id, str) and file_id else None
-    return None
 
 
 def _age_seconds(marca: Any, now: datetime) -> int | None:
@@ -393,8 +379,14 @@ def process_update(  # noqa: PLR0913 - dependencias inyectables y opciones con n
     *,
     now: Callable[[], datetime] = lambda: datetime.now(tz=UTC),
     raise_on_inbox_error: bool = False,
+    reports: rep.ReportConfig | None = None,
 ) -> None:
     """Atiende UN update: allowlist, comando o buzón, y respuesta.
+
+    Con ``reports`` (webhook de ``cercanias-api`` con bucket privado) también se
+    aceptan reportes de viajeros: por privado de cualquiera y, en grupos, solo
+    menciones o respuestas al bot (ver :mod:`cercanias_worker.ops_reports`,
+    RB-020). Sin ``reports`` (job de sondeo) un chat ajeno se ignora como antes.
 
     Compartido por el sondeo (:func:`poll_once`) y el webhook de
     ``cercanias-api``. Por defecto nunca lanza: un fallo se registra y el update
@@ -413,12 +405,42 @@ def process_update(  # noqa: PLR0913 - dependencias inyectables y opciones con n
         return
     chat = message.get("chat")
     chat_id = chat.get("id") if isinstance(chat, dict) else None
-    if not isinstance(chat_id, int) or isinstance(chat_id, bool) or chat_id not in allowed:
+    chat_type = chat.get("type") if isinstance(chat, dict) else None
+    if not isinstance(chat_id, int) or isinstance(chat_id, bool):
         log("WARNING", "chat no permitido, se ignora", update_id=update_id, chat_id=chat_id)
         return
+    entrada = _Incoming(update_id, message, chat_id, chat_type, now())
+    # La allowlist (comandos de ops y buzón público) solo vale en chats privados:
+    # desde un grupo nunca se ejecuta nada, aunque su id estuviera en la lista.
+    if chat_id in allowed and chat_type in (None, "private"):
+        _handle_owner(api, web, entrada, raise_on_error=raise_on_inbox_error)
+    elif reports is not None and chat_type in ("private", "group", "supergroup"):
+        _handle_report(api, reports, entrada, raise_on_error=raise_on_inbox_error)
+    else:
+        log("WARNING", "chat no permitido, se ignora", update_id=update_id, chat_id=chat_id)
+
+
+@dataclass(frozen=True)
+class _Incoming:
+    """Un mensaje ya validado: update, chat y momento de llegada."""
+
+    update_id: int
+    message: dict[str, Any]
+    chat_id: int
+    chat_type: str | None
+    ahora: datetime
+
+    @property
+    def in_group(self) -> bool:
+        return self.chat_type in ("group", "supergroup")
+
+
+def _handle_owner(api: TelegramApi, web: Any, entrada: _Incoming, *, raise_on_error: bool) -> None:
+    """Chat de Juan: comandos de ops o buzón público (comportamiento de siempre)."""
+    update_id, message, chat_id = entrada.update_id, entrada.message, entrada.chat_id
     text = message.get("text")
-    adjunto = None if isinstance(text, str) and text.strip() else _attachment(message)
-    item: dict[str, Any] = {"ts": now().isoformat(), "update_id": update_id, "text": text}
+    adjunto = None if isinstance(text, str) and text.strip() else rep.attachment(message)
+    item: dict[str, Any] = {"ts": entrada.ahora.isoformat(), "update_id": update_id, "text": text}
     if adjunto is not None:
         # Captura con o sin pie: siempre al buzón (un pie «estado» es un reporte,
         # no una consulta). Antes se devolvía 200 y el mensaje se perdía.
@@ -437,17 +459,95 @@ def process_update(  # noqa: PLR0913 - dependencias inyectables y opciones con n
             append_inbox(web, item)
         except Exception as exc:
             log("ERROR", "fallo guardando en el buzón", update_id=update_id, error=str(exc))
-            if raise_on_inbox_error:
+            if raise_on_error:
                 raise InboxWriteError(f"update {update_id} sin guardar en el buzón") from None
             return
     try:
         if command is None:
             api.send_message(chat_id, ACK_UNKNOWN)
         else:
-            api.send_message(chat_id, reply_for(command, web, now()))
+            api.send_message(chat_id, reply_for(command, web, entrada.ahora))
         log("INFO", "mensaje procesado", update_id=update_id, command=command or "inbox")
     except Exception as exc:
         log("ERROR", "fallo procesando mensaje", update_id=update_id, error=str(exc))
+
+
+def _report_wanted(cfg: rep.ReportConfig, entrada: _Incoming) -> bool:
+    """¿Es un reporte? Nunca de bots; en grupo, solo menciones/respuestas al bot."""
+    autor = entrada.message.get("from")
+    if isinstance(autor, dict) and autor.get("is_bot"):
+        return False
+    if not entrada.in_group:
+        return True
+    if cfg.group_chat_ids and entrada.chat_id not in cfg.group_chat_ids:
+        log("WARNING", "grupo no permitido para reportes, se ignora",
+            update_id=entrada.update_id, chat_id=entrada.chat_id)
+        return False
+    # Charla del grupo: ni se guarda ni se registra.
+    return rep.addressed_to_bot(entrada.message, cfg.bot_id, cfg.bot_username)
+
+
+def _reply_in_thread(api: TelegramApi, entrada: _Incoming, texto: str) -> None:
+    """Contesta citando el mensaje (y en su tema, si el grupo usa temas). Nunca lanza."""
+    message = entrada.message
+    message_id = message.get("message_id")
+    hilo = message.get("message_thread_id") if message.get("is_topic_message") else None
+    try:
+        api.send_message(
+            entrada.chat_id, texto,
+            reply_to=message_id if isinstance(message_id, int) else None,
+            thread_id=hilo if isinstance(hilo, int) else None,
+        )
+    except Exception as exc:
+        log("ERROR", "fallo contestando un reporte", update_id=entrada.update_id, error=str(exc))
+
+
+def _save_report(
+    cfg: rep.ReportConfig, entrada: _Incoming, contenido: tuple[str, str, str | None]
+) -> str | None:
+    """Guarda el reporte respetando dedupe y límite. Devuelve qué contestar (o nada)."""
+    if rep.already_stored(cfg.store, entrada.ahora, entrada.update_id):
+        return None  # reentrega de Telegram: ya guardado y contestado
+    source = "group" if entrada.in_group else "private"
+    autor = entrada.message.get("from")
+    usuario = autor.get("id") if isinstance(autor, dict) else None
+    limite = rep.rate_check(cfg.store, str(usuario or entrada.chat_id), entrada.ahora)
+    if limite != rep.RATE_OK:
+        log("WARNING", "reporte de viajero por encima del límite", update_id=entrada.update_id,
+            source=source, warned=limite == rep.RATE_WARN)
+        return rep.RATE_LIMITED_RIDER if limite == rep.RATE_WARN else None
+    texto, tipo, file_id = contenido
+    informe = rep.build_report(ts=entrada.ahora, update_id=entrada.update_id, message=entrada.message,
+                               source=source, text=texto, tipo=tipo, file_id=file_id)
+    if not rep.store_report(cfg.store, informe, entrada.ahora):
+        return None
+    # Sin usuario ni texto en el log: el reporte ya está en el bucket privado.
+    log("INFO", "reporte de viajero guardado", update_id=entrada.update_id,
+        source=source, chat_type=entrada.chat_type, message_type=tipo)
+    return rep.ACK_RIDER
+
+
+def _handle_report(
+    api: TelegramApi, cfg: rep.ReportConfig, entrada: _Incoming, *, raise_on_error: bool
+) -> None:
+    """Reporte de viajero (RB-020): privado de cualquiera o mención en un grupo."""
+    if not _report_wanted(cfg, entrada):
+        return
+    contenido = rep.content(entrada.message)
+    if contenido is None:
+        return
+    if not entrada.in_group and contenido[1] == "text" and rep.is_start(contenido[0]):
+        _reply_in_thread(api, entrada, rep.WELCOME_RIDER)
+        return
+    try:
+        respuesta = _save_report(cfg, entrada, contenido)
+    except Exception as exc:
+        log("ERROR", "fallo guardando un reporte de viajero", update_id=entrada.update_id, error=str(exc))
+        if raise_on_error:
+            raise InboxWriteError(f"update {entrada.update_id}: reporte sin guardar") from None
+        return
+    if respuesta is not None:
+        _reply_in_thread(api, entrada, respuesta)
 
 
 def main() -> int:
