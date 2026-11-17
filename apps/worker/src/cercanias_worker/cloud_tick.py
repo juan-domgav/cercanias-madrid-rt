@@ -477,6 +477,20 @@ def _build_boards(
         for v in vehiculos
         if v.get("trip_id")
     }
+    # RB-019: Renfe publica la supresion (CANCELED) en trip_updates, pero un tren
+    # que no va a circular no tiene posicion. Sin esto el viaje no llegaba a
+    # LiveTrain y el tablon decia "sin datos en vivo" (huelga del 17/11/2026: 121
+    # filas del C4 sin marcar). Se anaden como suprimidos SIN posicion. Los
+    # especiales no: sin horario con que casar ni parada, no hay donde pintarlos.
+    solo_suprimidos = {
+        tid: LiveTrain(
+            tid, None, None, None, cancelled=True,
+            skips_stops=bool((skipped or {}).get(tid)), positioned=False,
+        )
+        for tid in sorted(cancelled)
+        if tid and tid not in live and not _is_special(tid)
+    }
+    live.update(solo_suprimidos)
     servicio, candidatos = _service_days(vehiculos)
 
     ahora = datetime.now(tz=MADRID_TZ)
@@ -610,6 +624,9 @@ def _build_boards(
     especiales_en_tablon = sum(
         1 for e in estaciones.values() for d in e["departures"] if d["special"]
     )
+    suprimidas = sum(
+        1 for e in estaciones.values() for d in e["departures"] if d["cancelled"]
+    )
     schedule_missing = bool(servicio) and not dia
     # Sin ningun viaje con dia de servicio (p. ej. solo circulan especiales) no
     # hay horario que cargar y las otras alertas callan: se grita aparte.
@@ -652,6 +669,10 @@ def _build_boards(
             "departures_not_published": no_publicadas,
             "departures_missing_in_window": ausentes_en_ventana,
             "departures_contradicting_live": contradictorias,
+            # RB-019: salidas marcadas SUPRIMIDO y viajes suprimidos que solo
+            # estan en trip_updates (sin posicion).
+            "departures_cancelled": suprimidas,
+            "cancelled_trips_without_position": len(solo_suprimidos),
             "departures_pending_departure": sum(
                 1 for e in estaciones.values() for d in e["departures"] if d["pending_departure"]
             ),

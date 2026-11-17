@@ -92,6 +92,9 @@ REALTIME_PENDING_DEPARTURE = "pending_departure"
 REALTIME_INBOUND_ESTIMATE = "inbound_estimate"
 REALTIME_NOT_PUBLISHED = "not_published"
 REALTIME_NO_DATA = "no_data"
+#: Suprimido (``CANCELED``) y SIN posición: sólo está en trip_updates (RB-019).
+#: Un suprimido con posición sigue siendo ``live``.
+REALTIME_CANCELLED = "cancelled"
 
 
 @dataclass(frozen=True)
@@ -154,6 +157,10 @@ class LiveTrain:
     #: ``IN_TRANSIT_TO``). Sólo lo usan los especiales: sin horario, es lo único
     #: que dice si el tren ya está en el andén o todavía llegando.
     status: str | None = None
+    #: ¿Está en vehicle_positions? ``False`` = sólo lo conocemos por trip_updates:
+    #: un viaje suprimido que no va a circular no tiene posición (huelga del
+    #: 17/11/2026, RB-019). Suprimido sí; localizado, andén o retraso, no.
+    positioned: bool = True
 
 
 @dataclass(frozen=True)
@@ -218,7 +225,10 @@ class Departure:
 
     @property
     def realtime_status(self) -> str:
-        """``live`` > ``pending_departure`` > ``inbound_estimate`` > ``not_published`` > ``no_data``."""
+        """``cancelled`` (sin posición) > ``pending_departure`` > ``live`` >
+        ``inbound_estimate`` > ``not_published`` > ``no_data``."""
+        if self.cancelled and not self.located:
+            return REALTIME_CANCELLED
         if self.pending_departure:
             return REALTIME_PENDING_DEPARTURE
         if self.located:
@@ -613,7 +623,8 @@ def _all_departures(
                 delay_minutes=retraso,
                 platform=tren.platform if tren else None,
                 minutes_until=programada + desfase - now_minutes,
-                located=tren is not None,
+                # Un suprimido que sólo está en trip_updates no está localizado.
+                located=tren is not None and tren.positioned,
                 inbound_delay_minutes=retraso_enlace,
                 unconfirmed=sin_respaldo,
                 cancelled=suprimido,

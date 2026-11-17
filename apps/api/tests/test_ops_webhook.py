@@ -314,3 +314,34 @@ def test_updates_raros_se_ignoran_sin_error(
     assert client.post(URL, json=update, headers=_h(OPS_SECRET)).status_code == 200
     assert fake.calls == []
     assert web.read(ops.INBOX_KEY) is None
+
+
+def test_foto_se_guarda_en_el_buzon_y_se_contesta(
+    e2e: tuple[TestClient, _FakeTelegram, LocalSnapshotPublisher],
+) -> None:
+    """Caso real 17/11/2026 08:58: una captura al bot de ops se descartaba en
+    silencio (200 sin buzón ni respuesta). Ahora se guarda pie + file_id y se
+    contesta como un texto."""
+    client, fake, web = e2e
+    update = {"update_id": 77, "message": {"chat": {"id": ALLOWED}, "caption": "C4b sin datos",
+              "photo": [{"file_id": "AgACmini", "width": 90, "height": 160},
+                        {"file_id": "AgACfull", "width": 1179, "height": 2556}]}}
+    r = client.post(URL, json=update, headers=_h(OPS_SECRET))
+    assert r.status_code == 200
+    items = json.loads(web.read(ops.INBOX_KEY) or b"")["items"]
+    assert [(i["update_id"], i["text"], i["type"], i["file_id"]) for i in items] == [
+        (77, "C4b sin datos", "photo", "AgACfull")]
+    assert "chat_id" not in items[0]
+    assert fake.sent() == [{"chat_id": ALLOWED, "text": ops.ACK_UNKNOWN, "disable_web_page_preview": True}]
+
+
+def test_foto_sin_pie_usa_marcador(
+    e2e: tuple[TestClient, _FakeTelegram, LocalSnapshotPublisher],
+) -> None:
+    client, fake, web = e2e
+    update = {"update_id": 78, "message": {"chat": {"id": ALLOWED},
+              "photo": [{"file_id": "AgACsolo", "width": 90, "height": 160}]}}
+    assert client.post(URL, json=update, headers=_h(OPS_SECRET)).status_code == 200
+    item = json.loads(web.read(ops.INBOX_KEY) or b"")["items"][0]
+    assert (item["text"], item["type"], item["file_id"]) == ("[foto]", "photo", "AgACsolo")
+    assert len(fake.sent()) == 1

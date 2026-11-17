@@ -17,6 +17,10 @@ el planificador.
 - Los mensajes no reconocidos van a ``ops/inbox.json`` del bucket WEB, que es
   PÚBLICO: Wall-E lo lee sin credenciales. Solo se guardan ``ts``, ``update_id``
   y ``text`` (ni chat_id ni nombre), pero el texto queda legible por cualquiera.
+- Fotos y documentos (capturas) también van al buzón: ``text`` es el pie de foto
+  o un marcador (``[foto]``), y se añaden ``type`` y ``file_id`` (el de mayor
+  resolución). Antes se descartaban en silencio con un 200. Un ``file_id`` no
+  sirve sin el token del bot. Los items de texto no cambian de forma.
 """
 
 from __future__ import annotations
@@ -46,6 +50,20 @@ RUN_BUDGET_S = 35.0
 DEFAULT_ALLOWED_CHAT_IDS = "5830900654"
 SCHEDULES_PREFIX = "horarios"
 ACK_UNKNOWN = "Recibido, lo paso a Cercanías Ops"
+#: Adjuntos que se guardan en el buzón: tipo de mensaje -> marcador sin pie.
+#: El orden importa: un mensaje sólo trae uno de ellos.
+ATTACHMENT_PLACEHOLDERS = {
+    "photo": "[foto]",
+    "document": "[documento]",
+    "video": "[vídeo]",
+    "animation": "[animación]",
+    "voice": "[nota de voz]",
+    "audio": "[audio]",
+    "video_note": "[vídeo]",
+    "sticker": "[sticker]",
+}
+#: Claves opcionales de un item del buzón (además de ts, update_id y text).
+INBOX_OPTIONAL_KEYS = ("type", "file_id")
 #: Reintentos de la escritura condicional del buzón si otro escribe a la vez.
 INBOX_CAS_ATTEMPTS = 5
 
@@ -202,9 +220,9 @@ def _inbox_with(raw: bytes | None, item: dict[str, Any]) -> bytes | None:
     lista = [i for i in items if isinstance(i, dict)] if isinstance(items, list) else []
     if any(i.get("update_id") == item["update_id"] for i in lista):
         return None
-    lista.append(
-        {"ts": item["ts"], "update_id": item["update_id"], "text": str(item["text"])[:INBOX_MAX_CHARS]}
-    )
+    nuevo = {"ts": item["ts"], "update_id": item["update_id"], "text": str(item["text"])[:INBOX_MAX_CHARS]}
+    nuevo.update({k: str(item[k]) for k in INBOX_OPTIONAL_KEYS if item.get(k)})
+    lista.append(nuevo)
     return json.dumps({"items": lista[-INBOX_MAX_ITEMS:]}, ensure_ascii=False).encode("utf-8")
 
 
@@ -242,6 +260,21 @@ def append_inbox(store: Store, item: dict[str, Any]) -> None:
             continue
         return
     raise PreconditionFailedError(f"{INBOX_KEY}: conflicto tras {INBOX_CAS_ATTEMPTS} intentos")
+
+
+def _attachment(message: dict[str, Any]) -> tuple[str, str | None] | None:
+    """``(tipo, file_id)`` del adjunto del mensaje, o ``None`` si no trae ninguno.
+
+    De una foto Telegram manda varias resoluciones: la última es la mayor.
+    """
+    for tipo in ATTACHMENT_PLACEHOLDERS:
+        valor = message.get(tipo)
+        if isinstance(valor, list):
+            valor = valor[-1] if valor else None
+        if isinstance(valor, dict):
+            file_id = valor.get("file_id")
+            return tipo, file_id if isinstance(file_id, str) and file_id else None
+    return None
 
 
 def _age_seconds(marca: Any, now: datetime) -> int | None:
@@ -384,12 +417,24 @@ def process_update(  # noqa: PLR0913 - dependencias inyectables y opciones con n
         log("WARNING", "chat no permitido, se ignora", update_id=update_id, chat_id=chat_id)
         return
     text = message.get("text")
-    if not isinstance(text, str) or not text.strip():
+    adjunto = None if isinstance(text, str) and text.strip() else _attachment(message)
+    item: dict[str, Any] = {"ts": now().isoformat(), "update_id": update_id, "text": text}
+    if adjunto is not None:
+        # Captura con o sin pie: siempre al buzón (un pie «estado» es un reporte,
+        # no una consulta). Antes se devolvía 200 y el mensaje se perdía.
+        tipo, file_id = adjunto
+        pie = message.get("caption")
+        text = pie if isinstance(pie, str) and pie.strip() else ATTACHMENT_PLACEHOLDERS[tipo]
+        item = {**item, "text": text, "type": tipo, "file_id": file_id}
+        log("INFO", "mensaje con adjunto para el buzón", update_id=update_id,
+            message_type=tipo, has_caption=text != ATTACHMENT_PLACEHOLDERS[tipo],
+            has_file_id=file_id is not None)
+    elif not isinstance(text, str) or not text.strip():
         return
-    command = parse_command(text)
+    command = None if adjunto is not None else parse_command(text)
     if command is None:
         try:
-            append_inbox(web, {"ts": now().isoformat(), "update_id": update_id, "text": text})
+            append_inbox(web, item)
         except Exception as exc:
             log("ERROR", "fallo guardando en el buzón", update_id=update_id, error=str(exc))
             if raise_on_inbox_error:

@@ -21,5 +21,6 @@ verificación y rollback. Los jobs viven en el proyecto `cercanias-en-hora`.
 | Histórico nocturno falla con `'utf-8' codec can't decode byte 0x8b`; falta `historico/<día>.parquet` | [RB-016](RB-016-historico-gzip.md) |
 | El tablón (web o bot) se corta a los pocos minutos; falta el próximo tren de un sentido o un chip «→ destino» sale vacío | [RB-017](RB-017-tablon-cortado.md) |
 | El bot omite el próximo tren a un destino cuando uno ya salido está en las 6 primeras | [RB-018](RB-018-siguiente-por-sentido-ya-salido.md) |
+| Día de huelga: trenes `CANCELED` en `trip_updates` salen «sin datos en vivo» / «sin confirmar» en vez de SUPRIMIDO; falta el próximo que sí sale | [RB-019](RB-019-cancel-only-trips.md) |
 
 Detalle de despliegue: [`docs/DESPLIEGUE.md`](../DESPLIEGUE.md).
