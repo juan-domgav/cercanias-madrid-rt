@@ -22,6 +22,8 @@ comandos con guion y nada destructivo.
 | cualquier otro texto | «Recibido, lo paso a Cercanías Ops» y se añade a `ops/inbox.json` |
 | foto / documento / audio… (con o sin pie) | igual que un texto: ACK y al buzón con `text` = pie o marcador (`[foto]`), `type` y `file_id`. Un pie con comando (`estado`) **no** se ejecuta: es un reporte (RB-019) |
 
+- Mensajes de **otras personas** (privado o mención en un grupo): reportes de
+  viajeros en el bucket privado, sin comandos. Ver RB-020.
 - Token: secreto `telegram-ops-bot-token` → `TELEGRAM_OPS_BOT_TOKEN`. Nunca se
   registra (los errores se limpian del token antes de loguear).
 - Solo responde a `ALLOWED_CHAT_IDS` (por defecto `5830900654`). Otros chats se

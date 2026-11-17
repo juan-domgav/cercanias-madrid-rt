@@ -30,6 +30,7 @@ from cercanias_api.bot import BotContext, BotResult, Feedback, handle_update
 from cercanias_domain.departures import LiveTrain
 from cercanias_domain.station_view import Station
 from cercanias_storage.publishers import GcsSnapshotPublisher, publisher_from_env
+from cercanias_worker import ops_reports as rep
 from cercanias_worker import telegram_ops_poll as ops
 
 TELEGRAM_API = "https://api.telegram.org"
@@ -52,6 +53,14 @@ OPS_BOT_TOKEN = os.environ.get("TELEGRAM_OPS_BOT_TOKEN", "").strip()
 OPS_ALLOWED_CHAT_IDS = ops.parse_allowed_chat_ids(
     os.environ.get("OPS_ALLOWED_CHAT_IDS", ops.DEFAULT_ALLOWED_CHAT_IDS)
 )
+#: Reportes de viajeros al bot de ops (RB-020): por privado de cualquiera y
+#: menciones en grupos. Van al bucket PRIVADO (llevan usuario y chat); sin
+#: ``PRIVATE_BUCKET`` no se aceptan. ``OPS_RIDER_REPORTS=0`` los apaga sin
+#: desplegar (vuelta al comportamiento anterior: chats ajenos ignorados).
+OPS_RIDER_REPORTS = os.environ.get("OPS_RIDER_REPORTS", "1").strip() != "0"
+OPS_BOT_USERNAME = os.environ.get("OPS_BOT_USERNAME", rep.DEFAULT_BOT_USERNAME).strip().lstrip("@")
+#: Grupos de los que se aceptan menciones. Vacío = cualquiera (con límite por usuario).
+OPS_REPORT_CHAT_IDS = frozenset(ops.parse_allowed_chat_ids(os.environ.get("OPS_REPORT_CHAT_IDS", "")))
 
 #: Los datos cambian cada minuto; cachearlos unos segundos evita releer el bucket
 #: en cada mensaje sin llegar a servir nada rancio.
@@ -199,6 +208,21 @@ async def telegram_webhook(
     return {"ok": True}
 
 
+def _reports_config() -> rep.ReportConfig | None:
+    """Configuración de reportes de viajeros, o ``None`` si están apagados.
+
+    Nunca contra el bucket público: sin ``PRIVATE_BUCKET`` no hay reportes.
+    """
+    if not OPS_RIDER_REPORTS or not PRIVATE_BUCKET:
+        return None
+    return rep.ReportConfig(
+        store=GcsSnapshotPublisher(PRIVATE_BUCKET),
+        bot_id=rep.bot_id_from_token(OPS_BOT_TOKEN),
+        bot_username=OPS_BOT_USERNAME or rep.DEFAULT_BOT_USERNAME,
+        group_chat_ids=OPS_REPORT_CHAT_IDS,
+    )
+
+
 def handle_ops_update(update: dict[str, Any]) -> bool:
     """Atiende un update del bot de ops con la lógica del job de sondeo.
 
@@ -210,6 +234,7 @@ def handle_ops_update(update: dict[str, Any]) -> bool:
     """
     try:
         web = publisher_from_env()
+        reports = _reports_config()
     except Exception as exc:
         ops.log("ERROR", "fallo en el webhook de ops", error=ops.redact(repr(exc), OPS_BOT_TOKEN))
         return False
@@ -221,6 +246,7 @@ def handle_ops_update(update: dict[str, Any]) -> bool:
                 OPS_ALLOWED_CHAT_IDS,
                 update,
                 raise_on_inbox_error=True,
+                reports=reports,
             )
     except ops.InboxWriteError:
         return False
