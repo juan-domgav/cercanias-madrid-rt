@@ -1,0 +1,349 @@
+{
+ "service": "1020M",
+ "stations": {
+  "17005": [
+   {
+    "trip": "1020M20420C4b",
+    "t": "07:34:00",
+    "seq": 1,
+    "dest": "Parla",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1020M20415C4b",
+    "slack": 13
+   },
+   {
+    "trip": "1020M20419C4b",
+    "t": "07:43:00",
+    "seq": 15,
+    "dest": "Colmenar Viejo",
+    "route": "C4b",
+    "terminates": true,
+    "from": "1020M20208C4",
+    "slack": 5
+   },
+   {
+    "trip": "1020M20422C4b",
+    "t": "07:44:00",
+    "seq": 1,
+    "dest": "Parla",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1020M20419C4b",
+    "slack": 1
+   },
+   {
+    "trip": "1020M20421C4b",
+    "t": "07:53:00",
+    "seq": 15,
+    "dest": "Colmenar Viejo",
+    "route": "C4b",
+    "terminates": true,
+    "from": "1020M20212C4a",
+    "slack": 1
+   },
+   {
+    "trip": "1020M20424C4b",
+    "t": "08:00:00",
+    "seq": 1,
+    "dest": "Parla",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1020M20421C4b",
+    "slack": 7
+   },
+   {
+    "trip": "1020M20425C4b",
+    "t": "08:21:00",
+    "seq": 15,
+    "dest": "Colmenar Viejo",
+    "route": "C4b",
+    "terminates": true,
+    "from": "1020M20210C4",
+    "slack": 37
+   },
+   {
+    "trip": "1020M20427C4b",
+    "t": "08:30:00",
+    "seq": 15,
+    "dest": "Colmenar Viejo",
+    "route": "C4b",
+    "terminates": true,
+    "from": "1020M20406C4b",
+    "slack": 7
+   },
+   {
+    "trip": "1020M20428C4b",
+    "t": "08:33:00",
+    "seq": 1,
+    "dest": "Parla",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1020M20427C4b",
+    "slack": 3
+   },
+   {
+    "trip": "1020M20432C4b",
+    "t": "08:55:00",
+    "seq": 1,
+    "dest": "Parla",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1020M20425C4b",
+    "slack": 34
+   },
+   {
+    "trip": "1020M20431C4b",
+    "t": "08:56:00",
+    "seq": 15,
+    "dest": "Colmenar Viejo",
+    "route": "C4b",
+    "terminates": true,
+    "from": "1020M20220C4a",
+    "slack": 13
+   },
+   {
+    "trip": "1020M20436C4b",
+    "t": "09:18:00",
+    "seq": 1,
+    "dest": "Parla",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1020M20431C4b",
+    "slack": 22
+   },
+   {
+    "trip": "1020M20439C4b",
+    "t": "09:43:00",
+    "seq": 15,
+    "dest": "Colmenar Viejo",
+    "route": "C4b",
+    "terminates": true,
+    "from": "1020M20418C4b",
+    "slack": 6
+   },
+   {
+    "trip": "1020M20440C4b",
+    "t": "09:58:00",
+    "seq": 1,
+    "dest": "Parla",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1020M20439C4b",
+    "slack": 15
+   },
+   {
+    "trip": "1020M20445C4b",
+    "t": "10:23:00",
+    "seq": 15,
+    "dest": "Colmenar Viejo",
+    "route": "C4b",
+    "terminates": true,
+    "from": "1020M20424C4b",
+    "slack": 6
+   },
+   {
+    "trip": "1020M20444C4b",
+    "t": "10:38:00",
+    "seq": 1,
+    "dest": "Parla",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1020M20445C4b",
+    "slack": 15
+   },
+   {
+    "trip": "1020M20451C4b",
+    "t": "11:00:00",
+    "seq": 15,
+    "dest": "Colmenar Viejo",
+    "route": "C4b",
+    "terminates": true,
+    "from": "1020M20428C4b",
+    "slack": 10
+   },
+   {
+    "trip": "1020M20448C4b",
+    "t": "11:18:00",
+    "seq": 1,
+    "dest": "Parla",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1020M20451C4b",
+    "slack": 18
+   }
+  ],
+  "17004": [
+   {
+    "trip": "1020M20419C4b",
+    "t": "07:34:00",
+    "seq": 14,
+    "dest": "Colmenar Viejo",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1020M20208C4",
+    "slack": 5
+   },
+   {
+    "trip": "1020M20420C4b",
+    "t": "07:40:00",
+    "seq": 2,
+    "dest": "Parla",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1020M20415C4b",
+    "slack": 13
+   },
+   {
+    "trip": "1020M20421C4b",
+    "t": "07:44:00",
+    "seq": 14,
+    "dest": "Colmenar Viejo",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1020M20212C4a",
+    "slack": 1
+   },
+   {
+    "trip": "1020M20422C4b",
+    "t": "07:50:00",
+    "seq": 2,
+    "dest": "Parla",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1020M20419C4b",
+    "slack": 1
+   },
+   {
+    "trip": "1020M20424C4b",
+    "t": "08:06:00",
+    "seq": 2,
+    "dest": "Parla",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1020M20421C4b",
+    "slack": 7
+   },
+   {
+    "trip": "1020M20425C4b",
+    "t": "08:12:00",
+    "seq": 14,
+    "dest": "Colmenar Viejo",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1020M20210C4",
+    "slack": 37
+   },
+   {
+    "trip": "1020M20427C4b",
+    "t": "08:21:00",
+    "seq": 14,
+    "dest": "Colmenar Viejo",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1020M20406C4b",
+    "slack": 7
+   },
+   {
+    "trip": "1020M20428C4b",
+    "t": "08:39:00",
+    "seq": 2,
+    "dest": "Parla",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1020M20427C4b",
+    "slack": 3
+   },
+   {
+    "trip": "1020M20431C4b",
+    "t": "08:47:00",
+    "seq": 14,
+    "dest": "Colmenar Viejo",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1020M20220C4a",
+    "slack": 13
+   },
+   {
+    "trip": "1020M20432C4b",
+    "t": "09:01:00",
+    "seq": 2,
+    "dest": "Parla",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1020M20425C4b",
+    "slack": 34
+   },
+   {
+    "trip": "1020M20436C4b",
+    "t": "09:24:00",
+    "seq": 2,
+    "dest": "Parla",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1020M20431C4b",
+    "slack": 22
+   },
+   {
+    "trip": "1020M20439C4b",
+    "t": "09:34:00",
+    "seq": 14,
+    "dest": "Colmenar Viejo",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1020M20418C4b",
+    "slack": 6
+   },
+   {
+    "trip": "1020M20440C4b",
+    "t": "10:04:00",
+    "seq": 2,
+    "dest": "Parla",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1020M20439C4b",
+    "slack": 15
+   },
+   {
+    "trip": "1020M20445C4b",
+    "t": "10:14:00",
+    "seq": 14,
+    "dest": "Colmenar Viejo",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1020M20424C4b",
+    "slack": 6
+   },
+   {
+    "trip": "1020M20444C4b",
+    "t": "10:44:00",
+    "seq": 2,
+    "dest": "Parla",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1020M20445C4b",
+    "slack": 15
+   },
+   {
+    "trip": "1020M20451C4b",
+    "t": "10:51:00",
+    "seq": 14,
+    "dest": "Colmenar Viejo",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1020M20428C4b",
+    "slack": 10
+   },
+   {
+    "trip": "1020M20448C4b",
+    "t": "11:24:00",
+    "seq": 2,
+    "dest": "Parla",
+    "route": "C4b",
+    "terminates": false,
+    "from": "1020M20451C4b",
+    "slack": 18
+   }
+  ]
+ }
+}

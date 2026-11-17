@@ -254,6 +254,8 @@ function renderTrains() {
       };
       const cls = s.tone === "neutral" ? "" : s.tone;
       const noPublicado = s.kind === "not_published";
+      // RB-019: un suprimido sin posicion no esta "aun no localizado": no va a circular.
+      const suprimido = s.kind === "cancelled";
       // El anden es el dato mas accionable: dice donde ponerse. Solo existe en el
       // feed en vivo (A.6); si el tren no esta localizado se dice, no se inventa.
       const anden = d.platform
@@ -270,7 +272,7 @@ function renderTrains() {
         <div class="meta" style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
           ${anden}<span>${d.special ? (d.status === "STOPPED_AT" ? "en el andén" : "llegando")
             : d.in <= 0 ? (d.pending_departure ? "en el andén, aún sin salir" : "saliendo") : `en ${d.in} min`}</span>
-          ${d.live || noPublicado ? "" : '<span style="opacity:.7">· aún no localizado</span>'}
+          ${d.live || noPublicado || suprimido ? "" : '<span style="opacity:.7">· aún no localizado</span>'}
         </div>
         ${avisos}
         </div>`;

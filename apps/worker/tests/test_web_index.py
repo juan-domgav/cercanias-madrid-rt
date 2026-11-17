@@ -33,3 +33,11 @@ def test_el_fallback_de_la_web_nunca_contradice_el_dato_en_vivo() -> None:
     fallback = html[html.index("const s = d.display ||"):html.index("const cls =")]
     assert "notices: []" in fallback
     assert "inbound" not in fallback
+
+
+def test_un_suprimido_no_dice_aun_no_localizado() -> None:
+    """RB-019: un suprimido sin posición llega con ``live: false``; la web no le
+    añade «aún no localizado» (no va a circular, no hay nada que localizar)."""
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    assert 'const suprimido = s.kind === "cancelled"' in html
+    assert "d.live || noPublicado || suprimido" in html

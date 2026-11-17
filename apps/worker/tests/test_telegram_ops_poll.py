@@ -350,3 +350,82 @@ def test_fallo_del_buzon_lanza_si_se_pide(tmp_path: Path) -> None:
         api, _BuzonRoto(tmp_path), {ALLOWED}, _msg(6, "ayuda"), now=lambda: NOW, raise_on_inbox_error=True
     )
     assert [b["text"] for b in fake.sent()] == [bot.AYUDA]
+
+
+# --- adjuntos (fotos): antes se descartaban en silencio (RB-005) --------------
+
+FOTO = [
+    {"file_id": "AgACpequena", "file_unique_id": "u1", "width": 90, "height": 160},
+    {"file_id": "AgACgrande", "file_unique_id": "u3", "width": 1179, "height": 2556},
+]
+
+
+def _foto(update_id: int, caption: str | None = None, chat_id: int = ALLOWED) -> dict[str, Any]:
+    message: dict[str, Any] = {"chat": {"id": chat_id}, "photo": FOTO}
+    if caption is not None:
+        message["caption"] = caption
+    return {"update_id": update_id, "message": message}
+
+
+def test_foto_con_pie_va_al_buzon_con_su_file_id(tmp_path: Path) -> None:
+    fake, _, web = _run(tmp_path, [_foto(8, "Errores en la aplicación")])
+    assert fake.sent()[0]["text"] == bot.ACK_UNKNOWN
+    items = json.loads(web.read(bot.INBOX_KEY))["items"]
+    assert items == [{"ts": NOW.isoformat(), "update_id": 8, "text": "Errores en la aplicación",
+                      "type": "photo", "file_id": "AgACgrande"}]
+
+
+def test_foto_sin_pie_va_al_buzon_con_marcador(tmp_path: Path) -> None:
+    fake, _, web = _run(tmp_path, [_foto(9)])
+    assert fake.sent()[0]["text"] == bot.ACK_UNKNOWN
+    item = json.loads(web.read(bot.INBOX_KEY))["items"][0]
+    assert item["text"] == "[foto]"
+    assert item["type"] == "photo" and item["file_id"] == "AgACgrande"
+    assert "chat_id" not in item
+
+
+def test_foto_con_pie_de_comando_no_ejecuta_el_comando(tmp_path: Path) -> None:
+    """Una captura con pie «estado» es un reporte, no una consulta."""
+    fake, _, web = _run(tmp_path, [_foto(10, "estado")])
+    assert fake.sent()[0]["text"] == bot.ACK_UNKNOWN
+    assert json.loads(web.read(bot.INBOX_KEY))["items"][0]["text"] == "estado"
+
+
+def test_documento_imagen_tambien_se_guarda(tmp_path: Path) -> None:
+    """Una captura enviada «como archivo» llega como ``document``."""
+    upd = {"update_id": 11, "message": {"chat": {"id": ALLOWED}, "document": {
+        "file_id": "BQACdoc", "file_name": "captura.png", "mime_type": "image/png"}}}
+    fake, _, web = _run(tmp_path, [upd])
+    assert fake.sent()[0]["text"] == bot.ACK_UNKNOWN
+    item = json.loads(web.read(bot.INBOX_KEY))["items"][0]
+    assert item["type"] == "document" and item["file_id"] == "BQACdoc"
+    assert item["text"] == "[documento]"
+
+
+def test_foto_de_chat_no_permitido_se_ignora(tmp_path: Path) -> None:
+    fake, _, web = _run(tmp_path, [_foto(12, "hola", chat_id=999)])
+    assert fake.sent() == []
+    assert web.read(bot.INBOX_KEY) is None
+
+
+def test_foto_se_registra_en_el_log(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    _run(tmp_path, [_foto(13, "pie")])
+    salida = capsys.readouterr().err
+    lineas = [json.loads(linea) for linea in salida.splitlines() if linea.startswith("{")]
+    assert any(e.get("update_id") == 13 and e.get("message_type") == "photo" for e in lineas)
+    assert TOKEN not in salida
+
+
+def test_buzon_antiguo_y_nuevo_conviven(tmp_path: Path) -> None:
+    """Compatibilidad: items de texto sin ``type`` siguen igual; el tope de 20 se mantiene."""
+    web = LocalSnapshotPublisher(tmp_path)
+    for i in range(19):
+        bot.append_inbox(web, {"ts": "t", "update_id": i, "text": str(i)})
+    bot.append_inbox(web, {"ts": "t", "update_id": 19, "text": "[foto]", "type": "photo",
+                           "file_id": "AgAC"})
+    bot.append_inbox(web, {"ts": "t", "update_id": 20, "text": "20"})
+    items = json.loads(web.read(bot.INBOX_KEY))["items"]
+    assert len(items) == bot.INBOX_MAX_ITEMS
+    assert items[0] == {"ts": "t", "update_id": 1, "text": "1"}
+    assert items[-2] == {"ts": "t", "update_id": 19, "text": "[foto]", "type": "photo", "file_id": "AgAC"}
+    assert items[-1] == {"ts": "t", "update_id": 20, "text": "20"}

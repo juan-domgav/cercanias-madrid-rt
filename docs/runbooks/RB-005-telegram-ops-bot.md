@@ -20,6 +20,7 @@ comandos con guion y nada destructivo.
 | `regenerar` | el comando exacto de RB-003 (**no lo ejecuta**) |
 | `ayuda` / `help` | lista de comandos |
 | cualquier otro texto | «Recibido, lo paso a Cercanías Ops» y se añade a `ops/inbox.json` |
+| foto / documento / audio… (con o sin pie) | igual que un texto: ACK y al buzón con `text` = pie o marcador (`[foto]`), `type` y `file_id`. Un pie con comando (`estado`) **no** se ejecuta: es un reporte (RB-019) |
 
 - Token: secreto `telegram-ops-bot-token` → `TELEGRAM_OPS_BOT_TOKEN`. Nunca se
   registra (los errores se limpian del token antes de loguear).
@@ -34,7 +35,9 @@ comandos con guion y nada destructivo.
 
 ### Privacidad del buzón (decisión consciente)
 `ops/inbox.json` está en el bucket **público**: Wall-E lo lee sin credenciales.
-Solo lleva `ts`, `update_id` y `text`; **ni chat_id, ni nombre, ni usuario**.
+Solo lleva `ts`, `update_id` y `text` (y, en adjuntos, `type` y `file_id`:
+el `file_id` de la foto de mayor resolución; sin el token del bot no sirve para
+descargarla); **ni chat_id, ni nombre, ni usuario**.
 Pero el texto es legible por cualquiera que conozca la URL: no escribas al bot
 nada que no publicarías (contraseñas, datos personales, tokens). El consumidor
 lleva su propio puntero (`update_id`); el bot no marca procesados.
