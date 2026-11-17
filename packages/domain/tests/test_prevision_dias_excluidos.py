@@ -159,4 +159,5 @@ def test_la_lista_versionada_carga_y_contiene_las_huelgas() -> None:
     assert ExcludedDay(date(2026, 11, 11), "huelga general") in dias
     assert ExcludedDay(date(2026, 11, 12), "huelga Renfe") in dias
     assert ExcludedDay(date(2026, 11, 16), "Feed RT de Renfe vacío/congelado hasta 08:33; 82% de trenes vistos") in dias
+    assert ExcludedDay(date(2026, 11, 17), "huelga ferroviaria: servicios mínimos no cumplidos en Madrid") in dias
     assert list(dias) == sorted(dias, key=lambda d: d.date)

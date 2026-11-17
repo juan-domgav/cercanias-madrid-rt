@@ -103,7 +103,8 @@ el previsto. La lista versionada y editable a mano es
   {"date": "2026-11-10", "reason": "huelga Renfe"},
   {"date": "2026-11-11", "reason": "huelga general"},
   {"date": "2026-11-12", "reason": "huelga Renfe"},
-  {"date": "2026-11-16", "reason": "Feed RT de Renfe vacío/congelado hasta 08:33; 82% de trenes vistos"}
+  {"date": "2026-11-16", "reason": "Feed RT de Renfe vacío/congelado hasta 08:33; 82% de trenes vistos"},
+  {"date": "2026-11-17", "reason": "huelga ferroviaria: servicios mínimos no cumplidos en Madrid"}
 ]}
 ```
 
