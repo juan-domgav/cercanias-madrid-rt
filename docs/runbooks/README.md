@@ -23,5 +23,6 @@ verificación y rollback. Los jobs viven en el proyecto `cercanias-en-hora`.
 | El bot omite el próximo tren a un destino cuando uno ya salido está en las 6 primeras | [RB-018](RB-018-siguiente-por-sentido-ya-salido.md) |
 | Día de huelga: trenes `CANCELED` en `trip_updates` salen «sin datos en vivo» / «sin confirmar» en vez de SUPRIMIDO; falta el próximo que sí sale | [RB-019](RB-019-cancel-only-trips.md) |
 | Viajeros escriben al bot de ops (privado o mención en la comunidad): dónde quedan los reportes, añadir el bot al grupo | [RB-020](RB-020-reportes-de-viajeros.md) |
+| Encender, verificar, reentrenar o apagar el retraso «previsto» del modelo de C1/C5; `alert=prediction_artifact_*` / `prediction_failed`; `health.prediction` | [RB-021](RB-021-prediccion-lgbm-c1-c5.md) |
 
 Detalle de despliegue: [`docs/DESPLIEGUE.md`](../DESPLIEGUE.md).
