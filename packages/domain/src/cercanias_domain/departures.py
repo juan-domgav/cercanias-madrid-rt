@@ -28,7 +28,7 @@ Reglas que no son evidentes y que costaron descubrir:
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from cercanias_domain.trip_id import parse_trip_id
@@ -76,6 +76,8 @@ INBOUND_WARNING_FLOOR_MINUTES = 3
 #: Origen del retraso mostrado (``Departure.delay_source``).
 DELAY_SOURCE_LIVE = "live"
 DELAY_SOURCE_INBOUND_ESTIMATE = "inbound_estimate"
+#: Retraso PREDICHO por el modelo de la línea (RB-021). No es un dato en vivo.
+DELAY_SOURCE_PREDICTED = "predicted"
 
 #: Renfe publica cada viaje en GTFS-RT unos 30 min antes de su salida de
 #: CABECERA (archivo del 21/10/2026, n=850: p10 29, mediana 30, p90 30 min).
@@ -133,6 +135,10 @@ class ScheduledStop:
     #: Hora de salida del viaje en su ORIGEN (``seq == 1``). La ventana de
     #: publicacion de Renfe se mide desde ahi, no desde esta estacion.
     origin_departure_hhmmss: str | None = None
+    #: Estación de ESTA parada y su orden en el viaje. Sólo los necesita la
+    #: predicción (RB-021): el modelo aprendió por parada y por ``seq``.
+    stop_id: str | None = None
+    seq: int | None = None
 
 
 @dataclass(frozen=True)
@@ -213,14 +219,21 @@ class Departure:
     #: Renfe publica 0 (o el retraso que arrastra la unidad) y no es una medida.
     #: Pasada la hora, ``delay_minutes`` es una COTA INFERIOR (lo que ya lleva).
     pending_departure: bool = False
+    #: Retraso PREDICHO por el modelo de la línea (RB-021) cuando no hay retraso
+    #: propio medido (fuera del feed, o aún en cabecera antes de su hora) ni nada
+    #: del entrante (estimado o aviso). NO se suma a ``expected_hhmm`` ni cambia
+    #: el orden: sólo cambia la etiqueta.
+    predicted_delay_minutes: int | None = None
 
     @property
     def delay_source(self) -> str | None:
-        """``"live"``, ``"inbound_estimate"`` o ``None`` (sin dato)."""
+        """``"live"`` > ``"inbound_estimate"`` > ``"predicted"`` > ``None`` (sin dato)."""
         if self.delay_minutes is not None:
             return DELAY_SOURCE_LIVE
         if self.estimated_delay_minutes is not None:
             return DELAY_SOURCE_INBOUND_ESTIMATE
+        if self.predicted_delay_minutes is not None:
+            return DELAY_SOURCE_PREDICTED
         return None
 
     @property
@@ -348,6 +361,10 @@ class DepartureQuery:
     #: estación como Chamartín 10 salidas cubren ~7 minutos: el 04/11/2026 el
     #: 20460 a Parla quedaba fuera del tablón minutos antes de salir.
     board_window_minutes: int | None = None
+    #: Predicción de retraso (RB-021): ``None`` = apagada, que es lo de siempre.
+    #: Se llama SOLO para filas sin el viaje en el feed, sin estimado ni aviso del
+    #: entrante y sin entrante suprimido. Devuelve minutos o ``None`` (no sabe).
+    predictor: Callable[[ScheduledStop], int | None] | None = None
 
 
 #: Estados del feed que significan "todavía en el andén de origen". Tras salir,
@@ -605,6 +622,18 @@ def _all_departures(
             and origen is not None
             and parse_hhmm_to_minutes(origen) - now_minutes > query.publish_window_minutes
         )
+        # RB-021: sólo sin retraso propio medido (no está en el feed, o sigue en
+        # cabecera antes de su hora, RB-009) y sin nada del entrante. El dato en
+        # vivo, el estimado (RB-007) y los avisos del entrante mandan sobre el modelo.
+        previsto = (
+            query.predictor(stop)
+            if query.predictor is not None
+            and (tren is None or (en_cabecera and retraso is None))
+            and estimado is None
+            and retraso_enlace is None
+            and not entrante_suprimido
+            else None
+        )
         sin_respaldo = (
             tren is None
             and retraso_enlace is None
@@ -633,6 +662,7 @@ def _all_departures(
                 estimated_delay_minutes=estimado,
                 not_published=no_publicado,
                 pending_departure=en_cabecera,
+                predicted_delay_minutes=previsto,
             )
         )
 

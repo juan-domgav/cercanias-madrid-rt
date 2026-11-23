@@ -6,8 +6,11 @@ las mismas columnas de ``boards.json``. Divergían en los huecos: una fila con
 como "sin confirmar" con el tren localizado en el andén. Aquí se decide una vez:
 
 - **Precedencia**: suprimido > especial > EN VIVO (ya salió) > PENDIENTE DE SALIR
-  (en el feed pero aún en cabecera, RB-009) > estimado desde el entrante > no
-  publicado > sin datos. Si el propio viaje circula, su dato manda.
+  (en el feed pero aún en cabecera, RB-009) > estimado desde el entrante >
+  PREVISTO por el modelo (RB-021) > no publicado > sin datos. Si el propio viaje
+  circula, su dato manda.
+- **Previsto no es "en hora"** (RB-021): una predicción de 0 se dice
+  "previsto sin retraso" y nunca lleva el tono de un dato en vivo.
 - **Pendiente de salir no es "en hora"** (RB-009): antes de salir de cabecera
   Renfe publica 0 o el retraso que arrastra la unidad, y en el archivo del
   19-22/10/2026 el 54 % de esos "0" salieron con >= 3 min. Se dice
@@ -37,6 +40,7 @@ KIND_SPECIAL = "special"
 KIND_LIVE = "live"
 KIND_PENDING_DEPARTURE = "pending_departure"
 KIND_INBOUND_ESTIMATE = "inbound_estimate"
+KIND_PREDICTED = "predicted"
 KIND_NOT_PUBLISHED = "not_published"
 KIND_NO_DATA = "no_data"
 
@@ -101,6 +105,16 @@ def is_measured(row: Mapping[str, Any]) -> bool:
     return is_live(row) and not (is_pending_departure(row) and row.get("delay") is None)
 
 
+def _predicted(row: Mapping[str, Any]) -> bool:
+    """Retraso previsto por el modelo (RB-021) y ningún dato que mande sobre él."""
+    return (
+        row.get("delay_source") == "predicted"
+        and row.get("predicted_delay") is not None
+        and row.get("delay") is None
+        and row.get("estimated_delay") is None
+    )
+
+
 def _kind(row: Mapping[str, Any], live: bool) -> str:
     estimado = (
         row.get("delay_source") == "inbound_estimate"
@@ -112,6 +126,7 @@ def _kind(row: Mapping[str, Any], live: bool) -> str:
         (live and is_pending_departure(row), KIND_PENDING_DEPARTURE),
         (live, KIND_LIVE),
         (estimado, KIND_INBOUND_ESTIMATE),
+        (_predicted(row), KIND_PREDICTED),
         (row.get("realtime_status") == "not_published", KIND_NOT_PUBLISHED),
     )
     return next((kind for cumple, kind in reglas if cumple), KIND_NO_DATA)
@@ -144,6 +159,10 @@ def _pending_label_tone(row: Mapping[str, Any]) -> tuple[str, str]:
     if row.get("estimated_delay") is not None:
         est = row["estimated_delay"]
         return (f"≈ +{est} min (estimado)" if est > 0 else "≈ en hora (estimado)"), "estimated"
+    if _predicted(row):
+        pred = row["predicted_delay"]
+        return (f"previsto +{pred} min · aún sin salir" if pred > 0
+                else "previsto sin retraso · aún sin salir"), "estimated"
     return "pendiente de salir · Renfe aún no da retraso", "neutral"
 
 
@@ -155,7 +174,36 @@ def _label_tone(kind: str, row: Mapping[str, Any]) -> tuple[str, str]:
     if kind == KIND_INBOUND_ESTIMATE:
         est = row.get("estimated_delay") or 0
         return (f"≈ +{est} min (estimado)" if est > 0 else "≈ en hora (estimado)"), "estimated"
+    if kind == KIND_PREDICTED:
+        pred = row.get("predicted_delay") or 0
+        return (f"previsto +{pred} min" if pred > 0 else "previsto sin retraso"), "estimated"
     return _FIXED_LABELS[kind]
+
+
+_PREDICTED_NOTICE = Notice(
+    "predicted", "📊", "previsto por el modelo de la línea; Renfe aún no da su retraso",
+    "Previsión, no dato en vivo: la calcula un modelo con el histórico de este tren y con "
+    "lo que se ve ahora en la línea o en el tren que llega a cabecera. Cuando Renfe dé su "
+    "retraso en vivo, manda su dato.")
+
+
+def _pending_notices(row: Mapping[str, Any]) -> list[Notice]:
+    """Avisos de un tren en el feed pero aún en cabecera sin salir (RB-009)."""
+    avisos: list[Notice] = []
+    if row.get("estimated_delay") is not None and row.get("delay") is None:
+        avisos.append(Notice(
+            "estimated", "≈", "estimado por el tren que llega a cabecera; aún no ha salido",
+            "Estimado a partir del tren que llega a cabecera para dar la vuelta. "
+            "Este tren aún no ha salido y Renfe no da su retraso hasta que sale."))
+    if _predicted(row):
+        avisos.append(_PREDICTED_NOTICE)
+    if row.get("inbound_delay") and row.get("delay") is None:
+        # Sólo llega aquí en líneas validadas (ORIGIN_ESTIMATE_ROUTES).
+        n = row["inbound_delay"]
+        avisos.append(Notice(
+            "inbound_delay", "⚠️", f"posible retraso: el tren de llegada viene con +{n} min",
+            f"Posible retraso: el tren que llega a cabecera viene con +{n} min."))
+    return avisos
 
 
 def _notices(kind: str, row: Mapping[str, Any], live: bool) -> tuple[Notice, ...]:
@@ -181,18 +229,7 @@ def _notices(kind: str, row: Mapping[str, Any], live: bool) -> tuple[Notice, ...
             "at_terminus", "🏁", "final de línea: puede ser una llegada, no una salida",
             "Final de línea: puede ser una llegada, no una salida."))
     if kind == KIND_PENDING_DEPARTURE:
-        if row.get("estimated_delay") is not None and row.get("delay") is None:
-            avisos.append(Notice(
-                "estimated", "≈", "estimado por el tren que llega a cabecera; aún no ha salido",
-                "Estimado a partir del tren que llega a cabecera para dar la vuelta. "
-                "Este tren aún no ha salido y Renfe no da su retraso hasta que sale."))
-        if row.get("inbound_delay") and row.get("delay") is None:
-            # Sólo llega aquí en líneas validadas (ORIGIN_ESTIMATE_ROUTES).
-            n = row["inbound_delay"]
-            avisos.append(Notice(
-                "inbound_delay", "⚠️", f"posible retraso: el tren de llegada viene con +{n} min",
-                f"Posible retraso: el tren que llega a cabecera viene con +{n} min."))
-        return tuple(avisos)
+        return (*avisos, *_pending_notices(row))
     if live:
         # El dato en vivo manda: nada que lo contradiga (RB-008).
         return tuple(avisos)
@@ -201,6 +238,8 @@ def _notices(kind: str, row: Mapping[str, Any], live: bool) -> tuple[Notice, ...
             "estimated", "≈", "estimado por el tren que llega a cabecera; aún sin datos en vivo",
             "Estimado a partir del tren que llega a cabecera para dar la vuelta. "
             "Renfe aún no publica este viaje en vivo."))
+    if kind == KIND_PREDICTED:
+        avisos.append(_PREDICTED_NOTICE)
     if row.get("inbound_cancelled"):
         avisos.append(Notice(
             "inbound_cancelled", "🚫", "el tren que debía hacer este servicio está SUPRIMIDO",

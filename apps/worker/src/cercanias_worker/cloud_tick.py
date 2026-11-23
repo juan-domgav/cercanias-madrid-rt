@@ -28,7 +28,8 @@ import os
 import sys
 import time
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
+from datetime import time as dtime
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -50,7 +51,16 @@ from cercanias_domain.departures import (
     destinations_available,
     now_in_operating_day,
 )
+from cercanias_domain.historico import fecha_de_servicio
 from cercanias_domain.incidents import AlertCooldown, AlertPolicy, format_incident_message
+from cercanias_domain.prediccion import (
+    Artefacto,
+    ArtefactoInvalido,
+    Observacion,
+    Predictor,
+    emparejar_entrantes,
+    indice_viajes,
+)
 from cercanias_domain.trip_id import parse_trip_id
 from cercanias_notifiers_telegram.telegram_notifier import (
     TelegramConfigError,
@@ -59,7 +69,11 @@ from cercanias_notifiers_telegram.telegram_notifier import (
     TelegramSendError,
 )
 from cercanias_persistence.in_memory_state_repository import InMemoryCurrentStateRepository
-from cercanias_storage.publishers import GcsSnapshotPublisher, publisher_from_env
+from cercanias_storage.publishers import (
+    GcsSnapshotPublisher,
+    gunzip_if_compressed,
+    publisher_from_env,
+)
 from cercanias_storage.secrets import read_secret
 from cercanias_worker.config import WorkerConfig
 from cercanias_worker.mvp import SnapshotStore, run_cycle
@@ -139,6 +153,24 @@ INBOUND_ESTIMATE_EXCLUDED_ROUTES = frozenset(
 ORIGIN_ESTIMATE_ROUTES = frozenset(
     r.strip() for r in os.environ.get("ORIGIN_ESTIMATE_ROUTES", "").split(",") if r.strip()
 )
+#: RB-021. Familias de linea con retraso PREDICHO por el modelo LightGBM. Lista
+#: PERMITIDA y VACIA por defecto: con ella vacia no se lee el artefacto, no se
+#: escribe nada nuevo y ``boards.json`` sale exactamente igual que antes. Solo
+#: sirven las lineas que trae el artefacto (hoy C1 y C5). Se enciende linea a
+#: linea con el OK de Juan: ``PREDICCION_ROUTES=C1`` y luego ``C1,C5``.
+PREDICCION_ROUTES = frozenset(
+    r.strip() for r in os.environ.get("PREDICCION_ROUTES", "").split(",") if r.strip()
+)
+#: Artefacto en el bucket PRIVADO (deriva del historico; el repo es publico).
+PREDICCION_MODELO_KEY = os.environ.get("PREDICCION_MODELO_KEY", "prediccion/modelo.json")
+#: Ultimo retraso visto de cada (viaje, parada) de las lineas con prediccion: es
+#: la entrada en vivo del modelo (estado de la linea en la ultima hora para C1,
+#: ultimo dato del entrante para C5, aunque ya haya llegado y salido del feed).
+PREDICCION_OBS_KEY = os.environ.get("PREDICCION_OBS_KEY", "prediccion/observaciones.json")
+PREDICCION_OBS_RETENCION = timedelta(minutes=180)
+#: Estados del feed con el tren aun en el anden de origen (RB-009): su delay no es
+#: una medida y no entra en las observaciones.
+_EN_ORIGEN = frozenset({"STOPPED_AT", "INCOMING_AT"})
 #: Los horarios viven en el bucket, un fichero por dia de servicio
 #: (``horarios/1030J.json``). Estaban empaquetados en la imagen y caducaron sin
 #: que nadie lo viera: cada regeneracion exigia reconstruir el contenedor, asi
@@ -387,6 +419,8 @@ def _load_day_schedule(publisher: Any, service: str) -> dict[str, list[Scheduled
                 d.get("seq") == 1, paradas_origen.get(d["trip"]),
                 inbound_ambiguous=bool(d.get("amb")),
                 origin_departure_hhmmss=origenes.get(d["trip"]),
+                stop_id=stop_id,
+                seq=d.get("seq") if isinstance(d.get("seq"), int) else None,
             )
             for d in paradas
         ]
@@ -453,11 +487,177 @@ def _service_days(vehiculos: list[dict[str, Any]]) -> tuple[str, list[str]]:
     return servicio, candidatos
 
 
+def _load_prediction_artifact(estado: Any, ahora: datetime) -> tuple[Artefacto | None, str]:
+    """Artefacto de RB-021 o ``None`` con el motivo. Falla cerrado y lo grita."""
+    try:
+        raw = estado.read(PREDICCION_MODELO_KEY)
+    except Exception as exc:
+        _log("ERROR", "no se pudo leer el artefacto de prediccion", error=repr(exc),
+             alert="prediction_artifact_missing", key=PREDICCION_MODELO_KEY)
+        return None, "artifact_missing"
+    if not raw:
+        _log("ERROR", f"falta {PREDICCION_MODELO_KEY}: sin prediccion (RB-021)",
+             alert="prediction_artifact_missing", key=PREDICCION_MODELO_KEY)
+        return None, "artifact_missing"
+    try:
+        # Se sube tal cual sale del script (.json.gz): el lector de GCS ya lo
+        # descomprime, y el local no; aqui se cubren los dos.
+        artefacto = Artefacto.from_json(json.loads(gunzip_if_compressed(raw)))
+    except (ArtefactoInvalido, json.JSONDecodeError, UnicodeDecodeError, OSError) as exc:
+        _log("ERROR", "artefacto de prediccion invalido: sin prediccion (RB-021)",
+             alert="prediction_artifact_invalid", key=PREDICCION_MODELO_KEY, error=repr(exc))
+        return None, "artifact_invalid"
+    if artefacto.caducado(ahora):
+        _log("ERROR", f"artefacto de prediccion {artefacto.version} caducado: reentrenar (RB-021)",
+             alert="prediction_artifact_expired", version=artefacto.version,
+             created_at=artefacto.creado.isoformat())
+        return None, "artifact_expired"
+    return artefacto, "ok"
+
+
+def _update_observations(  # noqa: PLR0913 - entradas del tick, todas con nombre
+    estado: Any,
+    snapshot: dict[str, Any],
+    *,
+    cancelled: frozenset[str],
+    lineas: frozenset[str],
+    origenes: dict[str, str],
+    ahora: datetime,
+) -> list[list[Any]]:
+    """Lee, actualiza con el snapshot y guarda el ultimo retraso por (viaje, parada).
+
+    Solo lineas con prediccion, nunca especiales, suprimidos ni trenes aun en su
+    anden de origen (RB-009). Se guarda en el bucket privado: sin el, cada
+    invocacion arrancaria sin la ultima hora de la linea.
+    """
+    previas: list[list[Any]] = []
+    try:
+        raw = estado.read(PREDICCION_OBS_KEY)
+        datos = json.loads(raw) if raw else {}
+        if isinstance(datos, dict) and isinstance(datos.get("obs"), list):
+            previas = [o for o in datos["obs"] if isinstance(o, list) and len(o) == 4]  # noqa: PLR2004
+    except Exception as exc:
+        _log("WARNING", "observaciones de prediccion ilegibles; se reinician", error=repr(exc))
+    por_clave = {(str(o[0]), str(o[1])): o for o in previas}
+    marca = snapshot.get("generated_at")
+    visto = datetime.fromisoformat(marca).timestamp() if isinstance(marca, str) else ahora.timestamp()
+    for v in snapshot.get("vehicles", []):
+        tid, parada, retraso = v.get("trip_id"), v.get("next_stop_id"), v.get("delay_seconds")
+        if not tid or not parada or not isinstance(retraso, int) or _is_special(tid) or tid in cancelled:
+            continue
+        parsed = parse_trip_id(tid)
+        if parsed is None or parsed.route_group not in lineas:
+            continue
+        if origenes.get(tid) == parada and v.get("status") in _EN_ORIGEN:
+            continue
+        por_clave[(tid, parada)] = [tid, parada, retraso, visto]
+    limite = ahora.timestamp() - PREDICCION_OBS_RETENCION.total_seconds()
+    vigentes = sorted(
+        (o for o in por_clave.values() if float(o[3]) >= limite), key=lambda o: float(o[3])
+    )
+    _safe_publish(
+        estado, PREDICCION_OBS_KEY,
+        json.dumps({"version": 1, "obs": vigentes}, separators=(",", ":")).encode("utf-8"),
+        content_type="application/json",
+    )
+    return vigentes
+
+
+def _build_predictor(  # noqa: PLR0913 - entradas del tick, todas con nombre
+    snapshot: dict[str, Any],
+    estado: Any,
+    *,
+    dia: dict[str, list[ScheduledStop]],
+    servicio: str,
+    cancelled: frozenset[str],
+    ahora: datetime,
+) -> tuple[Predictor | None, dict[str, Any]]:
+    """Predictor de RB-021 para este tick, o ``None`` (y el motivo en la salud)."""
+    salud: dict[str, Any] = {"routes": sorted(PREDICCION_ROUTES), "status": "ok"}
+    artefacto, motivo = _load_prediction_artifact(estado, ahora)
+    if artefacto is None:
+        salud["status"] = motivo
+        return None, salud
+    salud["artifact_version"] = artefacto.version
+    lineas = frozenset(PREDICCION_ROUTES & set(artefacto.lineas))
+    fecha: date | None = fecha_de_servicio(servicio, ahora.date()) if servicio else None
+    if not lineas or fecha is None:
+        salud["status"] = "no_routes_in_artifact" if not lineas else "service_date_unknown"
+        return None, salud
+    horario = {
+        stop_id: [s for s in paradas if s.trip_id.startswith(servicio)] for stop_id, paradas in dia.items()
+    }
+    viajes = indice_viajes(horario)
+    origenes = {t: v.origen_id for t, v in viajes.items()}
+    crudas = _update_observations(
+        estado, snapshot, cancelled=cancelled, lineas=lineas, origenes=origenes, ahora=ahora
+    )
+    medianoche = datetime.combine(fecha, dtime(0), tzinfo=MADRID_TZ).timestamp()
+    observaciones = [
+        Observacion(str(o[0]), str(o[1]), int(o[2]), (float(o[3]) - medianoche) / 60)
+        for o in crudas
+        if str(o[0]).startswith(servicio)
+    ]
+    salud["observations"] = len(observaciones)
+    return Predictor(
+        artefacto, viajes, emparejar_entrantes(viajes.values()), observaciones,
+        fecha_servicio=fecha, ahora_min=(ahora.timestamp() - medianoche) / 60, rutas=lineas,
+    ), salud
+
+
+def _prediction_for_tick(  # noqa: PLR0913 - entradas del tick, todas con nombre
+    snapshot: dict[str, Any],
+    estado: Any,
+    *,
+    fresco: bool,
+    dia: dict[str, list[ScheduledStop]],
+    servicio: str,
+    cancelled: frozenset[str],
+    ahora: datetime,
+) -> tuple[Predictor | None, dict[str, Any] | None]:
+    """RB-021. Apagada (lista vacia) = ni se lee ni se escribe nada y ``None, None``.
+
+    Con datos viejos tampoco se predice (mismo guard que la estimacion, PR #7).
+    Un fallo del modelo nunca tumba los tablones: salen como sin el.
+    """
+    if not PREDICCION_ROUTES:
+        return None, None
+    if not fresco:
+        return None, {"routes": sorted(PREDICCION_ROUTES), "status": "disabled_stale"}
+    try:
+        return _build_predictor(
+            snapshot, estado, dia=dia, servicio=servicio, cancelled=cancelled, ahora=ahora
+        )
+    except Exception as exc:
+        _log("ERROR", "fallo preparando la prediccion; tablones sin ella",
+             alert="prediction_failed", error=repr(exc))
+        return None, {"routes": sorted(PREDICCION_ROUTES), "status": "failed"}
+
+
+def _prediction_columns(d: Any, predictor: Predictor | None) -> dict[str, Any]:
+    """Columna nueva de ``boards.json`` (RB-021), solo con la prediccion encendida."""
+    return {} if predictor is None else {"predicted_delay": d.predicted_delay_minutes}
+
+
+def _prediction_health(salud: dict[str, Any] | None, estaciones: dict[str, Any]) -> dict[str, Any]:
+    """``health.prediction`` y ``health.departures_predicted``; nada con la prediccion apagada."""
+    if salud is None:
+        return {}
+    return {
+        "prediction": salud,
+        "departures_predicted": sum(
+            1 for e in estaciones.values() for d in e["departures"] if d["delay_source"] == "predicted"
+        ),
+    }
+
+
 def _build_boards(
     snapshot: dict[str, Any],
     publisher: Any,
     cancelled: frozenset[str] = frozenset(),
     skipped: dict[str, frozenset[str]] | None = None,
+    *,
+    estado: Any = None,
 ) -> dict[str, Any]:
     """Precalcula el tablon de salidas de cada estacion.
 
@@ -516,6 +716,11 @@ def _build_boards(
     if len(candidatos) > 1:
         print(f"transicion de jornada: se cargan {candidatos}")
 
+    predictor, salud_prediccion = _prediction_for_tick(
+        snapshot, estado if estado is not None else publisher,
+        fresco=fresco, dia=dia, servicio=servicio, cancelled=cancelled, ahora=ahora,
+    )
+
     # Los especiales (SPECIAL_10_*) no estan en el horario: su parada actual o
     # proxima tiene tablon aunque el horario del dia no la incluya. Ver RB-006.
     paradas_especiales = {
@@ -538,6 +743,7 @@ def _build_boards(
                 # Sin snapshot fresco no sabemos que hay en el feed: no se
                 # afirma "no publicado".
                 publish_window_minutes=PUBLISH_WINDOW_MINUTES if fresco else None,
+                predictor=predictor,
             ),
             stop_id,
             specials_observed_minutes=minuto_visto,
@@ -582,7 +788,9 @@ def _build_boards(
         }
         # RB-008: el estado presentable lo decide UNA funcion (la misma que usa el
         # bot). La web solo pinta "display"; no recalcula etiquetas ni avisos.
-        for fila in estaciones[stop_id]["departures"]:
+        for fila, d in zip(estaciones[stop_id]["departures"], salidas, strict=True):
+            # RB-021: solo con la prediccion encendida; apagada, la fila no cambia.
+            fila.update(_prediction_columns(d, predictor))
             fila["display"] = departure_status(fila).to_json()
     # Los horarios se generan por lotes de dias (ADR-012: el indice de calendario
     # avanza a diario). Cuando el servicio en circulacion cae fuera del lote, los
@@ -676,6 +884,7 @@ def _build_boards(
             "departures_pending_departure": sum(
                 1 for e in estaciones.values() for d in e["departures"] if d["pending_departure"]
             ),
+            **_prediction_health(salud_prediccion, estaciones),
         },
         "stations": estaciones,
     }
@@ -859,12 +1068,14 @@ def _build_notifier() -> TelegramNotifier:
         return TelegramNotifier(token=None, chat_id=None, options=TelegramOptions(dry_run=True))
 
 
-def _publish_boards(
+def _publish_boards(  # noqa: PLR0913 - estado (RB-021) va con nombre
     publisher: Any,
     salida: dict[str, Any],
     cancelled: frozenset[str],
     skipped: dict[str, frozenset[str]],
     extra_health: dict[str, Any] | None = None,
+    *,
+    estado: Any = None,
 ) -> None:
     """Construye y publica los tablones; nunca lanza.
 
@@ -875,7 +1086,7 @@ def _publish_boards(
     de Telegram que vienen despues en ``main``.
     """
     try:
-        boards = _build_boards(salida, publisher, cancelled, skipped)
+        boards = _build_boards(salida, publisher, cancelled, skipped, estado=estado)
         if extra_health:
             boards["health"].update(extra_health)
     except Exception as exc:
@@ -946,7 +1157,8 @@ def main() -> int:
 
     salud_avisos = _archive_alerts(estado, datetime.now(tz=MADRID_TZ), fetch=fetch_alerts_payload)
     _publish_boards(
-        publisher, salida, ultimo.cancelled_trips, ultimo.skipped_stops, extra_health=salud_avisos
+        publisher, salida, ultimo.cancelled_trips, ultimo.skipped_stops, extra_health=salud_avisos,
+        estado=estado,
     )
     if ARCHIVE_ENABLED:
         print(f"pasadas archivadas: {archivadas}")
