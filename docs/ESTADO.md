@@ -70,6 +70,27 @@ Todo esto está **medido**, no supuesto. Cada uno costó una avería o una revis
   cada enlace, no a una mediana de población. Un aviso que no aporta enseña a
   ignorar los que sí.
 
+## Predicción de retraso C1/C5 (2026-11-23, RB-021 / PR #28)
+
+> Sólo este bloque está al día a 23/11; el resto del documento sigue a 29/10
+> (los despliegues de PR #26/#27 van en los PR de docs pendientes).
+
+Con el OK de Juan (23/11, 09:17): PR #28 mergeado como `f780c8a` (09:18:42
+Madrid). `cercanias-ingesta` reconstruido desde `git archive` de `f780c8a` con
+`--source .` (generación 25, imagen `sha256:0157a16d…`, 09:20:59); sólo cambia
+la imagen. Artefacto `2026-11-22-d4f80c99` en
+`gs://cercanias-madrid-rt-privado/prediccion/modelo.json` (y en
+`prediccion/modelos/`). `PREDICCION_ROUTES=C1` a las 09:22:21 (gen. 26) y
+`C1,C5` a las 09:31:40 (gen. 27). Primeros ticks: `health.prediction.status`
+`ok`, 130–141 salidas previstas (C1 12, todas en cabecera; C5 ~110 en cabecera
+y ~15 sin publicar), ninguna con el tren en vivo, sin `alert=prediction_*`.
+PR #14 (mediana histórica) cerrado: lo sustituye #28.
+
+- **Apagar:** `--update-env-vars PREDICCION_ROUTES=` (siguiente tick).
+- **Imagen anterior:** `cercanias-ingesta@sha256:952242ecdc302185951f73718df7aa9c48e4f76bd5d56e40405afdfe763d0df3` (gen. 24).
+- **Caduca** a los 21 días de `created_at` (≈14/12): reentrenar cada semana
+  tras el backtest (RB-021).
+
 ## Despliegue actual (2026-10-29, RB-015 / PR #18)
 
 Con el OK de Juan (29/10): PR #18 («fix(health): delay_coverage excluye viajes

@@ -93,8 +93,9 @@ versiones quedan en `prediccion/modelos/` para volver atrás.
 ```bash
 gcloud run jobs update cercanias-ingesta --region europe-southwest1 \
   --project cercanias-en-hora --update-env-vars PREDICCION_ROUTES=C1
-# verificar (abajo) y después:
-#   --update-env-vars PREDICCION_ROUTES=C1,C5
+# verificar (abajo) y después (la coma separa variables en gcloud: hace falta
+# otro delimitador, `^@^`):
+#   --update-env-vars '^@^PREDICCION_ROUTES=C1,C5'
 ```
 Efecto en el siguiente tick. En la primera hora C1 predice poco: el estado de
 la línea se va llenando con las observaciones de cada tick.
